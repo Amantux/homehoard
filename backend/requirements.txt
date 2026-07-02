@@ -4,7 +4,9 @@ Flask-Cors==4.0.1
 SQLAlchemy==2.0.32
 marshmallow==3.22.0
 PyJWT>=2.10.1
-passlib[bcrypt]==1.7.4
+passlib==1.7.4
+# passlib 1.7.4 reads bcrypt.__about__ which bcrypt>=4.1 removed; pin below that.
+bcrypt==4.0.1
 python-dotenv>=1.1.0
 qrcode[pil]==7.4.2
 gunicorn==22.0.0
