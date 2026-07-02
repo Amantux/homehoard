@@ -1,11 +1,13 @@
 {
   "domain": "shelfie",
   "name": "Shelfie",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "documentation": "https://github.com/Amantux/shelfie",
   "issue_tracker": "https://github.com/Amantux/shelfie/issues",
   "dependencies": [],
-  "codeowners": ["@Amantux"],
+  "codeowners": [
+    "@Amantux"
+  ],
   "requirements": [],
   "config_flow": true,
   "iot_class": "local_polling"
