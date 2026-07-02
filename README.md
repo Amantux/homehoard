@@ -144,6 +144,13 @@ homehoard/
 
 ## Quick start (development)
 
+Clone the repository:
+
+```bash
+git clone https://github.com/Amantux/homehoard.git
+cd homehoard
+```
+
 Backend:
 
 ```bash
