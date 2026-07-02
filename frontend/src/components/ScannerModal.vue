@@ -2,9 +2,11 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 
+const emit = defineEmits(['close'])
 const router = useRouter()
+
 const video = ref(null)
-const status = ref('idle') // idle | starting | scanning | error
+const status = ref('starting') // starting | scanning | error
 const error = ref('')
 const engine = ref('')
 const manual = ref('')
@@ -14,17 +16,39 @@ let raf = null
 let detector = null
 let zxingControls = null
 let zxingReader = null
+let done = false
 
 function tokenFromText(text) {
   const m = String(text).match(/\/t\/([^/?#\s]+)/)
   return m ? decodeURIComponent(m[1]) : String(text).trim()
 }
+
+function stopCamera() {
+  if (raf) cancelAnimationFrame(raf)
+  raf = null
+  detector = null
+  try { zxingControls?.stop() } catch (e) { /* noop */ }
+  zxingControls = null
+  if (stream) stream.getTracks().forEach((t) => t.stop())
+  stream = null
+}
+
+// A detected code: stop, close the modal, and go resolve it.
 function go(text) {
+  if (done) return
   const token = tokenFromText(text)
-  if (token) {
-    stop()
-    router.push('/t/' + encodeURIComponent(token))
-  }
+  if (!token) return
+  done = true
+  stopCamera()
+  emit('close')
+  router.push('/t/' + encodeURIComponent(token))
+}
+
+// Backdrop tap / close button: dismiss and return to the dashboard.
+function dismiss() {
+  stopCamera()
+  emit('close')
+  router.push('/')
 }
 
 const NATIVE_FORMATS = [
@@ -53,7 +77,6 @@ async function loopNative() {
 }
 
 async function startZxing() {
-  // JS decoder fallback for Safari / iOS which lack BarcodeDetector.
   const { BrowserMultiFormatReader } = await import('@zxing/browser')
   zxingReader = new BrowserMultiFormatReader()
   engine.value = 'zxing'
@@ -77,53 +100,48 @@ async function start() {
   } catch (e) {
     status.value = 'error'
     if (e.name === 'NotAllowedError') error.value = 'Camera permission was denied.'
-    else if (!window.isSecureContext) error.value = 'Camera needs a secure (HTTPS) connection. Use manual entry, or access Shelfie over HTTPS / Home Assistant ingress.'
+    else if (!window.isSecureContext) error.value = 'Camera needs HTTPS. Use manual entry below, or open Shelfie over HTTPS / Home Assistant.'
     else error.value = 'Could not start the camera: ' + (e.message || e.name)
   }
 }
 
-function stop() {
-  if (raf) cancelAnimationFrame(raf)
-  raf = null
-  detector = null
-  try { zxingControls?.stop() } catch (e) { /* noop */ }
-  zxingControls = null
-  if (stream) stream.getTracks().forEach((t) => t.stop())
-  stream = null
-}
-
 onMounted(start)
-onBeforeUnmount(stop)
+onBeforeUnmount(stopCamera)
 </script>
 
 <template>
-  <div class="page-head"><h1>📷 Scan</h1></div>
+  <div class="modal-backdrop" @click.self="dismiss">
+    <div class="card modal" style="width:440px">
+      <div class="modal-head">
+        <h2 style="flex:1">📷 Scan</h2>
+        <button class="ghost icon-btn" @click="dismiss">✕</button>
+      </div>
 
-  <div class="card" style="max-width:520px">
-    <div style="border-radius:12px;overflow:hidden;background:#000;aspect-ratio:1;position:relative">
-      <video ref="video" playsinline muted autoplay
-             style="width:100%;height:100%;object-fit:cover"></video>
-      <div v-if="status !== 'scanning'"
-           style="position:absolute;inset:0;display:grid;place-items:center;color:#fff;text-align:center;padding:20px">
-        <div>
-          <p v-if="status === 'starting'">Starting camera…</p>
-          <template v-else>
-            <p style="margin-bottom:12px">{{ error || 'Camera is off.' }}</p>
-            <button @click="start">Start camera</button>
-          </template>
+      <div style="border-radius:12px;overflow:hidden;background:#000;aspect-ratio:1;position:relative">
+        <video ref="video" playsinline muted autoplay
+               style="width:100%;height:100%;object-fit:cover"></video>
+        <div v-if="status !== 'scanning'"
+             style="position:absolute;inset:0;display:grid;place-items:center;color:#fff;text-align:center;padding:20px">
+          <div>
+            <p v-if="status === 'starting'">Starting camera…</p>
+            <template v-else>
+              <p style="margin-bottom:12px">{{ error || 'Camera is off.' }}</p>
+              <button @click="start">Start camera</button>
+            </template>
+          </div>
         </div>
       </div>
-    </div>
 
-    <p class="muted" style="margin-top:10px">
-      Point at any QR code or product barcode. Unknown codes can be linked to an item on the next screen.
-      <span v-if="engine" class="badge" style="margin-left:6px">{{ engine === 'native' ? 'fast scanner' : 'compatibility scanner' }}</span>
-    </p>
+      <p class="muted" style="margin-top:10px;font-size:0.85rem">
+        Point at any QR code or product barcode.
+        <span v-if="engine" class="badge" style="margin-left:4px">{{ engine === 'native' ? 'fast scanner' : 'compatibility scanner' }}</span>
+      </p>
 
-    <div class="divider"></div>
-    <div class="row">
-      <input v-model="manual" placeholder="…or paste a QR link / barcode number" @keyup.enter="go(manual)" />
-      <button :disabled="!manual" @click="go(manual)">Go</button>
+      <div class="divider"></div>
+      <div class="row">
+        <input v-model="manual" placeholder="…or paste a QR link / barcode" @keyup.enter="go(manual)" />
+        <button :disabled="!manual" @click="go(manual)">Go</button>
+      </div>
     </div>
   </div>
 </template>

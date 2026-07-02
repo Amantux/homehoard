@@ -80,7 +80,7 @@ onMounted(resolve)
           </select>
         </label>
         <div class="row" style="justify-content:flex-end">
-          <button class="secondary" @click="router.push('/scan')">Cancel</button>
+          <button class="secondary" @click="router.push('/')">Cancel</button>
           <button :disabled="!targetId || busy" @click="assign">Link code</button>
         </div>
       </template>

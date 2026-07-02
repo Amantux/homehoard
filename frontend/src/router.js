@@ -11,7 +11,6 @@ import LocationDetail from './views/LocationDetail.vue'
 import Labels from './views/Labels.vue'
 import Maintenance from './views/Maintenance.vue'
 import Tools from './views/Tools.vue'
-import Scanner from './views/Scanner.vue'
 import Scan from './views/Scan.vue'
 import Login from './views/Login.vue'
 
@@ -26,7 +25,6 @@ const routes = [
   { path: '/labels', component: Labels },
   { path: '/maintenance', component: Maintenance },
   { path: '/tools', component: Tools },
-  { path: '/scan', component: Scanner },
   { path: '/t/:token', component: Scan, meta: { public: false } },
   { path: '/login', component: Login, meta: { public: true } },
 ]

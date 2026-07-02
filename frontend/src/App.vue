@@ -5,6 +5,7 @@ import { useAuth } from './stores/auth'
 import { useUI } from './stores/ui'
 import Toasts from './components/Toasts.vue'
 import QuickCreate from './components/QuickCreate.vue'
+import ScannerModal from './components/ScannerModal.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -14,6 +15,7 @@ const ui = useUI()
 const bare = computed(() => route.meta.public || route.path.startsWith('/t/'))
 const search = ref('')
 const showCreate = ref(false)
+const showScanner = ref(false)
 const showUserMenu = ref(false)
 
 onMounted(() => {
@@ -48,7 +50,7 @@ const nav = [
           <span class="ico">{{ n.icon }}</span> {{ n.label }}
         </router-link>
         <div class="section-label">Utilities</div>
-        <router-link to="/scan" class="nav-link"><span class="ico">📷</span> Scan QR</router-link>
+        <a href="#" class="nav-link" @click.prevent="showScanner = true"><span class="ico">📷</span> Scan QR</a>
         <router-link to="/tools" class="nav-link"><span class="ico">🛠️</span> Tools</router-link>
         <div class="spacer"></div>
         <div class="nav-link" style="cursor:default">
@@ -66,7 +68,7 @@ const nav = [
           </div>
           <div class="grow"></div>
           <button @click="showCreate = true">＋ Create</button>
-          <button class="secondary icon-btn" title="Scan QR" @click="router.push('/scan')">📷</button>
+          <button class="secondary icon-btn" title="Scan QR" @click="showScanner = true">📷</button>
           <button class="secondary icon-btn" title="Toggle theme" @click="ui.toggleTheme()">🌓</button>
           <div v-if="!auth.authDisabled" class="dropdown">
             <button class="secondary icon-btn" @click="showUserMenu = !showUserMenu">👤</button>
@@ -83,6 +85,7 @@ const nav = [
     </div>
 
     <QuickCreate v-if="showCreate" @close="showCreate = false" />
+    <ScannerModal v-if="showScanner" @close="showScanner = false" />
     <Toasts />
   </template>
 

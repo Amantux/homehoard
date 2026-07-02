@@ -130,8 +130,8 @@ onMounted(load)
         <button :disabled="!ownCode.trim()" @click="addOwn">Link code</button>
       </div>
       <p class="muted" style="font-size:0.8rem;margin:0">
-        Tip: open <router-link to="/scan">Scan</router-link> to capture a code with your camera —
-        unknown codes can be assigned to any item, bin, or location on the spot.
+        Tip: use the <strong>📷 Scan</strong> button in the top bar to capture a code with your
+        camera — unknown codes can be assigned to any item, bin, or location on the spot.
       </p>
     </div>
   </div>
