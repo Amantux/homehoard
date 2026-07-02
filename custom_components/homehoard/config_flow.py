@@ -28,7 +28,7 @@ _LOGGER = logging.getLogger(__name__)
 _TIMEOUT = ClientTimeout(total=10)
 
 
-class ShelfieOptionsFlow(config_entries.OptionsFlow):
+class HomeHoardOptionsFlow(config_entries.OptionsFlow):
     """Tune the poll interval after setup."""
 
     async def async_step_init(
@@ -52,8 +52,8 @@ class ShelfieOptionsFlow(config_entries.OptionsFlow):
         )
 
 
-class ShelfieConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Config flow for Shelfie (manual + Supervisor discovery)."""
+class HomeHoardConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+    """Config flow for HomeHoard (manual + Supervisor discovery)."""
 
     VERSION = 1
 
@@ -61,15 +61,15 @@ class ShelfieConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._hassio_discovery: HassioServiceInfo | None = None
 
     @staticmethod
-    def async_get_options_flow(config_entry) -> ShelfieOptionsFlow:
-        return ShelfieOptionsFlow()
+    def async_get_options_flow(config_entry) -> HomeHoardOptionsFlow:
+        return HomeHoardOptionsFlow()
 
     # ------------------------------------------------------------------
     # Supervisor discovery (add-on installed) — near-zero typing.
     # ------------------------------------------------------------------
     async def async_step_hassio(self, discovery_info: HassioServiceInfo) -> FlowResult:
         self._hassio_discovery = discovery_info
-        await self.async_set_unique_id("shelfie_addon")
+        await self.async_set_unique_id("homehoard_addon")
         self._abort_if_unique_id_configured()
 
         host = discovery_info.config.get(CONF_HOST, DEFAULT_HOST)
@@ -86,7 +86,7 @@ class ShelfieConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         assert self._hassio_discovery is not None
         if user_input is not None:
             return self.async_create_entry(
-                title="Shelfie (add-on)",
+                title="HomeHoard (add-on)",
                 data={
                     CONF_HOST: self._hassio_discovery.config.get(CONF_HOST, DEFAULT_HOST),
                     CONF_PORT: int(
@@ -97,7 +97,7 @@ class ShelfieConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._set_confirm_only()
         return self.async_show_form(
             step_id="hassio_confirm",
-            description_placeholders={"addon": "Shelfie"},
+            description_placeholders={"addon": "HomeHoard"},
         )
 
     # ------------------------------------------------------------------
@@ -113,11 +113,11 @@ class ShelfieConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             try:
                 await self._async_validate(host, port)
             except (ClientError, asyncio.TimeoutError) as exc:
-                _LOGGER.warning("Cannot reach Shelfie: %s", exc)
+                _LOGGER.warning("Cannot reach HomeHoard: %s", exc)
                 errors["base"] = "cannot_connect"
             else:
                 return self.async_create_entry(
-                    title="Shelfie", data={CONF_HOST: host, CONF_PORT: port}
+                    title="HomeHoard", data={CONF_HOST: host, CONF_PORT: port}
                 )
         return self.async_show_form(
             step_id="user",

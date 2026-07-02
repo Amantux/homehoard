@@ -1,11 +1,11 @@
-# Shelfie 📦
+# HomeHoard 📦
 
-**Shelfie is my own personal rewrite of [homebox](https://github.com/hay-kot/homebox).**
+**HomeHoard is my own personal rewrite of [homebox](https://github.com/hay-kot/homebox).**
 
 I love what homebox does, but I wanted three things it didn't give me, so I
 rebuilt it from the ground up in Python:
 
-1. **Home Assistant, done properly.** Shelfie runs as a first-class HA **add-on**
+1. **Home Assistant, done properly.** HomeHoard runs as a first-class HA **add-on**
    (one-click install, Ingress, no separate login) and ships a companion
    **HACS integration** that surfaces your inventory — item counts, total value,
    locations — as Home Assistant sensors.
@@ -23,41 +23,41 @@ fork) with a **Flask + SQLAlchemy** backend and a **Vue 3 (Vite)** SPA, packaged
 to run as a standalone Docker container, a Home Assistant add-on, or on a
 Raspberry Pi 5.
 
-> Shelfie stands on the shoulders of homebox and, like homebox, is licensed
+> HomeHoard stands on the shoulders of homebox and, like homebox, is licensed
 > under **AGPL-3.0**. Huge thanks to [@hay-kot](https://github.com/hay-kot) and
 > the homebox community.
 
 
 ## Home Assistant
 
-Shelfie ships with **both** halves of a proper Home Assistant integration — a
+HomeHoard ships with **both** halves of a proper Home Assistant integration — a
 Supervisor **add-on** (the app itself, via Ingress) and a **HACS integration**
 (inventory sensors). Set it up in three clicks:
 
 ### Step 1 — Add the Supervisor repository
 
-[![Add repository to Home Assistant Supervisor](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2FAmantux%2Fshelfie)
+[![Add repository to Home Assistant Supervisor](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2FAmantux%2Fhomehoard)
 
 Or manually: **Settings → Add-ons → Add-on Store → ⋮ → Repositories** → paste
-`https://github.com/Amantux/shelfie`
+`https://github.com/Amantux/homehoard`
 
 ### Step 2 — Add the integration via HACS
 
-[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Amantux&repository=shelfie&category=integration)
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Amantux&repository=homehoard&category=integration)
 
 Or manually in HACS: **Integrations → ⋮ → Custom repositories** → paste
-`https://github.com/Amantux/shelfie` → category **Integration** → **Add**.
+`https://github.com/Amantux/homehoard` → category **Integration** → **Add**.
 
 ### Step 3 — Start the add-on, watch it appear automatically
 
-Install **Shelfie** from the add-on store, then **Start** it. Within seconds a
+Install **HomeHoard** from the add-on store, then **Start** it. Within seconds a
 **New device found** card will appear in **Settings → Devices & Services** — no
 manual configuration needed.
 
-[![Start setting up Shelfie integration](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=shelfie)
+[![Start setting up HomeHoard integration](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=homehoard)
 
 The add-on opens from the sidebar (Ingress, no separate login), stores data in
-`/share/shelfie`, and builds for **aarch64** (Raspberry Pi 5) and amd64. The
+`/share/homehoard`, and builds for **aarch64** (Raspberry Pi 5) and amd64. The
 integration polls `/api/v1/status` and `/api/v1/groups/statistics` and exposes
 sensors for total items, total value, locations, labels, items under warranty,
 and add-on health.
@@ -121,7 +121,7 @@ The Vue 3 SPA is a full homebox-style interface:
 ## Project layout
 
 ```
-shelfie/
+homehoard/
 ├── backend/            # Flask API + SQLAlchemy models
 │   ├── app/
 │   │   ├── api/        # route blueprints (users, items, locations, …)
@@ -134,8 +134,8 @@ shelfie/
 │   ├── run.py          # dev entrypoint
 │   └── tests/          # pytest suite
 ├── frontend/           # Vue 3 + Vite SPA
-├── custom_components/  # HACS integration (custom_components/shelfie)
-├── shelfie/            # HA add-on (config.yaml, DOCS.md)
+├── custom_components/  # HACS integration (custom_components/homehoard)
+├── homehoard/            # HA add-on (config.yaml, DOCS.md)
 ├── repository.yaml     # HA add-on repository manifest (root, for Supervisor)
 ├── hacs.json           # HACS repository manifest
 ├── Dockerfile          # standalone / add-on multi-arch image
@@ -218,19 +218,19 @@ pytest
 
 GitHub Actions (`.github/workflows/ci.yml`) runs the backend test suite and the
 frontend build on every push, then builds a **linux/arm64 Docker image for the
-Raspberry Pi 5** and publishes it to GHCR (`ghcr.io/amantux/shelfie`).
+Raspberry Pi 5** and publishes it to GHCR (`ghcr.io/amantux/homehoard`).
 
 ### Running on a Raspberry Pi 5
 
 ```bash
-docker run -d --name shelfie -p 7745:7745 \
+docker run -d --name homehoard -p 7745:7745 \
   -e HBOX_DISABLE_AUTH=false \
   -e HBOX_SECRET_KEY="$(openssl rand -hex 32)" \
-  -v shelfie-data:/data \
-  ghcr.io/amantux/shelfie:latest
+  -v homehoard-data:/data \
+  ghcr.io/amantux/homehoard:latest
 ```
 
 ## License
 
-Shelfie is a personal rewrite of homebox and, like homebox, is distributed
+HomeHoard is a personal rewrite of homebox and, like homebox, is distributed
 under the **GNU Affero General Public License v3.0** (see [`LICENSE`](LICENSE)).

@@ -1,6 +1,6 @@
 """Application configuration.
 
-Shelfie is a Python (Flask) port of homebox. Configuration is driven by
+HomeHoard is a Python (Flask) port of homebox. Configuration is driven by
 environment variables so it can run standalone or as a Home Assistant add-on.
 """
 import os
@@ -40,7 +40,7 @@ class Config:
         if cls.DATABASE_URL:
             return cls.DATABASE_URL
         os.makedirs(cls.DATA_DIR, exist_ok=True)
-        return f"sqlite:///{os.path.join(cls.DATA_DIR, 'shelfie.db')}"
+        return f"sqlite:///{os.path.join(cls.DATA_DIR, 'homehoard.db')}"
 
     @classmethod
     def attachments_dir(cls) -> str:

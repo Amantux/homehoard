@@ -2,29 +2,29 @@
   "config": {
     "step": {
       "user": {
-        "title": "Connect to Shelfie",
+        "title": "Connect to HomeHoard",
         "data": {
-          "host": "Shelfie host (e.g. http://127.0.0.1)",
+          "host": "HomeHoard host (e.g. http://127.0.0.1)",
           "port": "Port"
         }
       },
       "hassio_confirm": {
-        "title": "Shelfie add-on discovered",
+        "title": "HomeHoard add-on discovered",
         "description": "Do you want to set up the **{addon}** add-on?"
       }
     },
     "error": {
-      "cannot_connect": "Unable to connect. Make sure Shelfie is installed and running."
+      "cannot_connect": "Unable to connect. Make sure HomeHoard is installed and running."
     },
     "abort": {
-      "already_configured": "Shelfie is already configured.",
-      "cannot_connect": "Could not reach Shelfie. Start it and try again from Settings → Devices & Services."
+      "already_configured": "HomeHoard is already configured.",
+      "cannot_connect": "Could not reach HomeHoard. Start it and try again from Settings → Devices & Services."
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Shelfie options",
+        "title": "HomeHoard options",
         "data": {
           "update_interval": "Poll interval (seconds)"
         },

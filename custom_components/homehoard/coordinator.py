@@ -25,8 +25,8 @@ _LOGGER = logging.getLogger(__name__)
 _TIMEOUT = ClientTimeout(total=10)
 
 
-class ShelfieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
-    """Polls the Shelfie API for health + group statistics."""
+class HomeHoardDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
+    """Polls the HomeHoard API for health + group statistics."""
 
     def __init__(
         self, hass: HomeAssistant, session: ClientSession, entry: ConfigEntry
@@ -46,7 +46,7 @@ class ShelfieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             status = await self._get(self._status_url)
             stats = await self._get(self._stats_url)
         except (ClientError, asyncio.TimeoutError) as err:
-            raise UpdateFailed(f"Error fetching Shelfie data: {err}") from err
+            raise UpdateFailed(f"Error fetching HomeHoard data: {err}") from err
         return {"status": status, "stats": stats}
 
     async def _get(self, url: str) -> dict[str, Any]:

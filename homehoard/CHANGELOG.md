@@ -1,14 +1,20 @@
 # Changelog
 
+## 0.2.0
+- **Rebrand: Shelfie is now HomeHoard.** New name, add-on slug (`homehoard`),
+  image (`ghcr.io/amantux/homehoard`), and companion integration domain
+  (`homehoard`). If you ran the old add-on/integration, reinstall under the new
+  name. Fresh database — start hoarding!
+
 ## 0.1.1
 - **Fix: add-on failed to install (`manifest unknown`, 404).** The add-on is now
   published to GHCR under a version tag that matches `config.yaml`, so Supervisor
-  can pull `ghcr.io/amantux/shelfie:<version>`.
+  can pull `ghcr.io/amantux/homehoard:<version>`.
 - CI now auto-bumps the patch version on every push and publishes a matching
   multi-arch image (amd64 + aarch64 / Raspberry Pi 5).
 
 ## 0.1.0
-- Initial release of the **Shelfie** Home Assistant add-on.
+- Initial release of the **HomeHoard** Home Assistant add-on.
 - Home inventory & organization — a personal rewrite of homebox.
 - Ingress UI (no separate login when `disable_auth` is on), QR codes & barcodes,
   and moving-box **bins**.

@@ -1,4 +1,4 @@
-// Thin fetch wrapper around the Shelfie API.
+// Thin fetch wrapper around the HomeHoard API.
 const TOKEN_KEY = 'easyinv_token'
 
 // Resolve the API root relative to the page so the app works both standalone

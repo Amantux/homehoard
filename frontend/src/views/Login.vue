@@ -32,7 +32,7 @@ async function submit() {
     <div class="card auth-card">
       <div style="text-align:center;margin-bottom:20px">
         <div style="font-size:40px">📦</div>
-        <h1>Shelfie</h1>
+        <h1>HomeHoard</h1>
         <p class="muted" style="margin:4px 0 0">{{ mode === 'login' ? 'Sign in to your inventory' : 'Create your account' }}</p>
       </div>
       <label v-if="mode === 'register'" class="field"><span>Name</span><input v-model="name" /></label>

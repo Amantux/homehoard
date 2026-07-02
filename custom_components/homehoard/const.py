@@ -1,4 +1,4 @@
-DOMAIN = "shelfie"
+DOMAIN = "homehoard"
 
 CONF_HOST = "host"
 CONF_PORT = "port"

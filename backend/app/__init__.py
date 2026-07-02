@@ -1,4 +1,4 @@
-"""Shelfie application factory.
+"""HomeHoard application factory.
 
 A Python (Flask) port of homebox — the inventory & organization system for the
 home user. Ships an optional-auth JSON API under ``/api/v1`` and serves the
@@ -149,7 +149,7 @@ def _serve_spa(path):
     if os.path.isfile(index):
         return send_from_directory(_FRONTEND_DIST, "index.html")
     return (
-        "<h1>Shelfie API</h1><p>Frontend not built. "
+        "<h1>HomeHoard API</h1><p>Frontend not built. "
         "API is available under <code>/api/v1</code>.</p>",
         200,
     )

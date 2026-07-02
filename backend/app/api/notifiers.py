@@ -76,7 +76,7 @@ def test_notifier():
 
         ap = apprise.Apprise()
         ok = ap.add(url) and ap.notify(
-            body="Shelfie test notification", title="Shelfie"
+            body="HomeHoard test notification", title="HomeHoard"
         )
         return ("", 204) if ok else (jsonify({"error": "notify failed"}), 400)
     except ImportError:

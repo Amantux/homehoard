@@ -102,7 +102,7 @@ def create_tag():
         tag.token = value if len(value) <= 60 else gen_token()
         tag.code_format = data.get("codeFormat", "barcode")
     else:
-        # Shelfie-generated QR: token doubles as the code.
+        # HomeHoard-generated QR: token doubles as the code.
         tag.code = tag.token
         tag.code_format = "qr"
 
@@ -145,8 +145,8 @@ def tag_image(tag_id):
 def resolve(value):
     """Resolve a scanned value to its target so the SPA can navigate to it.
 
-    Matches either a Shelfie-generated token or a user-registered external
-    code (barcode / own QR payload). If the scanned value is a full Shelfie
+    Matches either a HomeHoard-generated token or a user-registered external
+    code (barcode / own QR payload). If the scanned value is a full HomeHoard
     scan URL, the caller should pass just the token portion.
     """
     gid = current_group().id

@@ -15,51 +15,51 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
-from .coordinator import ShelfieDataUpdateCoordinator
+from .coordinator import HomeHoardDataUpdateCoordinator
 
 
 @dataclass(frozen=True, kw_only=True)
-class ShelfieSensorDescription(SensorEntityDescription):
+class HomeHoardSensorDescription(SensorEntityDescription):
     value_fn: Callable[[dict], object] = lambda data: None
 
 
-SENSORS: tuple[ShelfieSensorDescription, ...] = (
-    ShelfieSensorDescription(
+SENSORS: tuple[HomeHoardSensorDescription, ...] = (
+    HomeHoardSensorDescription(
         key="total_items",
         name="Total items",
         icon="mdi:package-variant-closed",
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda d: d.get("stats", {}).get("totalItems"),
     ),
-    ShelfieSensorDescription(
+    HomeHoardSensorDescription(
         key="total_value",
         name="Total value",
         icon="mdi:cash",
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda d: d.get("stats", {}).get("totalItemPrice"),
     ),
-    ShelfieSensorDescription(
+    HomeHoardSensorDescription(
         key="total_locations",
         name="Locations",
         icon="mdi:map-marker",
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda d: d.get("stats", {}).get("totalLocations"),
     ),
-    ShelfieSensorDescription(
+    HomeHoardSensorDescription(
         key="total_labels",
         name="Labels",
         icon="mdi:tag-multiple",
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda d: d.get("stats", {}).get("totalLabels"),
     ),
-    ShelfieSensorDescription(
+    HomeHoardSensorDescription(
         key="total_with_warranty",
         name="Items under warranty",
         icon="mdi:shield-check",
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda d: d.get("stats", {}).get("totalWithWarranty"),
     ),
-    ShelfieSensorDescription(
+    HomeHoardSensorDescription(
         key="status",
         name="Status",
         icon="mdi:heart-pulse",
@@ -71,32 +71,32 @@ SENSORS: tuple[ShelfieSensorDescription, ...] = (
 def _device_info(entry: ConfigEntry) -> DeviceInfo:
     return DeviceInfo(
         identifiers={(DOMAIN, entry.entry_id)},
-        name="Shelfie",
-        manufacturer="Shelfie",
-        model="Shelfie inventory",
+        name="HomeHoard",
+        manufacturer="HomeHoard",
+        model="HomeHoard inventory",
     )
 
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    coordinator: ShelfieDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator: HomeHoardDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
     async_add_entities(
-        ShelfieSensor(coordinator, entry, desc) for desc in SENSORS
+        HomeHoardSensor(coordinator, entry, desc) for desc in SENSORS
     )
 
 
-class ShelfieSensor(
-    CoordinatorEntity[ShelfieDataUpdateCoordinator], SensorEntity
+class HomeHoardSensor(
+    CoordinatorEntity[HomeHoardDataUpdateCoordinator], SensorEntity
 ):
     _attr_has_entity_name = True
-    entity_description: ShelfieSensorDescription
+    entity_description: HomeHoardSensorDescription
 
     def __init__(
         self,
-        coordinator: ShelfieDataUpdateCoordinator,
+        coordinator: HomeHoardDataUpdateCoordinator,
         entry: ConfigEntry,
-        description: ShelfieSensorDescription,
+        description: HomeHoardSensorDescription,
     ) -> None:
         super().__init__(coordinator)
         self.entity_description = description

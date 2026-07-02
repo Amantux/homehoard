@@ -1,7 +1,7 @@
 services:
-  shelfie:
+  homehoard:
     build: .
-    container_name: shelfie
+    container_name: homehoard
     ports:
       - "7745:7745"
     environment:
@@ -11,8 +11,8 @@ services:
       HBOX_DISABLE_AUTH: "false"
       HBOX_ALLOW_REGISTRATION: "true"
     volumes:
-      - shelfie-data:/data
+      - homehoard-data:/data
     restart: unless-stopped
 
 volumes:
-  shelfie-data:
+  homehoard-data:

@@ -30,8 +30,8 @@ def status():
         {
             "health": True,
             "versions": ["v1"],
-            "title": "Shelfie",
-            "message": "Shelfie — homebox port running on Flask",
+            "title": "HomeHoard",
+            "message": "HomeHoard — homebox port running on Flask",
         }
     )
 
@@ -62,7 +62,7 @@ def export():
     return Response(
         csv_text,
         mimetype="text/csv",
-        headers={"Content-Disposition": "attachment; filename=shelfie.csv"},
+        headers={"Content-Disposition": "attachment; filename=homehoard.csv"},
     )
 
 

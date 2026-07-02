@@ -1,10 +1,10 @@
-name: Shelfie
-version: "0.1.4"
-slug: shelfie
+name: HomeHoard
+version: "0.2.0"
+slug: homehoard
 description: Home inventory & organization — a personal rewrite of homebox with QR/barcode and Home Assistant support
-url: https://github.com/Amantux/shelfie
+url: https://github.com/Amantux/homehoard
 # Pull the multi-arch image published by CI instead of building on-device.
-image: ghcr.io/amantux/shelfie
+image: ghcr.io/amantux/homehoard
 arch:
   - aarch64
   - amd64
@@ -14,10 +14,10 @@ boot: auto
 ingress: true
 ingress_port: 7745
 panel_icon: mdi:package-variant-closed
-panel_title: Shelfie
+panel_title: HomeHoard
 # Advertise to Home Assistant so the companion integration auto-discovers us.
 discovery:
-  - shelfie
+  - homehoard
 map:
   - share:rw
 options:

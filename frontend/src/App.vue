@@ -44,7 +44,7 @@ const nav = [
     <div class="app-shell">
       <aside class="sidebar">
         <div class="brand">
-          <span class="logo">📦</span> Shelfie
+          <span class="logo">📦</span> HomeHoard
         </div>
         <router-link v-for="n in nav" :key="n.to" :to="n.to" class="nav-link">
           <span class="ico">{{ n.icon }}</span> {{ n.label }}

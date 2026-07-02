@@ -31,7 +31,7 @@ class QrTag(IDMixin, TimestampMixin, db.Model):
     description: Mapped[str] = mapped_column(String(255), default="")
     kind: Mapped[str] = mapped_column(String(16))
 
-    # "generated": Shelfie created and prints the QR; ``code`` == ``token``.
+    # "generated": HomeHoard created and prints the QR; ``code`` == ``token``.
     # "external":  the user's own pre-existing QR/barcode; ``code`` holds the
     #              raw scanned value (e.g. a UPC/EAN number or QR payload).
     source: Mapped[str] = mapped_column(String(16), default="generated")

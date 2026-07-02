@@ -54,11 +54,11 @@ jobs:
           pip install pyyaml
           python3 - <<'PY'
           import json, yaml, sys
-          cfg = yaml.safe_load(open("shelfie/config.yaml"))
+          cfg = yaml.safe_load(open("homehoard/config.yaml"))
           for f in ("name", "version", "slug", "image", "arch"):
               assert f in cfg, f"config.yaml missing {f}"
-          man = json.load(open("custom_components/shelfie/manifest.json"))
-          assert man["domain"] == "shelfie"
+          man = json.load(open("custom_components/homehoard/manifest.json"))
+          assert man["domain"] == "homehoard"
           # add-on version and integration version must stay in lockstep
           assert str(cfg["version"]) == str(man["version"]), (
               f"version mismatch: config={cfg['version']} manifest={man['version']}"
@@ -88,8 +88,8 @@ jobs:
           python3 - <<'PY'
           import json, re, os
 
-          cfg_path = "shelfie/config.yaml"
-          man_path = "custom_components/shelfie/manifest.json"
+          cfg_path = "homehoard/config.yaml"
+          man_path = "custom_components/homehoard/manifest.json"
 
           text = open(cfg_path).read()
           m = re.search(r'^version:\s*"?([0-9]+\.[0-9]+\.[0-9]+)"?', text, re.M)
@@ -113,7 +113,7 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add shelfie/config.yaml custom_components/shelfie/manifest.json
+          git add homehoard/config.yaml custom_components/homehoard/manifest.json
           git commit -m "chore: bump version ${{ steps.bump.outputs.old_version }} → ${{ steps.bump.outputs.new_version }}"
           git push origin HEAD:${{ github.ref_name }}
 
@@ -143,7 +143,7 @@ jobs:
           push: true
           # Must be lowercase (Docker repo names); matches config.yaml image.
           tags: |
-            ghcr.io/amantux/shelfie:${{ needs.bump-version.outputs.new_version }}
-            ghcr.io/amantux/shelfie:latest
+            ghcr.io/amantux/homehoard:${{ needs.bump-version.outputs.new_version }}
+            ghcr.io/amantux/homehoard:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max

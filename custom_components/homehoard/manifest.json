@@ -1,0 +1,14 @@
+{
+  "domain": "homehoard",
+  "name": "HomeHoard",
+  "version": "0.2.0",
+  "documentation": "https://github.com/Amantux/homehoard",
+  "issue_tracker": "https://github.com/Amantux/homehoard/issues",
+  "dependencies": [],
+  "codeowners": [
+    "@Amantux"
+  ],
+  "requirements": [],
+  "config_flow": true,
+  "iot_class": "local_polling"
+}

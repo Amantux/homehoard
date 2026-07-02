@@ -74,7 +74,7 @@ onMounted(load)
   <div class="card">
     <h2 style="margin-bottom:6px">Codes <span class="badge">{{ tags.length }}</span></h2>
     <p class="muted" style="font-size:0.85rem;margin-top:0">
-      Print a Shelfie QR code, or link your <strong>own</strong> QR labels and product barcodes to this {{ kind }}.
+      Print a HomeHoard QR code, or link your <strong>own</strong> QR labels and product barcodes to this {{ kind }}.
     </p>
 
     <div v-if="loading" class="skeleton" style="height:120px"></div>
@@ -92,7 +92,7 @@ onMounted(load)
         </div>
         <div style="font-weight:600;margin-top:8px;font-size:0.88rem">{{ t.description || (t.source === 'external' ? t.codeFormat : '—') }}</div>
         <div class="muted" style="font-size:0.7rem;margin-bottom:8px">
-          <span class="badge">{{ t.source === 'external' ? 'your code' : 'shelfie QR' }}</span>
+          <span class="badge">{{ t.source === 'external' ? 'your code' : 'homehoard QR' }}</span>
         </div>
         <div class="row" style="gap:5px;justify-content:center">
           <button v-if="t.source === 'generated'" class="ghost sm" title="Copy link" @click="copyLink(t)">🔗</button>

@@ -36,7 +36,7 @@ def run():
             db.session.add(
                 User(
                     name="Demo User",
-                    email="demo@shelfie.local",
+                    email="demo@homehoard.local",
                     password_hash=hash_password("demodemo"),
                     is_owner=True,
                     group_id=group.id,
@@ -132,7 +132,7 @@ def run():
             ]
         )
         db.session.commit()
-        print("Seeded demo data (login: demo@shelfie.local / demodemo)")
+        print("Seeded demo data (login: demo@homehoard.local / demodemo)")
 
 
 if __name__ == "__main__":

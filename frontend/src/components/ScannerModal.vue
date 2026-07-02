@@ -100,7 +100,7 @@ async function start() {
   } catch (e) {
     status.value = 'error'
     if (e.name === 'NotAllowedError') error.value = 'Camera permission was denied.'
-    else if (!window.isSecureContext) error.value = 'Camera needs HTTPS. Use manual entry below, or open Shelfie over HTTPS / Home Assistant.'
+    else if (!window.isSecureContext) error.value = 'Camera needs HTTPS. Use manual entry below, or open HomeHoard over HTTPS / Home Assistant.'
     else error.value = 'Could not start the camera: ' + (e.message || e.name)
   }
 }

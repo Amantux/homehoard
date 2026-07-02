@@ -30,7 +30,7 @@ async function doExport() {
   const url = URL.createObjectURL(await res.blob())
   const a = document.createElement('a')
   a.href = url
-  a.download = 'shelfie.csv'
+  a.download = 'homehoard.csv'
   a.click()
   URL.revokeObjectURL(url)
   ui.toast('Export downloaded')
