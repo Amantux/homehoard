@@ -184,5 +184,3 @@ jobs:
             ghcr.io/amantux/homehoard:${V}-amd64 \
             ghcr.io/amantux/homehoard:${V}-arm64
           echo "Published ghcr.io/amantux/homehoard:${V} (amd64 + arm64)"
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
