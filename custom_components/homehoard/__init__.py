@@ -7,7 +7,7 @@ from homeassistant.helpers import aiohttp_client
 from .const import DOMAIN
 from .coordinator import HomeHoardDataUpdateCoordinator
 
-PLATFORMS = ["sensor"]
+PLATFORMS = ["sensor", "binary_sensor", "calendar"]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

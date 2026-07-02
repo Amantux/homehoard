@@ -102,6 +102,7 @@ def _register_blueprints(app):
     from .api.maintenance import bp as maintenance_bp
     from .api.notifiers import bp as notifiers_bp
     from .api.misc import bp as misc_bp
+    from .api.ha import bp as ha_bp
 
     prefix = "/api/v1"
     for bp in (
@@ -116,6 +117,7 @@ def _register_blueprints(app):
         maintenance_bp,
         notifiers_bp,
         misc_bp,
+        ha_bp,
     ):
         app.register_blueprint(bp, url_prefix=prefix)
 

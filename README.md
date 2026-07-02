@@ -57,10 +57,38 @@ manual configuration needed.
 [![Start setting up HomeHoard integration](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=homehoard)
 
 The add-on opens from the sidebar (Ingress, no separate login), stores data in
-`/share/homehoard`, and builds for **aarch64** (Raspberry Pi 5) and amd64. The
-integration polls `/api/v1/status` and `/api/v1/groups/statistics` and exposes
-sensors for total items, total value, locations, labels, items under warranty,
-and add-on health.
+`/share/homehoard`, and builds for **aarch64** (Raspberry Pi 5) and amd64.
+
+#### What the integration gives you
+
+The companion integration (`custom_components/homehoard`) polls a consolidated
+`/api/v1/ha/summary` endpoint and creates one **HomeHoard** device with:
+
+- **Sensors** — total items, total value, insured value, locations, bins,
+  labels, **warranties expiring (30d)** (with a 90-day + item list attribute),
+  and **maintenance overdue** (with upcoming + entries attribute).
+- **Binary sensor** — `Online` (connectivity to the HomeHoard instance).
+- **Calendar** — *Warranties & maintenance*: every warranty-expiry and scheduled
+  maintenance date as calendar events, so you can automate reminders
+  ("notify me 30 days before any warranty expires").
+
+Example automation:
+
+```yaml
+automation:
+  - alias: HomeHoard warranty warning
+    trigger:
+      - platform: numeric_state
+        entity_id: sensor.homehoard_warranties_expiring_30d
+        above: 0
+    action:
+      - service: notify.notify
+        data:
+          title: HomeHoard
+          message: >-
+            {{ states('sensor.homehoard_warranties_expiring_30d') }} warranty(s)
+            expiring within 30 days.
+```
 
 
 ## Features

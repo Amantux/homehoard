@@ -14,8 +14,7 @@ from .const import (
     CONF_HOST,
     CONF_PORT,
     CONF_UPDATE_INTERVAL,
-    DEFAULT_STATS_PATH,
-    DEFAULT_STATUS_PATH,
+    DEFAULT_SUMMARY_PATH,
     DEFAULT_UPDATE_INTERVAL,
     DOMAIN,
 )
@@ -26,16 +25,15 @@ _TIMEOUT = ClientTimeout(total=10)
 
 
 class HomeHoardDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
-    """Polls the HomeHoard API for health + group statistics."""
+    """Polls the HomeHoard ``/ha/summary`` endpoint (totals + attention counts)."""
 
     def __init__(
         self, hass: HomeAssistant, session: ClientSession, entry: ConfigEntry
     ) -> None:
         self._session = session
-        host = entry.data[CONF_HOST]
-        port = int(entry.data[CONF_PORT])
-        self._status_url = build_url(host, port, DEFAULT_STATUS_PATH)
-        self._stats_url = build_url(host, port, DEFAULT_STATS_PATH)
+        self.host = entry.data[CONF_HOST]
+        self.port = int(entry.data[CONF_PORT])
+        self._summary_url = build_url(self.host, self.port, DEFAULT_SUMMARY_PATH)
         interval = int(entry.options.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL))
         super().__init__(
             hass, _LOGGER, name=DOMAIN, update_interval=timedelta(seconds=interval)
@@ -43,13 +41,8 @@ class HomeHoardDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def _async_update_data(self) -> dict[str, Any]:
         try:
-            status = await self._get(self._status_url)
-            stats = await self._get(self._stats_url)
+            async with self._session.get(self._summary_url, timeout=_TIMEOUT) as resp:
+                resp.raise_for_status()
+                return await resp.json()
         except (ClientError, asyncio.TimeoutError) as err:
-            raise UpdateFailed(f"Error fetching HomeHoard data: {err}") from err
-        return {"status": status, "stats": stats}
-
-    async def _get(self, url: str) -> dict[str, Any]:
-        async with self._session.get(url, timeout=_TIMEOUT) as response:
-            response.raise_for_status()
-            return await response.json()
+            raise UpdateFailed(f"Error fetching HomeHoard summary: {err}") from err
