@@ -1,7 +1,7 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { api } from '../api'
+import { api, apiUrl } from '../api'
 import { money, loadCurrency } from '../format'
 import { useUI } from '../stores/ui'
 import ItemCard from '../components/ItemCard.vue'
@@ -18,7 +18,28 @@ const addItemId = ref('')
 const tab = ref('items')
 const editing = ref(false)
 
+const primaryImg = computed(() => {
+  const a = bin.value?.attachments?.find((x) => x.primary)
+  return a ? apiUrl('/documents/' + a.document.id) : null
+})
+
 async function load() { bin.value = await api.get('/bins/' + id) }
+
+async function uploadPhoto(e) {
+  const file = e.target.files[0]
+  if (!file) return
+  const form = new FormData()
+  form.append('file', file)
+  form.append('type', file.type.startsWith('image') ? 'photo' : 'attachment')
+  form.append('name', file.name)
+  bin.value = await api.upload(`/bins/${id}/attachments`, form)
+  ui.toast('Photo added')
+  e.target.value = ''
+}
+async function removeAttachment(a) {
+  await api.del(`/bins/${id}/attachments/${a.id}`)
+  await load()
+}
 onMounted(async () => {
   await loadCurrency()
   await load()
@@ -63,6 +84,8 @@ async function remove() {
     </div>
 
     <div class="page-head">
+      <img v-if="primaryImg" :src="primaryImg" alt=""
+           style="width:44px;height:44px;border-radius:10px;object-fit:cover;border:1px solid var(--border)" />
       <h1>🗃️ {{ bin.name }}</h1>
       <span class="badge">{{ money(bin.totalPrice) }}</span>
       <div class="grow"></div>
@@ -87,6 +110,7 @@ async function remove() {
 
     <div class="tabs">
       <button class="tab" :class="tab==='items'&&'active'" @click="tab='items'">Items <span class="badge">{{ bin.itemCount }}</span></button>
+      <button class="tab" :class="tab==='photos'&&'active'" @click="tab='photos'">Photos <span class="badge">{{ bin.attachments.length }}</span></button>
       <button class="tab" :class="tab==='qr'&&'active'" @click="tab='qr'">QR codes</button>
     </div>
 
@@ -109,6 +133,29 @@ async function remove() {
       </div>
       <div v-else class="card muted">No items in this bin yet.</div>
     </div>
+
+    <div v-show="tab==='photos'" class="card">
+      <div v-if="bin.attachments.length" class="card-grid">
+        <div v-for="a in bin.attachments" :key="a.id" class="item-card" style="cursor:default">
+          <div class="thumb">
+            <img v-if="a.type==='photo'" :src="apiUrl('/documents/'+a.document.id)" />
+            <span v-else>📄</span>
+          </div>
+          <div class="body">
+            <div class="title" style="font-size:0.9rem">{{ a.document.title }}</div>
+            <div class="sub">{{ a.type }}<span v-if="a.primary"> · primary</span></div>
+            <div class="labels">
+              <a :href="apiUrl('/documents/'+a.document.id)" target="_blank" class="sub">Download ↓</a>
+              <button class="secondary sm" @click="removeAttachment(a)">Remove</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p v-else class="muted">No photos yet.</p>
+      <div class="divider"></div>
+      <input type="file" accept="image/*" @change="uploadPhoto" />
+    </div>
+
     <div v-show="tab==='qr'"><QrPanel kind="bin" :target-id="bin.id" /></div>
   </div>
   <div v-else class="card"><div class="skeleton" style="height:240px"></div></div>

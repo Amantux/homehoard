@@ -69,6 +69,48 @@ def test_delete_bin_keeps_items(auth_client):
     assert got["bin"] is None
 
 
+def test_item_in_bin_inherits_bin_location(auth_client):
+    garage = _location(auth_client, "Garage")
+    b = auth_client.post(
+        "/api/v1/bins", json={"name": "Box", "locationId": garage["id"]}
+    ).get_json()
+    # Create with a *different* location but a bin — bin wins.
+    other = _location(auth_client, "Attic")
+    item = auth_client.post(
+        "/api/v1/items",
+        json={"name": "Drill", "binId": b["id"], "locationId": other["id"]},
+    ).get_json()
+    assert item["location"]["id"] == garage["id"]
+
+    # Update to clear the bin → location is now freely set.
+    updated = auth_client.put(
+        f"/api/v1/items/{item['id']}",
+        json={"name": "Drill", "binId": None, "locationId": other["id"]},
+    ).get_json()
+    assert updated["bin"] is None
+    assert updated["location"]["id"] == other["id"]
+
+
+def test_bin_photo_upload(auth_client):
+    import io
+
+    b = auth_client.post("/api/v1/bins", json={"name": "PhotoBox"}).get_json()
+    png = b"\x89PNG\r\n\x1a\n" + b"0" * 40
+    r = auth_client.post(
+        f"/api/v1/bins/{b['id']}/attachments",
+        data={"file": (io.BytesIO(png), "box.png"), "type": "photo"},
+        content_type="multipart/form-data",
+    )
+    assert r.status_code == 201
+    data = r.get_json()
+    assert len(data["attachments"]) == 1
+    assert data["imageId"]  # primary photo set
+
+    att_id = data["attachments"][0]["id"]
+    assert auth_client.get(f"/api/v1/bins/{b['id']}/attachments/{att_id}").status_code == 200
+    assert auth_client.delete(f"/api/v1/bins/{b['id']}/attachments/{att_id}").status_code == 204
+
+
 def test_multiple_qr_per_target(auth_client):
     b = auth_client.post("/api/v1/bins", json={"name": "B"}).get_json()
     t1 = auth_client.post(

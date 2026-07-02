@@ -26,6 +26,15 @@ const selectedLabels = computed({
   set: (ids) => { item.value.labels = allLabels.value.filter((l) => ids.includes(l.id)) },
 })
 function dateInput(v) { return v ? v.slice(0, 10) : '' }
+
+// When an item is placed in a bin, its location is inherited from that bin.
+function onBinChange() {
+  const b = item.value.bin
+  if (b) {
+    const full = bins.value.find((x) => x.id === b.id) || b
+    item.value.location = full.location || null
+  }
+}
 const primaryImg = computed(() => {
   const a = item.value?.attachments?.find((x) => x.primary)
   return a ? apiUrl('/documents/' + a.document.id) : null
@@ -160,12 +169,14 @@ async function addMaint() {
             <label class="field"><span>Description</span><textarea v-model="item.description" rows="2"></textarea></label>
             <div class="row">
               <label class="field fill"><span>Quantity</span><input type="number" v-model.number="item.quantity" /></label>
-              <label class="field fill"><span>Location</span>
-                <select v-model="item.location"><option :value="null">None</option>
-                  <option v-for="l in locations" :key="l.id" :value="l">{{ l.name }}</option></select></label>
               <label class="field fill"><span>Bin</span>
-                <select v-model="item.bin"><option :value="null">None</option>
+                <select v-model="item.bin" @change="onBinChange"><option :value="null">None</option>
                   <option v-for="b in bins" :key="b.id" :value="b">{{ b.name }}</option></select></label>
+              <label class="field fill">
+                <span>Location{{ item.bin ? ' (from bin)' : '' }}</span>
+                <select v-model="item.location" :disabled="!!item.bin">
+                  <option :value="null">None</option>
+                  <option v-for="l in locations" :key="l.id" :value="l">{{ l.name }}</option></select></label>
             </div>
             <label class="field"><span>Labels</span>
               <select multiple v-model="selectedLabels" size="4">

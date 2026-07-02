@@ -65,7 +65,7 @@ async function submit() {
         <button class="ghost icon-btn" @click="emit('close')">✕</button>
       </div>
 
-      <div class="row wrap" style="gap:8px;margin-bottom:16px">
+      <div class="row wrap type-picker" style="gap:8px;margin-bottom:16px">
         <button v-for="k in kinds" :key="k.id"
                 :class="kind === k.id ? '' : 'secondary'"
                 class="sm" @click="kind = k.id">

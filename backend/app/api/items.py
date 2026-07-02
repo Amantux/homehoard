@@ -3,7 +3,7 @@ from datetime import datetime
 from flask import Blueprint, request, jsonify, abort
 
 from ..extensions import db
-from ..models import Item, ItemField, Label, Location
+from ..models import Item, ItemField, Label, Location, Bin
 from ..auth import login_required, current_group
 from ..schemas.serializers import item_out, item_summary, location_summary
 
@@ -72,6 +72,12 @@ def _apply(item: Item, data: dict):
         item.location_id = data["locationId"] or None
     if "binId" in data:
         item.bin_id = data["binId"] or None
+    # An item lives in a bin OR directly in a location. When it's in a bin, its
+    # location is inherited from (and kept in sync with) that bin.
+    if item.bin_id:
+        b = db.session.get(Bin, item.bin_id)
+        if b and b.group_id == item.group_id:
+            item.location_id = b.location_id
     if "parentId" in data:
         item.parent_id = data["parentId"] or None
 
@@ -162,12 +168,18 @@ def list_items():
 @login_required
 def create_item():
     data = request.get_json(force=True) or {}
+    bin_id = data.get("binId") or None
+    location_id = data.get("locationId") or None
+    if bin_id:
+        b = db.session.get(Bin, bin_id)
+        if b and b.group_id == current_group().id:
+            location_id = b.location_id  # inherit the bin's location
     item = Item(
         name=data.get("name", ""),
         description=data.get("description", ""),
         group_id=current_group().id,
-        location_id=data.get("locationId") or None,
-        bin_id=data.get("binId") or None,
+        location_id=location_id,
+        bin_id=bin_id,
         asset_id=_next_asset_id(current_group().id),
     )
     if data.get("labelIds"):

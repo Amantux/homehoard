@@ -185,12 +185,14 @@ def notifier_out(n):
 
 
 def bin_summary(b):
+    primary = next((a for a in b.attachments if a.primary), None)
     return {
         "id": b.id,
         "name": b.name,
         "description": b.description,
         "locationId": b.location_id,
         "location": location_summary(b.location) if b.location else None,
+        "imageId": primary.document_id if primary else None,
         "createdAt": iso(b.created_at),
         "updatedAt": iso(b.updated_at),
     }
@@ -202,6 +204,7 @@ def bin_out(b):
     data["itemCount"] = len(b.items)
     data["totalPrice"] = sum((i.purchase_price or 0) * (i.quantity or 1)
                              for i in b.items)
+    data["attachments"] = [attachment_out(a) for a in b.attachments]
     return data
 
 

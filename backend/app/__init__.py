@@ -67,6 +67,28 @@ def _migrate(app):
             text("UPDATE qr_tags SET code = token WHERE (code IS NULL OR code = '')")
         )
 
+    # attachments: introduced bin_id + made item_id nullable so bins can have
+    # photos too. SQLite can't drop a NOT NULL constraint in place, so rebuild
+    # the table (preserving existing rows) when the old shape is detected.
+    if inspector.has_table("attachments"):
+        cols = {c["name"]: c for c in inspector.get_columns("attachments")}
+        needs_rebuild = "bin_id" not in cols or cols["item_id"]["nullable"] is False
+        if needs_rebuild:
+            with db.engine.begin() as conn:
+                conn.execute(text("ALTER TABLE attachments RENAME TO attachments_old"))
+            db.create_all()  # recreate `attachments` with the new schema
+            with db.engine.begin() as conn:
+                conn.execute(
+                    text(
+                        'INSERT INTO attachments '
+                        '(id, created_at, updated_at, type, "primary", '
+                        ' item_id, bin_id, document_id) '
+                        'SELECT id, created_at, updated_at, type, "primary", '
+                        ' item_id, NULL, document_id FROM attachments_old'
+                    )
+                )
+                conn.execute(text("DROP TABLE attachments_old"))
+
 
 def _register_blueprints(app):
     from .api.users import bp as users_bp

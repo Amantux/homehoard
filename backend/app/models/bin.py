@@ -26,3 +26,6 @@ class Bin(IDMixin, TimestampMixin, db.Model):
     location = relationship("Location", back_populates="bins")
 
     items = relationship("Item", back_populates="bin")
+    attachments = relationship(
+        "Attachment", back_populates="bin", cascade="all, delete-orphan"
+    )

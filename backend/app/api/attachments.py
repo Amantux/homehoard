@@ -5,9 +5,9 @@ from flask import Blueprint, request, jsonify, abort, send_file, current_app
 from werkzeug.utils import secure_filename
 
 from ..extensions import db
-from ..models import Item, Attachment, Document
+from ..models import Item, Bin, Attachment, Document
 from ..auth import login_required, current_group
-from ..schemas.serializers import item_out, attachment_out
+from ..schemas.serializers import item_out, bin_out, attachment_out
 
 bp = Blueprint("attachments", __name__)
 
@@ -82,6 +82,88 @@ def delete(item_id, attachment_id):
     _get_item(item_id)
     att = db.session.get(Attachment, attachment_id)
     if not att or att.item_id != item_id:
+        abort(404)
+    if att.document and os.path.exists(att.document.path):
+        try:
+            os.remove(att.document.path)
+        except OSError:
+            pass
+    db.session.delete(att)
+    db.session.commit()
+    return "", 204
+
+
+# ---------------------------------------------------------------------------
+# Bin attachments — same behavior as item attachments.
+# ---------------------------------------------------------------------------
+def _get_bin(bin_id) -> Bin:
+    b = db.session.get(Bin, bin_id)
+    if not b or b.group_id != current_group().id:
+        abort(404)
+    return b
+
+
+@bp.post("/bins/<bin_id>/attachments")
+@login_required
+def bin_upload(bin_id):
+    b = _get_bin(bin_id)
+    file = request.files.get("file")
+    if not file:
+        return jsonify({"error": "file required"}), 422
+
+    atype = request.form.get("type", "attachment")
+    name = request.form.get("name") or file.filename
+    stored = f"{uuid.uuid4()}-{secure_filename(file.filename)}"
+    path = os.path.join(current_app.config["attachments_dir"](), stored)
+    file.save(path)
+
+    doc = Document(title=name, path=path, group_id=current_group().id)
+    db.session.add(doc)
+    db.session.flush()
+
+    is_primary = atype == "photo" and not any(a.primary for a in b.attachments)
+    att = Attachment(type=atype, primary=is_primary, bin_id=b.id,
+                     document_id=doc.id)
+    db.session.add(att)
+    db.session.commit()
+    return jsonify(bin_out(b)), 201
+
+
+@bp.get("/bins/<bin_id>/attachments/<attachment_id>")
+@login_required
+def bin_download(bin_id, attachment_id):
+    _get_bin(bin_id)
+    att = db.session.get(Attachment, attachment_id)
+    if not att or att.bin_id != bin_id:
+        abort(404)
+    return send_file(att.document.path, download_name=att.document.title)
+
+
+@bp.put("/bins/<bin_id>/attachments/<attachment_id>")
+@login_required
+def bin_update(bin_id, attachment_id):
+    b = _get_bin(bin_id)
+    att = db.session.get(Attachment, attachment_id)
+    if not att or att.bin_id != bin_id:
+        abort(404)
+    data = request.get_json(force=True) or {}
+    if "type" in data:
+        att.type = data["type"]
+    if "title" in data and att.document:
+        att.document.title = data["title"]
+    if data.get("primary"):
+        for other in b.attachments:
+            other.primary = other.id == att.id
+    db.session.commit()
+    return jsonify(bin_out(b))
+
+
+@bp.delete("/bins/<bin_id>/attachments/<attachment_id>")
+@login_required
+def bin_delete(bin_id, attachment_id):
+    _get_bin(bin_id)
+    att = db.session.get(Attachment, attachment_id)
+    if not att or att.bin_id != bin_id:
         abort(404)
     if att.document and os.path.exists(att.document.path):
         try:

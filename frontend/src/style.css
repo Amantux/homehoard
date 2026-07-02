@@ -257,7 +257,7 @@ tbody tr.clickable:hover td { background: var(--accent-soft); }
   backdrop-filter: blur(2px); display: grid; place-items: center; z-index: 100; padding: 20px;
 }
 .modal {
-  width: 520px; max-width: 100%; max-height: 88vh; overflow: auto;
+  width: min(520px, 100%); max-height: 88vh; overflow: auto;
   box-shadow: var(--shadow-lg); animation: pop 0.14s ease-out;
 }
 @keyframes pop { from { transform: scale(0.96); opacity: 0; } }
@@ -303,6 +303,14 @@ tbody tr.clickable:hover td { background: var(--accent-soft); }
   .sidebar { display: none; }
   .content { padding: 18px 14px; }
   .topbar { padding: 0 14px; }
+  .topbar .search { min-width: 0; }
   .kv { grid-template-columns: 1fr; gap: 2px 0; }
   .kv dd { margin-bottom: 8px; }
+
+  /* Modals: fit the screen with a comfortable margin. */
+  .modal-backdrop { padding: 12px; align-items: start; }
+  .modal { width: 100%; padding: 16px; }
+  .modal .modal-head h2 { font-size: 1.1rem; }
+  /* Create "type" chips: let them share the row and shrink instead of overflowing. */
+  .modal .type-picker button { flex: 1 1 40%; justify-content: center; }
 }

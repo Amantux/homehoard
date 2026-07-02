@@ -1,3 +1,5 @@
+from typing import Optional
+
 from sqlalchemy import String, Boolean, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -28,8 +30,16 @@ class Attachment(IDMixin, TimestampMixin, db.Model):
     type: Mapped[str] = mapped_column(String(50), default="attachment")
     primary: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    item_id: Mapped[str] = mapped_column(String(36), ForeignKey("items.id"))
+    # An attachment belongs to either an item or a bin.
+    item_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("items.id"), nullable=True
+    )
     item = relationship("Item", back_populates="attachments")
+
+    bin_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("bins.id"), nullable=True
+    )
+    bin = relationship("Bin", back_populates="attachments")
 
     document_id: Mapped[str] = mapped_column(String(36), ForeignKey("documents.id"))
     document = relationship("Document", back_populates="attachment")

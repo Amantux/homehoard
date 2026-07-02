@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { api } from '../api'
+import { api, apiUrl } from '../api'
 import { useUI } from '../stores/ui'
 import EmptyState from '../components/EmptyState.vue'
 
@@ -39,8 +39,13 @@ async function create() {
   <div v-if="loading" class="card-grid"><div v-for="i in 4" :key="i" class="skeleton" style="height:120px"></div></div>
   <div v-else-if="bins.length" class="card-grid">
     <div v-for="b in bins" :key="b.id" class="item-card" @click="router.push('/bins/' + b.id)">
+      <div class="thumb">
+        <img v-if="b.imageId" :src="apiUrl('/documents/' + b.imageId)" alt=""
+             @error="$event.target.style.display='none'" />
+        <span v-else>🗃️</span>
+      </div>
       <div class="body">
-        <div class="title">🗃️ {{ b.name }}</div>
+        <div class="title">{{ b.name }}</div>
         <div class="sub">📍 {{ locName(b.locationId) }}</div>
         <div class="labels"><span class="chip">{{ b.itemCount }} items</span></div>
       </div>
