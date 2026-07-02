@@ -85,7 +85,7 @@ The Vue 3 SPA is a full homebox-style interface:
 ## Project layout
 
 ```
-easyOrganize/
+shelfie/
 ├── backend/            # Flask API + SQLAlchemy models
 │   ├── app/
 │   │   ├── api/        # route blueprints (users, items, locations, …)
@@ -98,8 +98,11 @@ easyOrganize/
 │   ├── run.py          # dev entrypoint
 │   └── tests/          # pytest suite
 ├── frontend/           # Vue 3 + Vite SPA
-├── homeassistant-addon/# HA add-on (config.yaml, Dockerfile, run.sh)
-├── Dockerfile          # standalone multi-stage image
+├── custom_components/  # HACS integration (custom_components/shelfie)
+├── shelfie/            # HA add-on (config.yaml, DOCS.md)
+├── repository.yaml     # HA add-on repository manifest (root, for Supervisor)
+├── hacs.json           # HACS repository manifest
+├── Dockerfile          # standalone / add-on multi-arch image
 └── docker-compose.yml
 ```
 
@@ -136,17 +139,20 @@ runs the whole stack.
 
 Shelfie ships with **both** halves of a proper Home Assistant integration.
 
-### 1. The add-on (`homeassistant-addon/`)
+### 1. The add-on (`shelfie/` + `repository.yaml`)
 
-This repo doubles as a Home Assistant **add-on repository**. In Home Assistant:
+This repo doubles as a Home Assistant **add-on repository**. Click to add it to
+your Supervisor add-on store:
 
-1. **Settings → Add-ons → Add-on Store → ⋮ → Repositories**
-2. Add `https://github.com/Amantux/shelfie`
-3. Install **Shelfie** and start it.
+[![Add repository to your Home Assistant.](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2FAmantux%2Fshelfie)
+
+Then install **Shelfie** from the store and start it. (Manual route:
+**Settings → Add-ons → Add-on Store → ⋮ → Repositories**, paste
+`https://github.com/Amantux/shelfie`.)
 
 - `ingress: true` — opens in the HA sidebar, no port to expose, no separate login.
 - Defaults to `disable_auth: true` since Ingress already authenticates the user.
-- Builds for **aarch64** (Raspberry Pi 5), amd64 and armv7.
+- Builds for **aarch64** (Raspberry Pi 5) and amd64.
 - Data persists to `/share/shelfie`.
 - On start it registers **Supervisor discovery**, so the companion integration
   finds it automatically.
@@ -156,12 +162,18 @@ This repo doubles as a Home Assistant **add-on repository**. In Home Assistant:
 Exposes your inventory as Home Assistant entities (sensors for total items,
 total value, locations, labels, items under warranty, and add-on health).
 
-1. In **HACS → Integrations → ⋮ → Custom repositories**, add
-   `https://github.com/Amantux/shelfie` as an *Integration*.
-2. Install **Shelfie**, restart HA.
-3. If you run the add-on, HA shows a **"New device found"** discovery prompt —
-   just confirm. Otherwise add it via **Settings → Devices & Services → Add
-   Integration → Shelfie** and point it at your Shelfie host/port.
+Add the repository to HACS, then start setup:
+
+[![Open your Home Assistant instance and open this repository inside HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Amantux&repository=shelfie&category=integration)
+&nbsp;
+[![Start setting up the Shelfie integration.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=shelfie)
+
+1. Click **the HACS button** above (or in **HACS → ⋮ → Custom repositories**,
+   add `https://github.com/Amantux/shelfie` as an *Integration*), install
+   **Shelfie**, and restart Home Assistant.
+2. If you run the add-on, HA shows a **"New device found"** discovery prompt —
+   just confirm. Otherwise click **the setup button** above (or **Settings →
+   Devices & Services → Add Integration → Shelfie**) and point it at your host.
 
 The integration polls `/api/v1/status` and `/api/v1/groups/statistics`.
 
