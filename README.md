@@ -137,45 +137,37 @@ runs the whole stack.
 
 ## Home Assistant
 
-Shelfie ships with **both** halves of a proper Home Assistant integration.
+Shelfie ships with **both** halves of a proper Home Assistant integration — a
+Supervisor **add-on** (the app itself, via Ingress) and a **HACS integration**
+(inventory sensors). Set it up in three clicks:
 
-### 1. The add-on (`shelfie/` + `repository.yaml`)
+### Step 1 — Add the Supervisor repository
 
-This repo doubles as a Home Assistant **add-on repository**. Click to add it to
-your Supervisor add-on store:
+[![Add repository to Home Assistant Supervisor](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2FAmantux%2Fshelfie)
 
-[![Add repository to your Home Assistant.](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2FAmantux%2Fshelfie)
+Or manually: **Settings → Add-ons → Add-on Store → ⋮ → Repositories** → paste
+`https://github.com/Amantux/shelfie`
 
-Then install **Shelfie** from the store and start it. (Manual route:
-**Settings → Add-ons → Add-on Store → ⋮ → Repositories**, paste
-`https://github.com/Amantux/shelfie`.)
+### Step 2 — Add the integration via HACS
 
-- `ingress: true` — opens in the HA sidebar, no port to expose, no separate login.
-- Defaults to `disable_auth: true` since Ingress already authenticates the user.
-- Builds for **aarch64** (Raspberry Pi 5) and amd64.
-- Data persists to `/share/shelfie`.
-- On start it registers **Supervisor discovery**, so the companion integration
-  finds it automatically.
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Amantux&repository=shelfie&category=integration)
 
-### 2. The HACS integration (`custom_components/shelfie/`)
+Or manually in HACS: **Integrations → ⋮ → Custom repositories** → paste
+`https://github.com/Amantux/shelfie` → category **Integration** → **Add**.
 
-Exposes your inventory as Home Assistant entities (sensors for total items,
-total value, locations, labels, items under warranty, and add-on health).
+### Step 3 — Start the add-on, watch it appear automatically
 
-Add the repository to HACS, then start setup:
+Install **Shelfie** from the add-on store, then **Start** it. Within seconds a
+**New device found** card will appear in **Settings → Devices & Services** — no
+manual configuration needed.
 
-[![Open your Home Assistant instance and open this repository inside HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Amantux&repository=shelfie&category=integration)
-&nbsp;
-[![Start setting up the Shelfie integration.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=shelfie)
+[![Start setting up Shelfie integration](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=shelfie)
 
-1. Click **the HACS button** above (or in **HACS → ⋮ → Custom repositories**,
-   add `https://github.com/Amantux/shelfie` as an *Integration*), install
-   **Shelfie**, and restart Home Assistant.
-2. If you run the add-on, HA shows a **"New device found"** discovery prompt —
-   just confirm. Otherwise click **the setup button** above (or **Settings →
-   Devices & Services → Add Integration → Shelfie**) and point it at your host.
-
-The integration polls `/api/v1/status` and `/api/v1/groups/statistics`.
+The add-on opens from the sidebar (Ingress, no separate login), stores data in
+`/share/shelfie`, and builds for **aarch64** (Raspberry Pi 5) and amd64. The
+integration polls `/api/v1/status` and `/api/v1/groups/statistics` and exposes
+sensors for total items, total value, locations, labels, items under warranty,
+and add-on health.
 
 ## Configuration (environment variables)
 
