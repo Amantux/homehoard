@@ -1,0 +1,7 @@
+{
+  "name": "Shelfie",
+  "homeassistant": "2023.1.0",
+  "render_readme": true,
+  "content_in_root": false,
+  "iot_class": "local_polling"
+}

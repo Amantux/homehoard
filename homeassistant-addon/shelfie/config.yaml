@@ -1,0 +1,28 @@
+name: Shelfie
+version: "0.1.0"
+slug: shelfie
+description: Home inventory & organization — a personal rewrite of homebox with QR/barcode and Home Assistant support
+url: https://github.com/Amantux/shelfie
+# Pull the multi-arch image published by CI instead of building on-device.
+image: ghcr.io/amantux/shelfie
+arch:
+  - aarch64
+  - amd64
+init: false
+startup: services
+boot: auto
+ingress: true
+ingress_port: 7745
+panel_icon: mdi:package-variant-closed
+panel_title: Shelfie
+# Advertise to Home Assistant so the companion integration auto-discovers us.
+discovery:
+  - shelfie
+map:
+  - share:rw
+options:
+  disable_auth: true
+  allow_registration: false
+schema:
+  disable_auth: bool
+  allow_registration: bool

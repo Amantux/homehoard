@@ -1,0 +1,10 @@
+Flask==3.0.3
+Flask-SQLAlchemy==3.1.1
+Flask-Cors==4.0.1
+SQLAlchemy==2.0.32
+marshmallow==3.22.0
+PyJWT>=2.10.1
+passlib[bcrypt]==1.7.4
+python-dotenv>=1.1.0
+qrcode[pil]==7.4.2
+gunicorn==22.0.0

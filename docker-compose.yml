@@ -1,0 +1,18 @@
+services:
+  shelfie:
+    build: .
+    container_name: shelfie
+    ports:
+      - "7745:7745"
+    environment:
+      # Set a strong secret in production (>= 32 chars).
+      HBOX_SECRET_KEY: "please-change-me-to-a-long-random-string"
+      # Set to "true" when running behind Home Assistant ingress / a trusted proxy.
+      HBOX_DISABLE_AUTH: "false"
+      HBOX_ALLOW_REGISTRATION: "true"
+    volumes:
+      - shelfie-data:/data
+    restart: unless-stopped
+
+volumes:
+  shelfie-data:
