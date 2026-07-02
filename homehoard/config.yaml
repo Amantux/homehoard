@@ -1,5 +1,5 @@
 name: HomeHoard
-version: "0.2.0"
+version: "0.2.1"
 slug: homehoard
 description: Home inventory & organization — a personal rewrite of homebox with QR/barcode and Home Assistant support
 url: https://github.com/Amantux/homehoard
