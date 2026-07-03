@@ -20,6 +20,8 @@ const maint = ref({ entries: [], costTotal: 0 })
 const tab = ref('details')
 const editing = ref(false)
 const newMaint = ref({ name: '', cost: 0, scheduledDate: '', completedDate: '' })
+const showCheckout = ref(false)
+const checkoutForm = ref({ person: '', due: '' })
 
 const selectedLabels = computed({
   get: () => (item.value?.labels || []).map((l) => l.id),
@@ -79,6 +81,20 @@ async function remove() {
   router.push('/items')
 }
 
+async function checkOut() {
+  item.value = await api.post(`/items/${id}/checkout`, {
+    person: checkoutForm.value.person,
+    due: checkoutForm.value.due || null,
+  })
+  showCheckout.value = false
+  checkoutForm.value = { person: '', due: '' }
+  ui.toast('Checked out')
+}
+async function checkIn() {
+  item.value = await api.post(`/items/${id}/checkin`, {})
+  ui.toast('Checked in')
+}
+
 async function upload(e) {
   const file = e.target.files[0]
   if (!file) return
@@ -114,6 +130,8 @@ async function addMaint() {
       <h1>{{ item.name }}</h1>
       <span class="badge">{{ item.assetId }}</span>
       <span v-if="item.archived" class="badge warn">Archived</span>
+      <span v-if="item.checkedOut" class="badge danger">📤 Checked out</span>
+      <span v-else class="badge ok">✅ Here</span>
       <div class="grow"></div>
       <template v-if="editing">
         <button class="secondary" @click="editing = false; loadAll()">Cancel</button>
@@ -136,6 +154,43 @@ async function addMaint() {
 
     <!-- DETAILS -->
     <div v-show="tab==='details'">
+      <!-- Check in / out -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="row" style="flex-wrap:wrap;gap:12px">
+          <div style="flex:1;min-width:180px">
+            <template v-if="item.checkedOut">
+              <strong>📤 Checked out{{ item.checkedOutTo ? ' to ' + item.checkedOutTo : '' }}</strong>
+              <div class="muted" style="font-size:0.85rem">
+                Since {{ shortDate(item.checkedOutAt) }}<span v-if="item.checkoutDue"> · due {{ shortDate(item.checkoutDue) }}</span>
+              </div>
+            </template>
+            <template v-else>
+              <strong>✅ It's here</strong>
+              <div class="muted" style="font-size:0.85rem">Available in inventory.</div>
+            </template>
+          </div>
+          <button v-if="item.checkedOut" @click="checkIn">Check in</button>
+          <button v-else class="secondary" @click="showCheckout = true">Check out</button>
+        </div>
+
+        <div v-if="showCheckout && !item.checkedOut" class="row" style="margin-top:12px;flex-wrap:wrap;gap:10px">
+          <label class="field fill" style="margin:0;min-width:160px"><span>Who has it? (optional)</span>
+            <input v-model="checkoutForm.person" placeholder="e.g. Alex, the garage, work" /></label>
+          <label class="field" style="margin:0"><span>Due back (optional)</span>
+            <input type="date" v-model="checkoutForm.due" /></label>
+          <button style="align-self:flex-end" @click="checkOut">Confirm</button>
+          <button class="ghost" style="align-self:flex-end" @click="showCheckout=false">Cancel</button>
+        </div>
+
+        <div v-if="item.checkoutHistory && item.checkoutHistory.length" class="muted"
+             style="margin-top:12px;font-size:0.82rem">
+          <span v-for="(h,idx) in item.checkoutHistory.slice(0,3)" :key="h.id">
+            {{ h.action === 'out' ? '📤 out' : '📥 in' }}{{ h.person ? ' · ' + h.person : '' }}
+            ({{ shortDate(h.at) }}){{ idx < Math.min(2, item.checkoutHistory.length-1) ? ' — ' : '' }}
+          </span>
+        </div>
+      </div>
+
       <div class="row top" style="gap:16px;align-items:stretch">
         <div class="card" style="flex:1">
           <template v-if="!editing">

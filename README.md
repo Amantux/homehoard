@@ -134,6 +134,10 @@ automation:
 - **Multiple QR codes per item, bin, or location** — stick several printed
   codes on one physical object; scanning any of them opens that record. QR
   images and print-ready pages included.
+- **Check in / out** — mark an item as *here* or *checked out* ("yes it's there,
+  no it's not"), optionally noting who has it and a due date. `/checkouts` lists
+  everything currently out (with overdue flags); a *Checked out* HA sensor tracks
+  the count.
 - File **attachments** & photos (primary photo support)
 - **Maintenance** logs per item with cost totals
 - Full-text-ish **search** + filter by location/bin/label, pagination

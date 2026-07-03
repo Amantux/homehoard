@@ -52,6 +52,12 @@ def _migrate(app):
             "code": "VARCHAR(512) DEFAULT ''",
             "code_format": "VARCHAR(24) DEFAULT 'qr'",
         },
+        "items": {
+            "checked_out": "BOOLEAN DEFAULT 0",
+            "checked_out_to": "VARCHAR(255) DEFAULT ''",
+            "checked_out_at": "DATETIME",
+            "checkout_due": "DATETIME",
+        },
     }
     for table, columns in wanted.items():
         if not inspector.has_table(table):
@@ -104,6 +110,7 @@ def _register_blueprints(app):
     from .api.misc import bp as misc_bp
     from .api.ha import bp as ha_bp
     from .api.lookup import bp as lookup_bp
+    from .api.checkout import bp as checkout_bp
 
     prefix = "/api/v1"
     for bp in (
@@ -120,6 +127,7 @@ def _register_blueprints(app):
         misc_bp,
         ha_bp,
         lookup_bp,
+        checkout_bp,
     ):
         app.register_blueprint(bp, url_prefix=prefix)
 

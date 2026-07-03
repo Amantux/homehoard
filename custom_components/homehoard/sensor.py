@@ -60,6 +60,11 @@ SENSORS: tuple[HomeHoardSensorDescription, ...] = (
         value_fn=lambda d: _totals(d).get("labels"),
     ),
     HomeHoardSensorDescription(
+        key="checked_out", name="Checked out", icon="mdi:export",
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda d: _totals(d).get("checkedOut"),
+    ),
+    HomeHoardSensorDescription(
         key="warranties_expiring", name="Warranties expiring (30d)",
         icon="mdi:shield-alert", state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda d: d.get("warrantiesExpiring", {}).get("days30"),

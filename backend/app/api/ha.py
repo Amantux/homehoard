@@ -87,6 +87,7 @@ def summary():
                 "withWarranty": sum(
                     1 for i in items if i.lifetime_warranty or i.warranty_expires
                 ),
+                "checkedOut": sum(1 for i in items if i.checked_out),
             },
             "warrantiesExpiring": {
                 "days30": len(exp_30),

@@ -46,6 +46,12 @@ class Item(IDMixin, TimestampMixin, db.Model):
     warranty_expires: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     warranty_details: Mapped[str] = mapped_column(Text, default="")
 
+    # Checked in/out — "yes it's here" (False) vs "no, it's out" (True).
+    checked_out: Mapped[bool] = mapped_column(Boolean, default=False)
+    checked_out_to: Mapped[str] = mapped_column(String(255), default="")
+    checked_out_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    checkout_due: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+
     # Relations
     group_id: Mapped[str] = mapped_column(String(36), ForeignKey("groups.id"))
     group = relationship("Group", back_populates="items")
@@ -77,6 +83,9 @@ class Item(IDMixin, TimestampMixin, db.Model):
     )
     maintenance_entries = relationship(
         "MaintenanceEntry", back_populates="item", cascade="all, delete-orphan"
+    )
+    checkout_entries = relationship(
+        "CheckoutEntry", back_populates="item", cascade="all, delete-orphan"
     )
 
 

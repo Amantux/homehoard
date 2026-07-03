@@ -8,6 +8,7 @@ from .bin import Bin  # noqa: F401
 from .qrtag import QrTag, gen_token, KINDS  # noqa: F401
 from .attachment import Document, Attachment  # noqa: F401
 from .maintenance import MaintenanceEntry  # noqa: F401
+from .checkout import CheckoutEntry  # noqa: F401
 from .notifier import Notifier  # noqa: F401
 
 __all__ = [
@@ -27,6 +28,7 @@ __all__ = [
     "Document",
     "Attachment",
     "MaintenanceEntry",
+    "CheckoutEntry",
     "Notifier",
     "gen_uuid",
     "utcnow",

@@ -14,9 +14,11 @@ function thumb() {
 
 <template>
   <div class="item-card" @click="router.push('/items/' + item.id)">
-    <div class="thumb">
+    <div class="thumb" style="position:relative">
       <img v-if="item.imageId" :src="thumb()" alt="" @error="$event.target.style.display='none'" />
       <span v-else>📦</span>
+      <span v-if="item.checkedOut" class="badge danger"
+            style="position:absolute;top:6px;right:6px;background:var(--surface)">📤 Out</span>
     </div>
     <div class="body">
       <div class="title">{{ item.name }}</div>

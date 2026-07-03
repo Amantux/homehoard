@@ -124,6 +124,17 @@ def maintenance_out(m):
     }
 
 
+def checkout_out(e):
+    return {
+        "id": e.id,
+        "action": e.action,
+        "person": e.person,
+        "notes": e.notes,
+        "due": iso(e.due),
+        "at": iso(e.created_at),
+    }
+
+
 def item_summary(i):
     primary = next((a for a in i.attachments if a.primary), None)
     return {
@@ -139,6 +150,8 @@ def item_summary(i):
         "location": location_summary(i.location) if i.location else None,
         "bin": bin_summary(i.bin) if i.bin else None,
         "labels": [label_summary(l) for l in i.labels],
+        "checkedOut": i.checked_out,
+        "checkedOutTo": i.checked_out_to,
         "createdAt": iso(i.created_at),
         "updatedAt": iso(i.updated_at),
     }
@@ -162,6 +175,13 @@ def item_out(i):
             "lifetimeWarranty": i.lifetime_warranty,
             "warrantyExpires": iso(i.warranty_expires),
             "warrantyDetails": i.warranty_details,
+            "checkedOutAt": iso(i.checked_out_at),
+            "checkoutDue": iso(i.checkout_due),
+            "checkoutHistory": [
+                checkout_out(e)
+                for e in sorted(i.checkout_entries, key=lambda e: e.created_at,
+                                reverse=True)
+            ],
             "parent": item_summary(i.parent) if i.parent else None,
             "children": [item_summary(c) for c in i.children],
             "fields": [field_out(f) for f in i.fields],
