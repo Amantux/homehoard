@@ -6,6 +6,7 @@ import { useUI } from './stores/ui'
 import Toasts from './components/Toasts.vue'
 import QuickCreate from './components/QuickCreate.vue'
 import ScannerModal from './components/ScannerModal.vue'
+import SearchModal from './components/SearchModal.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -13,9 +14,9 @@ const auth = useAuth()
 const ui = useUI()
 
 const bare = computed(() => route.meta.public || route.path.startsWith('/t/'))
-const search = ref('')
 const showCreate = ref(false)
 const showScanner = ref(false)
+const showSearch = ref(false)
 const showUserMenu = ref(false)
 
 onMounted(() => {
@@ -23,11 +24,14 @@ onMounted(() => {
   window
     .matchMedia('(prefers-color-scheme: dark)')
     .addEventListener('change', () => ui.applyTheme())
+  // Press "/" anywhere to open search.
+  window.addEventListener('keydown', (e) => {
+    if (e.key === '/' && !/input|textarea|select/i.test(e.target.tagName)) {
+      e.preventDefault()
+      showSearch.value = true
+    }
+  })
 })
-
-function doSearch() {
-  router.push({ path: '/items', query: search.value ? { q: search.value } : {} })
-}
 
 const nav = [
   { to: '/', icon: '🏠', label: 'Dashboard' },
@@ -61,10 +65,10 @@ const nav = [
 
       <div class="main">
         <header class="topbar">
-          <div class="search">
+          <div class="search" @click="showSearch = true">
             <span class="search-ico">🔍</span>
-            <input v-model="search" placeholder="Search items…"
-                   @keyup.enter="doSearch" />
+            <input placeholder="Find where something is…  ( / )" readonly
+                   style="cursor:pointer" @focus="showSearch = true" />
           </div>
           <div class="grow"></div>
           <button @click="showCreate = true">＋ Create</button>
@@ -86,6 +90,7 @@ const nav = [
 
     <QuickCreate v-if="showCreate" @close="showCreate = false" />
     <ScannerModal v-if="showScanner" @close="showScanner = false" />
+    <SearchModal v-if="showSearch" @close="showSearch = false" />
     <Toasts />
   </template>
 
