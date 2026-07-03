@@ -7,8 +7,10 @@ rebuilt it from the ground up in Python:
 
 1. **Home Assistant, done properly.** HomeHoard runs as a first-class HA **add-on**
    (one-click install, Ingress, no separate login) and ships a companion
-   **HACS integration** that surfaces your inventory — item counts, total value,
-   locations — as Home Assistant sensors.
+   **HACS integration** with inventory **sensors**, a warranties/maintenance
+   **calendar**, a **voice intent** ("where is my drill?"), a `homehoard.locate`
+   **service** for notifications/messaging, and an in-container **MCP server** so
+   an LLM-powered Assist can search and check items in/out.
 2. **QR codes and barcodes that actually fit my life.** Generate printable QR
    labels *and* register your **own** existing QR labels or product barcodes
    (UPC/EAN), stick as many codes as you like on a single bin, and scan any of
@@ -158,9 +160,15 @@ automation:
   no it's not"), optionally noting who has it and a due date. `/checkouts` lists
   everything currently out (with overdue flags); a *Checked out* HA sensor tracks
   the count.
+- **"Where is it?" search** — a spotlight-style search (top bar or the `/` key)
+  matching **items, bins, and locations** and showing the full location path
+  (e.g. *Drill → Tool Bin · Garage › Shelf*). Also powers HA voice/MCP.
+- **Scan to find** — the camera scanner (QR + 1D barcodes) is **inventory-only,
+  no outbound calls**: a known code opens the item, or shows a bin/location's
+  contents; an unknown code lets you create or link it on the spot.
+- **Photos on bins too** — attach photos/files to bins the same way as items.
 - File **attachments** & photos (primary photo support)
 - **Maintenance** logs per item with cost totals
-- Full-text-ish **search** + filter by location/bin/label, pagination
 - **CSV import/export** compatible with homebox's `HB.*` columns
 - Auto asset IDs (`000-001`), group statistics & reporting
 - Multi-tenant **groups** with invitations
@@ -208,20 +216,23 @@ The Vue 3 SPA is a full homebox-style interface:
 homehoard/
 ├── backend/            # Flask API + SQLAlchemy models
 │   ├── app/
-│   │   ├── api/        # route blueprints (users, items, locations, …)
+│   │   ├── api/        # route blueprints (items, bins, qr, checkout, search, ha, …)
 │   │   ├── models/     # SQLAlchemy models
 │   │   ├── schemas/    # JSON serializers (homebox-compatible camelCase)
 │   │   ├── services/   # CSV import/export
 │   │   ├── auth.py     # optional JWT auth layer
-│   │   └── __init__.py # app factory (+ SPA serving)
+│   │   └── __init__.py # app factory (+ SPA serving, additive migrations)
+│   ├── mcp_server.py   # MCP server exposed to Home Assistant (SSE)
+│   ├── ha_discovery.py # Supervisor discovery registration
 │   ├── seed.py         # demo data
 │   ├── run.py          # dev entrypoint
 │   └── tests/          # pytest suite
 ├── frontend/           # Vue 3 + Vite SPA
 ├── custom_components/  # HACS integration (custom_components/homehoard)
-├── homehoard/            # HA add-on (config.yaml, DOCS.md)
+├── homehoard/          # HA add-on (config.yaml, DOCS.md, CHANGELOG.md)
 ├── repository.yaml     # HA add-on repository manifest (root, for Supervisor)
 ├── hacs.json           # HACS repository manifest
+├── docker-entrypoint.sh# starts the app + MCP server in one container
 ├── Dockerfile          # standalone / add-on multi-arch image
 └── docker-compose.yml
 ```
@@ -275,8 +286,14 @@ runs the whole stack.
 | `HBOX_ALLOW_REGISTRATION` | `true` | Allow public self-registration |
 | `HBOX_JWT_HOURS` | `168` | Token lifetime |
 | `HBOX_MAX_UPLOAD_MB` | `50` | Max attachment upload size |
-| `HBOX_PORT` | `7745` | Dev server port |
+| `HBOX_PORT` | `7745` | App (API + UI) port |
 | `HBOX_FRONTEND_DIST` | `../frontend/dist` | Built SPA directory |
+| `HBOX_MCP_ENABLED` | `true` | Run the MCP server (in-container) |
+| `HBOX_MCP_PORT` | `7766` | MCP SSE port |
+| `HBOX_MCP_API` | `http://127.0.0.1:7745/api/v1` | API base the MCP server calls |
+| `HBOX_MCP_API_TOKEN` | _(none)_ | Bearer token for the MCP server's API calls (only if app auth is on) |
+
+Home Assistant add-on options: `disable_auth`, `allow_registration`, `enable_mcp`.
 
 ## API
 
@@ -299,6 +316,23 @@ Bin & QR extensions:
 
 `POST /qr-tags` body: `{ "kind": "item"｜"bin"｜"location", "targetId": "<id>", "description": "optional" }`.
 
+Search, scan, check in/out & Home Assistant:
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/search?q=` | Find items, bins, and locations with a location path (`?types=item,bin,location`) |
+| GET | `/barcode/{code}` | Inventory-only lookup — registered code → record (+ bin/location contents), else `not_found` |
+| POST | `/items/{id}/checkout` | Check an item out (`{ person?, due?, notes? }`) |
+| POST | `/items/{id}/checkin` | Check an item back in |
+| GET | `/items/{id}/checkout` | Current status + check in/out history |
+| GET | `/checkouts` | Everything currently checked out (with `overdue` flags) |
+| GET | `/bins/{id}/attachments` … | Bin photos/attachments (mirrors item attachments) |
+| GET | `/ha/summary` | Totals + attention counts (warranties expiring, maintenance overdue, checked out) |
+| GET | `/ha/calendar?start=&end=` | Warranty-expiry + scheduled-maintenance events |
+
+An **MCP server** (SSE on `:7766`) exposes these as tools for Home Assistant —
+see [MCP server](#mcp-server-for-assist--llms) above.
+
 ## Tests & CI
 
 ```bash
@@ -307,9 +341,12 @@ pip install -r requirements.txt pytest
 pytest
 ```
 
-GitHub Actions (`.github/workflows/ci.yml`) runs the backend test suite and the
-frontend build on every push, then builds a **linux/arm64 Docker image for the
-Raspberry Pi 5** and publishes it to GHCR (`ghcr.io/amantux/homehoard`).
+GitHub Actions (`.github/workflows/ci.yml`) on every push to `main`: runs the
+backend test suite + frontend build, **auto-bumps the patch version** (keeping
+`homehoard/config.yaml` and the integration manifest in lockstep), then builds
+the image **natively per arch** — amd64 on `ubuntu-latest`, **arm64 (Raspberry
+Pi 5) on `ubuntu-24.04-arm`** — and merges them into a single multi-arch
+manifest published to GHCR (`ghcr.io/amantux/homehoard:<version>` and `:latest`).
 
 ### Running on a Raspberry Pi 5
 
