@@ -104,6 +104,26 @@ Bin · Garage › Shelf."*). Search matches **items, bins, and locations**.
   `homehoard.locate` returns `{ speech, results[] }`, where each result has
   `type` (item/bin/location), `name`, `where`, and (for bins/locations) `count`.
 
+#### MCP server (for Assist / LLMs)
+
+HomeHoard ships an **MCP server** that runs **in the same container** (no extra
+service) and exposes inventory tools to Home Assistant's **MCP Client**
+integration — so an LLM-powered Assist can call them directly:
+
+`where_is`, `search_inventory`, `get_item`, `get_bin_contents`,
+`get_location_contents`, `list_checkouts`, `check_out_item`, `check_in_item`,
+`create_item`, `inventory_statistics`.
+
+- It's served over **SSE on port `7766`** (`/sse`), enabled by default (add-on
+  option `enable_mcp`).
+- In Home Assistant: **Settings → Devices & Services → Add Integration → Model
+  Context Protocol**, and point it at
+  `http://<homehoard-host>:7766/sse`
+  (e.g. your HA host's IP, since the add-on maps port 7766). Assist can then
+  answer *"where is my drill?"* and check items in/out via the MCP tools.
+- Standalone (outside HA): `python backend/mcp_server.py`
+  (`HBOX_MCP_API` points it at the app's API; defaults to `http://127.0.0.1:7745/api/v1`).
+
 Example automation:
 
 ```yaml

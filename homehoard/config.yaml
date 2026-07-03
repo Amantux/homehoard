@@ -18,11 +18,18 @@ panel_title: HomeHoard
 # Advertise to Home Assistant so the companion integration auto-discovers us.
 discovery:
   - homehoard
+# Expose the MCP server (SSE) so the Home Assistant MCP Client can connect.
+ports:
+  7766/tcp: 7766
+ports_description:
+  7766/tcp: HomeHoard MCP server (SSE) for the Home Assistant MCP Client
 map:
   - share:rw
 options:
   disable_auth: true
   allow_registration: false
+  enable_mcp: true
 schema:
   disable_auth: bool
   allow_registration: bool
+  enable_mcp: bool
