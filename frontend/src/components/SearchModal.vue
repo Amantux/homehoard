@@ -28,9 +28,19 @@ async function run() {
   }
 }
 
-function open(item) {
+const ICON = { item: '📦', bin: '🗃️', location: '📍' }
+function destFor(r) {
+  return { item: '/items/', bin: '/bins/', location: '/locations/' }[r.type] + r.id
+}
+function open(r) {
   emit('close')
-  router.push('/items/' + item.id)
+  router.push(destFor(r))
+}
+function subtitle(r) {
+  if (r.type === 'item') return '📍 ' + r.where
+  const label = r.type === 'bin' ? 'Bin' : 'Location'
+  const count = `${r.count} item${r.count === 1 ? '' : 's'}`
+  return r.where ? `${label} · ${r.where} · ${count}` : `${label} · ${count}`
 }
 
 onMounted(async () => {
@@ -65,13 +75,13 @@ onMounted(async () => {
           Type to search your inventory by name, label, brand, or serial.
         </div>
 
-        <button v-for="r in results" :key="r.id" class="search-row" @click="open(r)">
-          <span class="search-icon">📦</span>
+        <button v-for="r in results" :key="r.type + r.id" class="search-row" @click="open(r)">
+          <span class="search-icon">{{ ICON[r.type] }}</span>
           <span class="search-main">
             <span class="search-name">{{ r.name }}</span>
-            <span class="search-where">📍 {{ r.where }}</span>
+            <span class="search-where">{{ subtitle(r) }}</span>
           </span>
-          <span v-if="Number(r.quantity) !== 1" class="badge">×{{ r.quantity }}</span>
+          <span v-if="r.type === 'item' && Number(r.quantity) !== 1" class="badge">×{{ r.quantity }}</span>
           <span class="search-go">→</span>
         </button>
       </div>

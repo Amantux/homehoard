@@ -1,0 +1,14 @@
+locate:
+  name: Locate
+  description: >-
+    Find items, bins, or locations in HomeHoard and where they are. Returns a
+    structured result plus a ready-to-speak sentence — handy for notifications,
+    messaging (Telegram, etc.), and voice.
+  fields:
+    query:
+      name: Query
+      description: What to look for (name, label, brand, model, or serial).
+      required: true
+      example: drill
+      selector:
+        text:

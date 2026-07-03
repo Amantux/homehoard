@@ -1,0 +1,19 @@
+# HomeHoard voice sentences for Home Assistant Assist.
+#
+# Copy this file to:  <your HA config>/custom_sentences/en/homehoard.yaml
+# then restart Home Assistant. You can then ask Assist things like:
+#   "where is my drill"   "find the passport"   "where are the batteries"
+language: "en"
+intents:
+  HomeHoardLocate:
+    data:
+      - sentences:
+          - "where is [my|the|our] {name}"
+          - "where are [my|the|our] {name}"
+          - "where's [my|the|our] {name}"
+          - "find [my|the|our] {name}"
+          - "locate [my|the|our] {name}"
+          - "which [bin|box|location] [is|has] [the] {name}"
+lists:
+  name:
+    wildcard: true

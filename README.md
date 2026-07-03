@@ -72,6 +72,38 @@ The companion integration (`custom_components/homehoard`) polls a consolidated
   maintenance date as calendar events, so you can automate reminders
   ("notify me 30 days before any warranty expires").
 
+#### Find things by voice & messaging
+
+The integration wires HomeHoard's search into Home Assistant so you can ask
+**"where is my drill?"** — it answers with the location (e.g. *"Drill is in Tool
+Bin · Garage › Shelf."*). Search matches **items, bins, and locations**.
+
+- **Voice (Assist):** copy
+  `custom_components/homehoard/custom_sentences/en/homehoard.yaml` to
+  `<your HA config>/custom_sentences/en/homehoard.yaml` and restart HA. Then say
+  *"where is my …"*, *"find the …"*, *"which bin has the …"*.
+- **Service / messaging:** call **`homehoard.locate`** (a response service) from
+  any automation or script — great for Telegram/notify bots:
+
+  ```yaml
+  # Reply to a Telegram message like "where is my passport"
+  - alias: HomeHoard locate over Telegram
+    trigger:
+      - platform: event
+        event_type: telegram_text
+    action:
+      - service: homehoard.locate
+        data:
+          query: "{{ trigger.event.data.text }}"
+        response_variable: found
+      - service: telegram_bot.send_message
+        data:
+          message: "{{ found.speech }}"
+  ```
+
+  `homehoard.locate` returns `{ speech, results[] }`, where each result has
+  `type` (item/bin/location), `name`, `where`, and (for bins/locations) `count`.
+
 Example automation:
 
 ```yaml

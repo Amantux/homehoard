@@ -9,4 +9,8 @@ DEFAULT_PORT = 7745
 DEFAULT_STATUS_PATH = "/api/v1/status"
 DEFAULT_SUMMARY_PATH = "/api/v1/ha/summary"
 DEFAULT_CALENDAR_PATH = "/api/v1/ha/calendar"
+DEFAULT_SEARCH_PATH = "/api/v1/search"
 DEFAULT_UPDATE_INTERVAL = 300
+
+INTENT_LOCATE = "HomeHoardLocate"
+SERVICE_LOCATE = "locate"

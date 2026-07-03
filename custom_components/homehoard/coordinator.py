@@ -14,6 +14,7 @@ from .const import (
     CONF_HOST,
     CONF_PORT,
     CONF_UPDATE_INTERVAL,
+    DEFAULT_SEARCH_PATH,
     DEFAULT_SUMMARY_PATH,
     DEFAULT_UPDATE_INTERVAL,
     DOMAIN,
@@ -46,3 +47,16 @@ class HomeHoardDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 return await resp.json()
         except (ClientError, asyncio.TimeoutError) as err:
             raise UpdateFailed(f"Error fetching HomeHoard summary: {err}") from err
+
+    async def search(self, query: str, types: str = "item,bin,location") -> list[dict]:
+        """Search items/bins/locations — used by the voice intent and service."""
+        url = build_url(self.host, self.port, DEFAULT_SEARCH_PATH)
+        try:
+            async with self._session.get(
+                url, params={"q": query, "types": types}, timeout=_TIMEOUT
+            ) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
+        except (ClientError, asyncio.TimeoutError):
+            return []
+        return data.get("results", [])
