@@ -29,6 +29,52 @@ Raspberry Pi 5.
 > under **AGPL-3.0**. Huge thanks to [@hay-kot](https://github.com/hay-kot) and
 > the homebox community.
 
+## 🏆 The headline: ask Home Assistant where your stuff is
+
+HomeHoard exposes your whole inventory to Home Assistant through an **MCP server
+that runs inside the same add-on container** — so an LLM-powered Assist can
+answer *"where is my drill?"* and even check tools in and out, by voice or chat.
+
+![HomeHoard MCP integration with Home Assistant Assist](docs/screenshots/mcp.png)
+
+## 📸 Screenshots
+
+| Dashboard | Find where something is |
+|---|---|
+| ![Dashboard](docs/screenshots/dashboard.png) | ![Search](docs/screenshots/search.png) |
+| **Item detail — checked out** | **QR codes & barcodes** |
+| ![Item detail](docs/screenshots/item-detail.png) | ![QR codes](docs/screenshots/qr-codes.png) |
+| **Bins** | **Items grid** |
+| ![Bin detail](docs/screenshots/bin-detail.png) | ![Items](docs/screenshots/items.png) |
+
+## ✨ What's new
+
+- **🤖 MCP server for Home Assistant** — 10 inventory tools (`where_is`,
+  `check_out_item`, `list_checkouts`, …) over SSE, in the same container.
+- **🔎 "Where is it?" search** across items, bins, and locations, with full
+  location paths — in the app, by **voice** ("where is my drill?"), and via the
+  `homehoard.locate` service for **notifications/messaging**.
+- **📥 Check in / out** — "yes it's here / no it's not," with who has it, a due
+  date, overdue flags, and history.
+- **📷 Inventory-only scanning** — scan your **own** QR labels and product
+  barcodes; no outbound calls. Known code → the record (or a bin/location's
+  contents); unknown → create or link on the spot.
+- **🗃️ Bins** with photos, plus items that inherit (and follow) their bin's
+  location.
+- **🩺 HA sensors + calendar** — totals, insured value, checked-out count,
+  warranties-expiring, maintenance-overdue, and a warranties/maintenance
+  **calendar**.
+- **🚀 Reliable CI** — native amd64 + **arm64 (Raspberry Pi 5)** images, merged
+  into a multi-arch manifest and auto-versioned on every push.
+
+## 🗺️ Roadmap
+
+- Voice **"what's in the garage?"** (speak a bin/location's contents)
+- **Consumables / low-stock** thresholds → a to-do / shopping list entity
+- **Scan-to-checkout** ("scan → check out to me") and richer QR label sheets
+- Multi-language Assist sentences
+- Actionable notifications ("Reorder" / "Mark maintenance done")
+
 
 ## Home Assistant
 
