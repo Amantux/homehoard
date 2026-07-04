@@ -8,13 +8,17 @@ const route = useRoute()
 const router = useRouter()
 const ui = useUI()
 
-const state = ref('resolving') // resolving | unknown
+const state = ref('resolving') // resolving | unknown | action
 const code = ref('')
 const kind = ref('item')
 const targetId = ref('')
 const targets = ref({ item: [], bin: [], location: [] })
 const newName = ref('')
 const busy = ref(false)
+// When the scan was launched in "check out / in" mode we act on the item
+// instead of just opening it.
+const action = ref(route.query.action || '')
+const item = ref(null)
 
 function dest(k, id) {
   return { item: '/items/' + id, bin: '/bins/' + id, location: '/locations/' + id }[k]
@@ -25,7 +29,13 @@ async function resolve() {
   // Inventory-only check — no outbound lookups.
   const res = await api.get('/barcode/' + encodeURIComponent(code.value))
   if (res.status === 'registered') {
-    // Item → its page; bin/location → its page, which lists what's inside.
+    // Scanned in checkout/checkin mode → show a quick action card for the item.
+    if ((action.value === 'checkout' || action.value === 'checkin') && res.kind === 'item') {
+      item.value = res.target
+      state.value = 'action'
+      return
+    }
+    // Otherwise: item → its page; bin/location → its page listing what's inside.
     router.replace(dest(res.kind, res.targetId))
     return
   }
@@ -34,6 +44,23 @@ async function resolve() {
     api.get('/items?pageSize=500'), api.get('/bins'), api.get('/locations'),
   ])
   targets.value = { item: items.items, bin: bins, location: locs }
+}
+
+async function checkOut() {
+  busy.value = true
+  try {
+    await api.post(`/items/${item.value.id}/checkout`, {})
+    ui.toast('Checked out ' + item.value.name)
+    router.replace('/items/' + item.value.id)
+  } catch (e) { ui.error(e.message); busy.value = false }
+}
+async function checkIn() {
+  busy.value = true
+  try {
+    await api.post(`/items/${item.value.id}/checkin`, {})
+    ui.toast('Checked in ' + item.value.name)
+    router.replace('/items/' + item.value.id)
+  } catch (e) { ui.error(e.message); busy.value = false }
 }
 
 async function createAndLink() {
@@ -77,6 +104,23 @@ onMounted(resolve)
     <div class="card" style="width:460px;max-width:100%">
       <template v-if="state === 'resolving'">
         <p class="muted" style="text-align:center">Checking inventory…</p>
+      </template>
+
+      <!-- Scan-to-checkout: act on the item right here. -->
+      <template v-else-if="state === 'action'">
+        <h2 style="margin-top:0">{{ item.name }}</h2>
+        <p class="muted" style="margin-top:0">
+          {{ item.bin?.name || item.location?.name || 'Unassigned' }}
+          <span v-if="item.checkedOut" class="badge danger" style="margin-left:6px">📤 Checked out{{ item.checkedOutTo ? ' to ' + item.checkedOutTo : '' }}</span>
+          <span v-else class="badge ok" style="margin-left:6px">✅ Here</span>
+        </p>
+
+        <div class="row" style="gap:8px">
+          <button v-if="!item.checkedOut" :disabled="busy" @click="checkOut">📤 Check out</button>
+          <button v-else :disabled="busy" @click="checkIn">📥 Check in</button>
+          <button class="secondary" @click="router.replace('/items/' + item.id)">Open</button>
+          <button class="ghost" @click="router.push('/')">Cancel</button>
+        </div>
       </template>
 
       <template v-else>

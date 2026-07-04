@@ -23,6 +23,33 @@ def test_checkout_and_checkin(auth_client):
     assert auth_client.post(f"/api/v1/items/{item['id']}/checkin", json={}).status_code == 409
 
 
+def test_checkout_then_add_details(auth_client):
+    """Instant checkout (empty body) followed by PATCHing the details in."""
+    item = auth_client.post("/api/v1/items", json={"name": "Saw"}).get_json()
+
+    # One-click checkout — no details yet.
+    out = auth_client.post(f"/api/v1/items/{item['id']}/checkout", json={}).get_json()
+    assert out["checkedOut"] is True
+    assert out["checkedOutTo"] == ""
+
+    # Add the details afterwards.
+    upd = auth_client.patch(
+        f"/api/v1/items/{item['id']}/checkout",
+        json={"person": "Alex", "due": "2026-07-10", "notes": "for the deck"},
+    ).get_json()
+    assert upd["checkedOutTo"] == "Alex"
+    assert upd["checkoutDue"].startswith("2026-07-10")
+    latest_out = next(h for h in upd["checkoutHistory"] if h["action"] == "out")
+    assert latest_out["person"] == "Alex"
+    assert latest_out["notes"] == "for the deck"
+
+    # Patching when the item isn't checked out is rejected.
+    auth_client.post(f"/api/v1/items/{item['id']}/checkin", json={})
+    assert auth_client.patch(
+        f"/api/v1/items/{item['id']}/checkout", json={"person": "Bo"}
+    ).status_code == 409
+
+
 def test_checkouts_list(auth_client):
     a = auth_client.post("/api/v1/items", json={"name": "A"}).get_json()
     auth_client.post("/api/v1/items", json={"name": "B"})

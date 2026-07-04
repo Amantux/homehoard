@@ -49,6 +49,42 @@ def check_out(item_id):
     return jsonify(item_out(item))
 
 
+@bp.patch("/items/<item_id>/checkout")
+@login_required
+def update_checkout(item_id):
+    """Add or edit the details of an *active* checkout (who / due / notes).
+
+    Powers the "check out now, add details next" flow: the item is already
+    checked out, this fills in the optional bits afterwards.
+    """
+    item = _get_item(item_id)
+    if not item.checked_out:
+        return jsonify({"error": "not checked out"}), 409
+    data = request.get_json(silent=True) or {}
+
+    if "person" in data:
+        item.checked_out_to = (data.get("person") or "").strip()
+    if "due" in data:
+        item.checkout_due = _parse_dt(data.get("due"))
+
+    # Mirror the edits onto the open "out" entry so the history stays accurate.
+    out_entry = next(
+        (e for e in sorted(item.checkout_entries, key=lambda e: e.created_at, reverse=True)
+         if e.action == "out"),
+        None,
+    )
+    if out_entry is not None:
+        if "person" in data:
+            out_entry.person = item.checked_out_to
+        if "due" in data:
+            out_entry.due = item.checkout_due
+        if "notes" in data:
+            out_entry.notes = data.get("notes") or ""
+
+    db.session.commit()
+    return jsonify(item_out(item))
+
+
 @bp.post("/items/<item_id>/checkin")
 @login_required
 def check_in(item_id):

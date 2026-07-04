@@ -21,7 +21,7 @@ const tab = ref('details')
 const editing = ref(false)
 const newMaint = ref({ name: '', cost: 0, scheduledDate: '', completedDate: '' })
 const showCheckout = ref(false)
-const checkoutForm = ref({ person: '', due: '' })
+const checkoutForm = ref({ person: '', due: '', notes: '' })
 
 const selectedLabels = computed({
   get: () => (item.value?.labels || []).map((l) => l.id),
@@ -81,16 +81,24 @@ async function remove() {
   router.push('/items')
 }
 
+// One click checks the item out right away; details are an optional next step.
 async function checkOut() {
-  item.value = await api.post(`/items/${id}/checkout`, {
-    person: checkoutForm.value.person,
-    due: checkoutForm.value.due || null,
-  })
-  showCheckout.value = false
-  checkoutForm.value = { person: '', due: '' }
+  item.value = await api.post(`/items/${id}/checkout`, {})
+  checkoutForm.value = { person: '', due: '', notes: '' }
+  showCheckout.value = true
   ui.toast('Checked out')
 }
+async function saveCheckoutDetails() {
+  item.value = await api.patch(`/items/${id}/checkout`, {
+    person: checkoutForm.value.person,
+    due: checkoutForm.value.due || null,
+    notes: checkoutForm.value.notes,
+  })
+  showCheckout.value = false
+  ui.toast('Details saved')
+}
 async function checkIn() {
+  showCheckout.value = false
   item.value = await api.post(`/items/${id}/checkin`, {})
   ui.toast('Checked in')
 }
@@ -170,16 +178,24 @@ async function addMaint() {
             </template>
           </div>
           <button v-if="item.checkedOut" @click="checkIn">Check in</button>
-          <button v-else class="secondary" @click="showCheckout = true">Check out</button>
+          <button v-else class="secondary" @click="checkOut">Check out</button>
         </div>
 
-        <div v-if="showCheckout && !item.checkedOut" class="row" style="margin-top:12px;flex-wrap:wrap;gap:10px">
-          <label class="field fill" style="margin:0;min-width:160px"><span>Who has it? (optional)</span>
-            <input v-model="checkoutForm.person" placeholder="e.g. Alex, the garage, work" /></label>
-          <label class="field" style="margin:0"><span>Due back (optional)</span>
-            <input type="date" v-model="checkoutForm.due" /></label>
-          <button style="align-self:flex-end" @click="checkOut">Confirm</button>
-          <button class="ghost" style="align-self:flex-end" @click="showCheckout=false">Cancel</button>
+        <!-- Checked out immediately on click; these details are optional. -->
+        <div v-if="showCheckout && item.checkedOut" style="margin-top:12px">
+          <div class="muted" style="font-size:0.82rem;margin-bottom:8px">Add details (optional)</div>
+          <div class="row" style="flex-wrap:wrap;gap:10px">
+            <label class="field fill" style="margin:0;min-width:160px"><span>Who has it?</span>
+              <input v-model="checkoutForm.person" placeholder="e.g. Alex, the garage, work" @keyup.enter="saveCheckoutDetails" /></label>
+            <label class="field" style="margin:0"><span>Due back</span>
+              <input type="date" v-model="checkoutForm.due" /></label>
+          </div>
+          <label class="field" style="margin:10px 0 0"><span>Notes</span>
+            <input v-model="checkoutForm.notes" placeholder="e.g. lent for the weekend" @keyup.enter="saveCheckoutDetails" /></label>
+          <div class="row" style="justify-content:flex-end;gap:8px;margin-top:10px">
+            <button class="ghost" @click="showCheckout=false">Skip</button>
+            <button @click="saveCheckoutDetails">Save details</button>
+          </div>
         </div>
 
         <div v-if="item.checkoutHistory && item.checkoutHistory.length" class="muted"

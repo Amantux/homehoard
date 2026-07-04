@@ -60,3 +60,44 @@ class HomeHoardDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except (ClientError, asyncio.TimeoutError):
             return []
         return data.get("results", [])
+
+    async def _resolve_item(self, name: str) -> dict | None:
+        """First item matching ``name`` (voice check-out/in works by name)."""
+        for r in await self.search(name, types="item"):
+            if r.get("type") == "item":
+                return r
+        return None
+
+    async def checkout(self, name: str) -> dict:
+        """Check an item out by name. Returns a status dict for phrasing."""
+        item = await self._resolve_item(name)
+        if not item:
+            return {"status": "not_found", "name": name}
+        path = f"/api/v1/items/{item['id']}/checkout"
+        try:
+            async with self._session.post(
+                build_url(self.host, self.port, path), json={}, timeout=_TIMEOUT
+            ) as resp:
+                if resp.status == 409:
+                    return {"status": "already_out", "name": item["name"]}
+                resp.raise_for_status()
+        except (ClientError, asyncio.TimeoutError):
+            return {"status": "error", "name": item["name"]}
+        return {"status": "checked_out", "name": item["name"]}
+
+    async def checkin(self, name: str) -> dict:
+        """Check an item back in by name. Returns a status dict for phrasing."""
+        item = await self._resolve_item(name)
+        if not item:
+            return {"status": "not_found", "name": name}
+        path = f"/api/v1/items/{item['id']}/checkin"
+        try:
+            async with self._session.post(
+                build_url(self.host, self.port, path), json={}, timeout=_TIMEOUT
+            ) as resp:
+                if resp.status == 409:
+                    return {"status": "already_in", "name": item["name"]}
+                resp.raise_for_status()
+        except (ClientError, asyncio.TimeoutError):
+            return {"status": "error", "name": item["name"]}
+        return {"status": "checked_in", "name": item["name"]}

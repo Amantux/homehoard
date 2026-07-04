@@ -13,4 +13,8 @@ DEFAULT_SEARCH_PATH = "/api/v1/search"
 DEFAULT_UPDATE_INTERVAL = 300
 
 INTENT_LOCATE = "HomeHoardLocate"
+INTENT_CHECKOUT = "HomeHoardCheckOut"
+INTENT_CHECKIN = "HomeHoardCheckIn"
 SERVICE_LOCATE = "locate"
+SERVICE_CHECKOUT = "check_out"
+SERVICE_CHECKIN = "check_in"

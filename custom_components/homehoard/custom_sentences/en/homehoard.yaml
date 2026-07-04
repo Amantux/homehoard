@@ -14,6 +14,22 @@ intents:
           - "find [my|the|our] {name}"
           - "locate [my|the|our] {name}"
           - "which [bin|box|location] [is|has] [the] {name}"
+  HomeHoardCheckOut:
+    data:
+      - sentences:
+          - "check out [my|the|our] {name}"
+          - "check {name} out"
+          - "[I'm|I am] [borrowing|taking] [my|the|our] {name}"
+          - "take out [my|the|our] {name}"
+          - "lend [out] [my|the|our] {name}"
+  HomeHoardCheckIn:
+    data:
+      - sentences:
+          - "check in [my|the|our] {name}"
+          - "check {name} in"
+          - "[put back|return] [my|the|our] {name}"
+          - "[I'm|I am] [returning|putting back] [my|the|our] {name}"
+          - "{name} is back"
 lists:
   name:
     wildcard: true

@@ -10,7 +10,15 @@ import voluptuous as vol
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.helpers import config_validation as cv, intent
 
-from .const import DOMAIN, INTENT_LOCATE, SERVICE_LOCATE
+from .const import (
+    DOMAIN,
+    INTENT_CHECKIN,
+    INTENT_CHECKOUT,
+    INTENT_LOCATE,
+    SERVICE_CHECKIN,
+    SERVICE_CHECKOUT,
+    SERVICE_LOCATE,
+)
 
 _REGISTERED = f"{DOMAIN}_services_registered"
 
@@ -50,6 +58,18 @@ def speak(query: str, results: list[dict]) -> str:
     return sentence
 
 
+def speak_action(status: dict) -> str:
+    """Turn a coordinator check-out/in result into a spoken sentence."""
+    name = status.get("name", "that")
+    return {
+        "checked_out": f"Okay, I've checked out {name}.",
+        "already_out": f"{name} is already checked out.",
+        "checked_in": f"Okay, {name} is back in.",
+        "already_in": f"{name} is already here.",
+        "not_found": f"I couldn't find {name} in your inventory.",
+    }.get(status.get("status"), f"Sorry, something went wrong with {name}.")
+
+
 class LocateIntentHandler(intent.IntentHandler):
     """Handles 'where is my <name>' style requests."""
 
@@ -69,12 +89,43 @@ class LocateIntentHandler(intent.IntentHandler):
         return response
 
 
+class _ActionIntentHandler(intent.IntentHandler):
+    """Shared base for the check-out / check-in voice intents."""
+
+    slot_schema = {vol.Required("name"): cv.string}
+    _method = ""  # "checkout" | "checkin"
+
+    async def async_handle(self, intent_obj: intent.Intent) -> intent.IntentResponse:
+        hass = intent_obj.hass
+        name = intent_obj.slots["name"]["value"]
+        response = intent_obj.create_response()
+        coordinator = _first_coordinator(hass)
+        if coordinator is None:
+            response.async_set_speech("HomeHoard isn't set up yet.")
+            return response
+        status = await getattr(coordinator, self._method)(name)
+        response.async_set_speech(speak_action(status))
+        return response
+
+
+class CheckOutIntentHandler(_ActionIntentHandler):
+    intent_type = INTENT_CHECKOUT
+    _method = "checkout"
+
+
+class CheckInIntentHandler(_ActionIntentHandler):
+    intent_type = INTENT_CHECKIN
+    _method = "checkin"
+
+
 async def async_register(hass: HomeAssistant) -> None:
     if hass.data.get(_REGISTERED):
         return
     hass.data[_REGISTERED] = True
 
     intent.async_register(hass, LocateIntentHandler())
+    intent.async_register(hass, CheckOutIntentHandler())
+    intent.async_register(hass, CheckInIntentHandler())
 
     async def _handle_locate(call: ServiceCall) -> dict:
         query = call.data["query"]
@@ -90,8 +141,28 @@ async def async_register(hass: HomeAssistant) -> None:
         supports_response=SupportsResponse.ONLY,
     )
 
+    def _action_service(method: str):
+        async def _handle(call: ServiceCall) -> dict:
+            coordinator = _first_coordinator(hass)
+            if coordinator is None:
+                return {"status": "error", "speech": "HomeHoard isn't set up yet."}
+            status = await getattr(coordinator, method)(call.data["name"])
+            return {**status, "speech": speak_action(status)}
+
+        return _handle
+
+    for service, method in ((SERVICE_CHECKOUT, "checkout"), (SERVICE_CHECKIN, "checkin")):
+        hass.services.async_register(
+            DOMAIN,
+            service,
+            _action_service(method),
+            schema=vol.Schema({vol.Required("name"): cv.string}),
+            supports_response=SupportsResponse.OPTIONAL,
+        )
+
 
 def async_unregister(hass: HomeAssistant) -> None:
-    if hass.services.has_service(DOMAIN, SERVICE_LOCATE):
-        hass.services.async_remove(DOMAIN, SERVICE_LOCATE)
+    for service in (SERVICE_LOCATE, SERVICE_CHECKOUT, SERVICE_CHECKIN):
+        if hass.services.has_service(DOMAIN, service):
+            hass.services.async_remove(DOMAIN, service)
     hass.data.pop(_REGISTERED, None)

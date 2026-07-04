@@ -10,6 +10,7 @@ const status = ref('starting') // starting | scanning | error
 const error = ref('')
 const engine = ref('')
 const manual = ref('')
+const mode = ref('open') // open | checkout | checkin — what to do once a code resolves
 
 let stream = null
 let raf = null
@@ -41,7 +42,8 @@ function go(text) {
   done = true
   stopCamera()
   emit('close')
-  router.push('/t/' + encodeURIComponent(token))
+  const query = mode.value === 'open' ? {} : { action: mode.value }
+  router.push({ path: '/t/' + encodeURIComponent(token), query })
 }
 
 // Backdrop tap / close button: dismiss and return to the dashboard.
@@ -115,6 +117,12 @@ onBeforeUnmount(stopCamera)
       <div class="modal-head">
         <h2 style="flex:1">📷 Scan</h2>
         <button class="ghost icon-btn" @click="dismiss">✕</button>
+      </div>
+
+      <div class="row" style="gap:6px;margin-bottom:10px">
+        <button class="sm" :class="mode==='open' ? '' : 'ghost'" @click="mode='open'">Open</button>
+        <button class="sm" :class="mode==='checkout' ? '' : 'ghost'" @click="mode='checkout'">Check out</button>
+        <button class="sm" :class="mode==='checkin' ? '' : 'ghost'" @click="mode='checkin'">Check in</button>
       </div>
 
       <div style="border-radius:12px;overflow:hidden;background:#000;aspect-ratio:1;position:relative">

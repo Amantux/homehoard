@@ -12,3 +12,30 @@ locate:
       example: drill
       selector:
         text:
+
+check_out:
+  name: Check out
+  description: >-
+    Check an item out of HomeHoard (mark it as not here / lent out) by name.
+    Handy from automations or voice — "check out the drill".
+  fields:
+    name:
+      name: Name
+      description: The item to check out (name, label, brand, model, or serial).
+      required: true
+      example: drill
+      selector:
+        text:
+
+check_in:
+  name: Check in
+  description: >-
+    Check an item back into HomeHoard (mark it as here) by name.
+  fields:
+    name:
+      name: Name
+      description: The item to check back in.
+      required: true
+      example: drill
+      selector:
+        text:
