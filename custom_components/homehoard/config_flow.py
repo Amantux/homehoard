@@ -110,6 +110,10 @@ class HomeHoardConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             host = str(user_input[CONF_HOST]).strip().rstrip("/")
             port = int(user_input[CONF_PORT])
+            # Idempotent: adding the same host twice (or on top of the
+            # auto-discovered add-on) just points at the existing entry.
+            await self.async_set_unique_id(f"{host}:{port}".lower())
+            self._abort_if_unique_id_configured()
             try:
                 await self._async_validate(host, port)
             except (ClientError, asyncio.TimeoutError) as exc:
