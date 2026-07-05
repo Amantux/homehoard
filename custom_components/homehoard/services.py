@@ -14,9 +14,11 @@ from .const import (
     DOMAIN,
     INTENT_CHECKIN,
     INTENT_CHECKOUT,
+    INTENT_CONTENTS,
     INTENT_LOCATE,
     SERVICE_CHECKIN,
     SERVICE_CHECKOUT,
+    SERVICE_CONTENTS,
     SERVICE_LOCATE,
 )
 
@@ -70,6 +72,27 @@ def speak_action(status: dict) -> str:
     }.get(status.get("status"), f"Sorry, something went wrong with {name}.")
 
 
+def speak_contents(status: dict) -> str:
+    """Turn a coordinator contents() result into a spoken sentence."""
+    name = status.get("name", "that")
+    if status.get("status") == "not_found":
+        return f"I couldn't find {name} in your inventory."
+    if status.get("status") != "ok":
+        return f"Sorry, I couldn't read what's in {name}."
+    items = [i for i in status.get("items", []) if i]
+    bins = [b for b in status.get("bins", []) if b]
+    if not items and not bins:
+        return f"{name} is empty."
+    parts = []
+    if items:
+        shown = ", ".join(items[:8])
+        more = f", and {len(items) - 8} more" if len(items) > 8 else ""
+        parts.append(f"{len(items)} item{'' if len(items) == 1 else 's'}: {shown}{more}")
+    if bins:
+        parts.append(f"{len(bins)} bin{'' if len(bins) == 1 else 's'}: {', '.join(bins[:6])}")
+    return f"{name} contains " + "; ".join(parts) + "."
+
+
 class LocateIntentHandler(intent.IntentHandler):
     """Handles 'where is my <name>' style requests."""
 
@@ -118,6 +141,25 @@ class CheckInIntentHandler(_ActionIntentHandler):
     _method = "checkin"
 
 
+class ContentsIntentHandler(intent.IntentHandler):
+    """Handles 'what's in the garage / bin 3' style requests."""
+
+    intent_type = INTENT_CONTENTS
+    slot_schema = {vol.Required("name"): cv.string}
+
+    async def async_handle(self, intent_obj: intent.Intent) -> intent.IntentResponse:
+        hass = intent_obj.hass
+        name = intent_obj.slots["name"]["value"]
+        response = intent_obj.create_response()
+        coordinator = _first_coordinator(hass)
+        if coordinator is None:
+            response.async_set_speech("HomeHoard isn't set up yet.")
+            return response
+        status = await coordinator.contents(name)
+        response.async_set_speech(speak_contents(status))
+        return response
+
+
 async def async_register(hass: HomeAssistant) -> None:
     if hass.data.get(_REGISTERED):
         return
@@ -126,6 +168,7 @@ async def async_register(hass: HomeAssistant) -> None:
     intent.async_register(hass, LocateIntentHandler())
     intent.async_register(hass, CheckOutIntentHandler())
     intent.async_register(hass, CheckInIntentHandler())
+    intent.async_register(hass, ContentsIntentHandler())
 
     async def _handle_locate(call: ServiceCall) -> dict:
         query = call.data["query"]
@@ -160,9 +203,22 @@ async def async_register(hass: HomeAssistant) -> None:
             supports_response=SupportsResponse.OPTIONAL,
         )
 
+    async def _handle_contents(call: ServiceCall) -> dict:
+        coordinator = _first_coordinator(hass)
+        status = await coordinator.contents(call.data["query"]) if coordinator else {}
+        return {**status, "speech": speak_contents(status)}
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_CONTENTS,
+        _handle_contents,
+        schema=vol.Schema({vol.Required("query"): cv.string}),
+        supports_response=SupportsResponse.ONLY,
+    )
+
 
 def async_unregister(hass: HomeAssistant) -> None:
-    for service in (SERVICE_LOCATE, SERVICE_CHECKOUT, SERVICE_CHECKIN):
+    for service in (SERVICE_LOCATE, SERVICE_CHECKOUT, SERVICE_CHECKIN, SERVICE_CONTENTS):
         if hass.services.has_service(DOMAIN, service):
             hass.services.async_remove(DOMAIN, service)
     hass.data.pop(_REGISTERED, None)

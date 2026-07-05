@@ -30,6 +30,14 @@ intents:
           - "[put back|return] [my|the|our] {name}"
           - "[I'm|I am] [returning|putting back] [my|the|our] {name}"
           - "{name} is back"
+  HomeHoardContents:
+    data:
+      - sentences:
+          - "what's in [my|the|our] {name}"
+          - "what is in [my|the|our] {name}"
+          - "what's inside [my|the|our] {name}"
+          - "[list] [the] contents of [my|the|our] {name}"
+          - "what do I have in [my|the|our] {name}"
 lists:
   name:
     wildcard: true

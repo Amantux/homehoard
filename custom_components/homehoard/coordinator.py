@@ -61,6 +61,37 @@ class HomeHoardDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return []
         return data.get("results", [])
 
+    async def _get_json(self, path: str, params: dict | None = None):
+        url = build_url(self.host, self.port, path)
+        async with self._session.get(
+            url, params=params or {}, timeout=_TIMEOUT
+        ) as resp:
+            resp.raise_for_status()
+            return await resp.json()
+
+    async def contents(self, name: str) -> dict:
+        """List what's inside a named bin or location (voice: 'what's in X')."""
+        results = await self.search(name, types="bin,location")
+        target = next(
+            (r for r in results if r.get("type") in ("bin", "location")), None
+        )
+        if not target:
+            return {"status": "not_found", "name": name}
+        kind = target["type"]
+        try:
+            detail = await self._get_json(
+                f"/api/v1/{'bins' if kind == 'bin' else 'locations'}/{target['id']}"
+            )
+        except (ClientError, asyncio.TimeoutError):
+            return {"status": "error", "name": target["name"]}
+        return {
+            "status": "ok",
+            "name": target["name"],
+            "kind": kind,
+            "items": [i.get("name") for i in detail.get("items", [])],
+            "bins": [b.get("name") for b in detail.get("bins", [])] if kind == "location" else [],
+        }
+
     async def _resolve_item(self, name: str) -> dict | None:
         """First item matching ``name`` (voice check-out/in works by name)."""
         for r in await self.search(name, types="item"):

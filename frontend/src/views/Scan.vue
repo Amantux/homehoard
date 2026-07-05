@@ -19,6 +19,8 @@ const busy = ref(false)
 // instead of just opening it.
 const action = ref(route.query.action || '')
 const item = ref(null)
+const container = ref(null)
+const containerKind = ref('')
 
 function dest(k, id) {
   return { item: '/items/' + id, bin: '/bins/' + id, location: '/locations/' + id }[k]
@@ -29,10 +31,17 @@ async function resolve() {
   // Inventory-only check — no outbound lookups.
   const res = await api.get('/barcode/' + encodeURIComponent(code.value))
   if (res.status === 'registered') {
-    // Scanned in checkout/checkin mode → show a quick action card for the item.
-    if ((action.value === 'checkout' || action.value === 'checkin') && res.kind === 'item') {
+    // In an action-mode scan, show a quick card instead of navigating away.
+    if (action.value && res.kind === 'item') {
       item.value = res.target
       state.value = 'action'
+      return
+    }
+    // Bin / location scanned in action mode → glance at what's inside.
+    if (action.value && (res.kind === 'bin' || res.kind === 'location')) {
+      container.value = res.target
+      containerKind.value = res.kind
+      state.value = 'container'
       return
     }
     // Otherwise: item → its page; bin/location → its page listing what's inside.
@@ -120,6 +129,34 @@ onMounted(resolve)
           <button v-else :disabled="busy" @click="checkIn">📥 Check in</button>
           <button class="secondary" @click="router.replace('/items/' + item.id)">Open</button>
           <button class="ghost" @click="router.push('/')">Cancel</button>
+        </div>
+      </template>
+
+      <!-- Scanned a bin / location: glance at what's inside. -->
+      <template v-else-if="state === 'container'">
+        <h2 style="margin-top:0">
+          {{ containerKind === 'bin' ? '📦' : '📍' }} {{ container.name }}
+        </h2>
+        <p class="muted" style="margin-top:0">
+          {{ (container.items || []).length }} item{{ (container.items || []).length === 1 ? '' : 's' }}
+          <span v-if="containerKind === 'location' && (container.bins || []).length">
+            · {{ container.bins.length }} bin{{ container.bins.length === 1 ? '' : 's' }}</span>
+        </p>
+
+        <ul v-if="(container.items || []).length" style="margin:0 0 12px;padding-left:18px;max-height:220px;overflow:auto">
+          <li v-for="i in container.items" :key="i.id">
+            {{ i.name }}<span v-if="i.checkedOut" class="badge danger" style="margin-left:6px">out</span>
+          </li>
+        </ul>
+        <p v-else class="muted">It's empty.</p>
+
+        <div v-if="containerKind === 'location' && (container.bins || []).length" class="muted" style="font-size:0.85rem;margin-bottom:12px">
+          Bins: <span v-for="(b, idx) in container.bins" :key="b.id">{{ b.name }} ({{ b.itemCount }}){{ idx < container.bins.length - 1 ? ', ' : '' }}</span>
+        </div>
+
+        <div class="row" style="gap:8px">
+          <button class="secondary" @click="router.replace(dest(containerKind, container.id))">Open</button>
+          <button class="ghost" @click="router.push('/')">Done</button>
         </div>
       </template>
 

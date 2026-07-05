@@ -17,7 +17,22 @@ TOKEN = os.environ.get("HBOX_MCP_API_TOKEN")  # only needed if app auth is enabl
 _HEADERS = {"Authorization": TOKEN} if TOKEN else {}
 _HTTP = httpx.Client(base_url=API, headers=_HEADERS, timeout=10)
 
-mcp = FastMCP("HomeHoard")
+# The MCP SDK ships DNS-rebinding protection that, by default, rejects any
+# request whose Host header isn't localhost (returns 421 "Invalid Host header").
+# Home Assistant's MCP Client connects to this add-on by its container hostname
+# (e.g. http://<slug>-homehoard:7766/sse), so we must allow non-local hosts.
+# This server is only reachable on the trusted Supervisor/LAN network.
+_fastmcp_kwargs: dict = {}
+try:  # mcp >= ~1.9.4
+    from mcp.server.transport_security import TransportSecuritySettings
+
+    _fastmcp_kwargs["transport_security"] = TransportSecuritySettings(
+        enable_dns_rebinding_protection=False
+    )
+except ImportError:  # older SDK without the host check — nothing to relax
+    pass
+
+mcp = FastMCP("HomeHoard", **_fastmcp_kwargs)
 
 
 def _get(path: str, params: dict | None = None):
@@ -30,6 +45,19 @@ def _post(path: str, json: dict | None = None):
     r = _HTTP.post(path, json=json or {})
     r.raise_for_status()
     return r.json()
+
+
+def _patch(path: str, json: dict | None = None):
+    r = _HTTP.patch(path, json=json or {})
+    r.raise_for_status()
+    return r.json()
+
+
+def _resolve_named(kind: str, name: str):
+    """First bin/location result matching ``name`` (or None)."""
+    res = _get("/search", {"q": name, "types": kind}).get("results", [])
+    hits = [r for r in res if r["type"] == kind]
+    return hits[0] if hits else None
 
 
 def _resolve_item(name_or_id: str):
@@ -156,16 +184,77 @@ def check_in_item(name: str) -> str:
 
 
 @mcp.tool()
-def create_item(name: str, location: str = "") -> str:
-    """Add a new item to the inventory, optionally in a named location."""
-    location_id = None
-    if location:
-        res = _get("/search", {"q": location, "types": "location"}).get("results", [])
-        locs = [r for r in res if r["type"] == "location"]
-        if locs:
-            location_id = locs[0]["id"]
-    item = _post("/items", {"name": name, "locationId": location_id})
-    return f"Added '{item['name']}' to the inventory."
+def update_item(
+    name_or_id: str,
+    name: str = "",
+    description: str = "",
+    quantity: int = 0,
+    notes: str = "",
+    manufacturer: str = "",
+) -> str:
+    """Edit an existing item's details. Only the arguments you pass are changed.
+
+    Cannot create or delete items — those stay in the HomeHoard app.
+    """
+    item = _resolve_item(name_or_id)
+    if not item:
+        return f"No item matching '{name_or_id}'."
+    payload: dict = {}
+    if name:
+        payload["name"] = name
+    if description:
+        payload["description"] = description
+    if quantity:
+        payload["quantity"] = quantity
+    if notes:
+        payload["notes"] = notes
+    if manufacturer:
+        payload["manufacturer"] = manufacturer
+    if not payload:
+        return "Nothing to change — pass at least one field to update."
+    _patch(f"/items/{item['id']}", payload)
+    return f"Updated {item['name']}."
+
+
+@mcp.tool()
+def move_item(name_or_id: str, to_bin: str = "", to_location: str = "") -> str:
+    """Move an item into a bin or a location (by name)."""
+    item = _resolve_item(name_or_id)
+    if not item:
+        return f"No item matching '{name_or_id}'."
+    if to_bin:
+        b = _resolve_named("bin", to_bin)
+        if not b:
+            return f"No bin matching '{to_bin}'."
+        _patch(f"/items/{item['id']}", {"binId": b["id"]})
+        return f"Moved {item['name']} into bin {b['name']}."
+    if to_location:
+        loc = _resolve_named("location", to_location)
+        if not loc:
+            return f"No location matching '{to_location}'."
+        _patch(f"/items/{item['id']}", {"locationId": loc["id"], "binId": None})
+        return f"Moved {item['name']} to {loc['name']}."
+    return "Tell me which bin or location to move it to."
+
+
+@mcp.tool()
+def set_checkout_details(name_or_id: str, person: str = "", due: str = "") -> str:
+    """Set who has a checked-out item and/or when it's due (it must be checked out)."""
+    item = _resolve_item(name_or_id)
+    if not item:
+        return f"No item matching '{name_or_id}'."
+    if not item.get("checkedOut"):
+        return f"{item['name']} isn't checked out."
+    payload: dict = {}
+    if person:
+        payload["person"] = person
+    if due:
+        payload["due"] = due
+    if not payload:
+        return "Pass a person and/or a due date."
+    _patch(f"/items/{item['id']}/checkout", payload)
+    who = f" to {person}" if person else ""
+    return f"Updated checkout details for {item['name']}{who}."
 
 
 @mcp.tool()

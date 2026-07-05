@@ -39,3 +39,17 @@ check_in:
       example: drill
       selector:
         text:
+
+contents:
+  name: Contents
+  description: >-
+    List what's inside a named bin or location. Returns the items (and any
+    bins) plus a ready-to-speak sentence.
+  fields:
+    query:
+      name: Query
+      description: The bin or location to look inside.
+      required: true
+      example: garage
+      selector:
+        text:
