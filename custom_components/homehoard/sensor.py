@@ -33,6 +33,7 @@ SENSORS: tuple[HomeHoardSensorDescription, ...] = (
         key="total_items", name="Total items", icon="mdi:package-variant-closed",
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda d: _totals(d).get("items"),
+        attrs_fn=lambda d: {"recent": d.get("recentItems", [])},
     ),
     HomeHoardSensorDescription(
         key="total_value", name="Total value", icon="mdi:cash",
@@ -48,6 +49,7 @@ SENSORS: tuple[HomeHoardSensorDescription, ...] = (
         key="total_locations", name="Locations", icon="mdi:map-marker",
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda d: _totals(d).get("locations"),
+        attrs_fn=lambda d: {"locations": d.get("locations", [])},
     ),
     HomeHoardSensorDescription(
         key="total_bins", name="Bins", icon="mdi:archive",
@@ -63,6 +65,7 @@ SENSORS: tuple[HomeHoardSensorDescription, ...] = (
         key="checked_out", name="Checked out", icon="mdi:export",
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda d: _totals(d).get("checkedOut"),
+        attrs_fn=lambda d: {"items": d.get("checkedOutItems", [])},
     ),
     HomeHoardSensorDescription(
         key="warranties_expiring", name="Warranties expiring (30d)",

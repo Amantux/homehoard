@@ -221,6 +221,22 @@ automation:
 ```
 
 
+#### Overview dashboard (quick actions + recent & locations)
+
+Drop-in cards for Home Assistant's default **Overview** dashboard — leading with
+**quick actions** (open the app, scan-to-check-out/in, a *"where is it?" /
+*"what's inside?"* box, and lend/return) and a **recent items + locations**
+glance. It's built on the integration's sensors (the `total_items`,
+`locations`, and `checked_out` sensors carry `recent` / `locations` / `items`
+attributes) plus a few `input_text` helpers and thin scripts:
+
+- `docs/ha/overview_package.yaml` — helpers + scripts (install as a **package**).
+- `docs/ha/overview_dashboard.yaml` — the Lovelace **view** (paste into your
+  dashboard's raw config, or add the cards individually).
+
+No custom cards required — it's all core Lovelace. Adjust the ingress slug in the
+dashboard's navigate actions if yours differs.
+
 ## Features
 
 - Items with quantity (fractional), purchase/warranty/sold details, custom

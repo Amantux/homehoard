@@ -2,6 +2,7 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 
+const props = defineProps({ initialMode: { type: String, default: '' } })
 const emit = defineEmits(['close'])
 const router = useRouter()
 
@@ -10,7 +11,7 @@ const status = ref('starting') // starting | scanning | error
 const error = ref('')
 const engine = ref('')
 const manual = ref('')
-const mode = ref('open') // open | checkout | checkin — what to do once a code resolves
+const mode = ref(props.initialMode || 'open') // open | checkout | checkin — what to do once a code resolves
 
 let stream = null
 let raf = null

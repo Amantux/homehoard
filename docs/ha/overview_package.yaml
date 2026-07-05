@@ -1,0 +1,77 @@
+# HomeHoard — Overview helpers & scripts
+# =======================================
+# Powers the "quick actions" on the HomeHoard Overview dashboard: a query box
+# that runs locate / contents, and an item box that checks things out / in.
+# The HomeHoard *services* already exist (from the HACS integration); these are
+# just input helpers + thin scripts that call them and show the spoken answer.
+#
+# Install (packages — recommended):
+#   1. In configuration.yaml, make sure you have:
+#        homeassistant:
+#          packages: !include_dir_named packages
+#   2. Copy this file to  <config>/packages/homehoard_overview.yaml
+#   3. Restart Home Assistant.
+# (Or paste the input_text: and script: blocks into your existing config.)
+
+input_text:
+  homehoard_query:
+    name: HomeHoard query
+    icon: mdi:magnify
+    max: 255
+  homehoard_item:
+    name: HomeHoard item
+    icon: mdi:package-variant-closed
+    max: 255
+  homehoard_answer:
+    name: HomeHoard answer
+    icon: mdi:message-text-outline
+    max: 255
+
+script:
+  homehoard_locate:
+    alias: HomeHoard — Where is it?
+    icon: mdi:map-search
+    sequence:
+      - service: homehoard.locate
+        data:
+          query: "{{ states('input_text.homehoard_query') }}"
+        response_variable: res
+      - service: input_text.set_value
+        target: { entity_id: input_text.homehoard_answer }
+        data: { value: "{{ (res.speech ~ '')[:255] }}" }
+
+  homehoard_contents:
+    alias: HomeHoard — What's inside?
+    icon: mdi:archive-search
+    sequence:
+      - service: homehoard.contents
+        data:
+          query: "{{ states('input_text.homehoard_query') }}"
+        response_variable: res
+      - service: input_text.set_value
+        target: { entity_id: input_text.homehoard_answer }
+        data: { value: "{{ (res.speech ~ '')[:255] }}" }
+
+  homehoard_check_out:
+    alias: HomeHoard — Check out
+    icon: mdi:export
+    sequence:
+      - service: homehoard.check_out
+        data:
+          name: "{{ states('input_text.homehoard_item') }}"
+        response_variable: res
+      - service: input_text.set_value
+        target: { entity_id: input_text.homehoard_answer }
+        data: { value: "{{ (res.speech ~ '')[:255] }}" }
+
+  homehoard_check_in:
+    alias: HomeHoard — Check in
+    icon: mdi:import
+    sequence:
+      - service: homehoard.check_in
+        data:
+          name: "{{ states('input_text.homehoard_item') }}"
+        response_variable: res
+      - service: input_text.set_value
+        target: { entity_id: input_text.homehoard_answer }
+        data: { value: "{{ (res.speech ~ '')[:255] }}" }

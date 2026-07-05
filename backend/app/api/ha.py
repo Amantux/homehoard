@@ -13,6 +13,7 @@ from flask import Blueprint, jsonify, request
 from ..extensions import db
 from ..models import Item, Bin, Label, Location, MaintenanceEntry
 from ..auth import login_required, current_group
+from .lookup import item_where
 
 bp = Blueprint("ha", __name__)
 
@@ -73,10 +74,43 @@ def summary():
     overdue = [m for m in maint if m.scheduled_date < now]
     upcoming_30 = [m for m in maint if now <= m.scheduled_date <= now + timedelta(days=30)]
 
+    # Overview lists — power the Home Assistant "Overview" dashboard cards.
+    recent_items = sorted(
+        items, key=lambda i: i.created_at or now, reverse=True
+    )[:6]
+    checked_out_items = [i for i in items if i.checked_out]
+    locations = (
+        db.session.query(Location)
+        .filter_by(group_id=gid)
+        .order_by(Location.name.asc())
+        .all()
+    )
+
     return jsonify(
         {
             "health": True,
             "group": current_group().name,
+            "recentItems": [
+                {
+                    "id": i.id, "name": i.name, "where": item_where(i),
+                    "checkedOut": i.checked_out,
+                }
+                for i in recent_items
+            ],
+            "checkedOutItems": [
+                {
+                    "id": i.id, "name": i.name, "to": i.checked_out_to,
+                    "overdue": bool(i.checkout_due and i.checkout_due < now),
+                }
+                for i in checked_out_items
+            ],
+            "locations": [
+                {
+                    "id": loc.id, "name": loc.name,
+                    "itemCount": len(loc.items), "binCount": len(loc.bins),
+                }
+                for loc in locations[:12]
+            ],
             "totals": {
                 "items": len(items),
                 "bins": db.session.query(Bin).filter_by(group_id=gid).count(),
