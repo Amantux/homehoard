@@ -77,6 +77,7 @@ jobs:
     needs: [backend-tests, frontend-build, validate-addon]
     outputs:
       new_version: ${{ steps.bump.outputs.new_version }}
+      bump_sha: ${{ steps.commit.outputs.sha }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -110,12 +111,14 @@ jobs:
           print(f"Bumped {old} -> {new}")
           PY
       - name: Commit version bump
+        id: commit
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add homehoard/config.yaml custom_components/homehoard/manifest.json
           git commit -m "chore: bump version ${{ steps.bump.outputs.old_version }} → ${{ steps.bump.outputs.new_version }}"
           git push origin HEAD:${{ github.ref_name }}
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
   # Build each architecture on a NATIVE runner (no QEMU). QEMU-emulated arm64
   # builds of the Node+Python image were so slow they hit the 6-hour job limit
@@ -184,3 +187,34 @@ jobs:
             ghcr.io/amantux/homehoard:${V}-amd64 \
             ghcr.io/amantux/homehoard:${V}-arm64
           echo "Published ghcr.io/amantux/homehoard:${V} (amd64 + arm64)"
+
+  # Cut a GitHub Release/tag per version so HACS surfaces clean update prompts.
+  # Tags the bump commit (whose manifest.json already holds the new version) and
+  # only runs once the image is published, so a release always has a matching
+  # ghcr image + integration source.
+  release:
+    name: GitHub release (HACS)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: >
+      github.event_name == 'push' &&
+      !startsWith(github.event.head_commit.message, 'chore: bump version')
+    needs: [bump-version, merge-manifest]
+    steps:
+      - name: Create release v${{ needs.bump-version.outputs.new_version }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          V: ${{ needs.bump-version.outputs.new_version }}
+          SHA: ${{ needs.bump-version.outputs.bump_sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          if gh release view "v${V}" --repo "$REPO" >/dev/null 2>&1; then
+            echo "Release v${V} already exists — skipping."
+          else
+            gh release create "v${V}" \
+              --repo "$REPO" \
+              --target "$SHA" \
+              --title "v${V}" \
+              --notes "HomeHoard ${V} — Home Assistant add-on & HACS integration. Container image: ghcr.io/amantux/homehoard:${V}"
+            echo "Created release v${V} at ${SHA}"
+          fi
