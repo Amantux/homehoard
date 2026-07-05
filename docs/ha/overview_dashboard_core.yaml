@@ -1,0 +1,110 @@
+# HomeHoard — Overview dashboard (core Lovelace, no custom card)
+# ==============================================================
+# Equivalent of the custom homehoard-card built only from core cards.
+# Requires docs/ha/overview_package.yaml (input_text + script helpers) installed.
+# Paste the `views:` item into your dashboard's raw config, or add cards manually.
+#
+# ⚠️ Replace the ingress slug `b3264f33_homehoard` with yours if different.
+
+views:
+  - title: HomeHoard
+    path: homehoard
+    icon: mdi:package-variant-closed
+    cards:
+      - type: horizontal-stack
+        cards:
+          - type: button
+            name: Open HomeHoard
+            icon: mdi:open-in-app
+            tap_action:
+              action: navigate
+              navigation_path: /hassio/ingress/b3264f33_homehoard
+          - type: button
+            name: Scan to check out
+            icon: mdi:qrcode-scan
+            tap_action:
+              action: navigate
+              navigation_path: /hassio/ingress/b3264f33_homehoard/#/scan?action=checkout
+          - type: button
+            name: Scan to check in
+            icon: mdi:qrcode-scan
+            tap_action:
+              action: navigate
+              navigation_path: /hassio/ingress/b3264f33_homehoard/#/scan?action=checkin
+
+      - type: entities
+        title: Find something
+        show_header_toggle: false
+        entities:
+          - entity: input_text.homehoard_query
+            name: Item, bin, or location
+          - entity: script.homehoard_locate
+            name: → Where is it?
+            icon: mdi:map-search
+          - entity: script.homehoard_contents
+            name: → What's inside?
+            icon: mdi:archive-search
+          - type: divider
+          - entity: input_text.homehoard_answer
+            name: Answer
+            icon: mdi:message-text-outline
+
+      - type: entities
+        title: Lend & return
+        show_header_toggle: false
+        entities:
+          - entity: input_text.homehoard_item
+            name: Item
+          - entity: script.homehoard_check_out
+            name: → Check out
+            icon: mdi:export
+          - entity: script.homehoard_check_in
+            name: → Check in
+            icon: mdi:import
+
+      - type: glance
+        title: Inventory
+        columns: 3
+        entities:
+          - entity: sensor.homehoard_total_items
+            name: Items
+          - entity: sensor.homehoard_checked_out
+            name: Checked out
+          - entity: sensor.homehoard_total_value
+            name: Value
+          - entity: sensor.homehoard_warranties_expiring_30d
+            name: Warranties 30d
+          - entity: sensor.homehoard_maintenance_overdue
+            name: Maint. overdue
+          - entity: binary_sensor.homehoard_online
+            name: Online
+
+      - type: markdown
+        title: Checked out
+        content: |
+          {% set items = state_attr('sensor.homehoard_checked_out','items') or [] -%}
+          {% if items %}
+          {% for i in items -%}
+          - **{{ i.name }}**{% if i.to %} → {{ i.to }}{% endif %}{% if i.overdue %} · ⚠️ overdue{% endif %}
+          {% endfor -%}
+          {% else %}_Nothing is checked out._{% endif %}
+
+      - type: markdown
+        title: Recently added
+        content: |
+          {% set items = state_attr('sensor.homehoard_total_items','recent') or [] -%}
+          {% if items %}
+          {% for i in items -%}
+          - **{{ i.name }}** — {{ i.where }}{% if i.checkedOut %} · 📤 out{% endif %}
+          {% endfor -%}
+          {% else %}_No items yet._{% endif %}
+
+      - type: markdown
+        title: Locations
+        content: |
+          {% set locs = state_attr('sensor.homehoard_locations','locations') or [] -%}
+          {% if locs %}
+          {% for l in locs -%}
+          - 📍 **{{ l.name }}** — {{ l.itemCount }} items, {{ l.binCount }} bins
+          {% endfor -%}
+          {% else %}_No locations yet._{% endif %}

@@ -1,127 +1,30 @@
-# HomeHoard — Overview dashboard cards
-# ====================================
-# A ready-made card layout for Home Assistant's default "Overview" dashboard,
-# leading with quick actions and a recent-items / locations glance.
+# HomeHoard — Overview dashboard
+# ==============================
+# The HomeHoard HACS integration ships a custom Lovelace card and auto-registers
+# it (no manual resource needed). Everything — stats, quick actions (find /
+# lend / scan), checked-out list, recent items, and locations — lives in ONE
+# card that calls the homehoard.* services directly (no input_text/script
+# helpers required).
 #
-# Prereqs:
-#   • HomeHoard HACS integration set up (gives the sensor.homehoard_* entities)
-#   • docs/ha/overview_package.yaml installed (gives the input_text + scripts)
+# ── Option A (recommended): the custom card ──────────────────────────────────
+# Add Card → search "HomeHoard", or paste this anywhere on your Overview:
 #
-# Install — two options:
-#   A) As its own tab: Dashboard → ⋮ → Edit → ⋮ → Raw configuration editor,
-#      then paste the `views:` item below into your `views:` list.
-#   B) As cards on the existing Overview: Add Card → Manual, and paste any of
-#      the individual cards under `cards:`.
+#   type: custom:homehoard-card
+#   # all optional:
+#   title: HomeHoard
+#   app_path: /hassio/ingress/b3264f33_homehoard   # Open / Scan button target
+#   prefix: sensor.homehoard_                        # entity-id prefix
 #
-# ⚠️ Replace the ingress slug `b3264f33_homehoard` below with yours if different
-#    (Settings → Add-ons → HomeHoard → the URL, or the sidebar link target).
-
+# As its own tab (Dashboard → ⋮ Edit → ⋮ Raw configuration editor):
 views:
   - title: HomeHoard
     path: homehoard
     icon: mdi:package-variant-closed
     cards:
-      # ---- Quick actions -------------------------------------------------
-      - type: horizontal-stack
-        cards:
-          - type: button
-            name: Open HomeHoard
-            icon: mdi:open-in-app
-            tap_action:
-              action: navigate
-              navigation_path: /hassio/ingress/b3264f33_homehoard
-          - type: button
-            name: Scan to check out
-            icon: mdi:qrcode-scan
-            tap_action:
-              action: navigate
-              navigation_path: /hassio/ingress/b3264f33_homehoard/#/scan?action=checkout
-          - type: button
-            name: Scan to check in
-            icon: mdi:qrcode-scan
-            tap_action:
-              action: navigate
-              navigation_path: /hassio/ingress/b3264f33_homehoard/#/scan?action=checkin
+      - type: custom:homehoard-card
+        title: HomeHoard
 
-      # ---- Find / query (locate + contents) ------------------------------
-      - type: entities
-        title: Find something
-        show_header_toggle: false
-        entities:
-          - entity: input_text.homehoard_query
-            name: Item, bin, or location
-          - entity: script.homehoard_locate
-            name: → Where is it?
-            icon: mdi:map-search
-          - entity: script.homehoard_contents
-            name: → What's inside?
-            icon: mdi:archive-search
-          - type: divider
-          - entity: input_text.homehoard_answer
-            name: Answer
-            icon: mdi:message-text-outline
-
-      # ---- Check out / in ------------------------------------------------
-      - type: entities
-        title: Lend & return
-        show_header_toggle: false
-        entities:
-          - entity: input_text.homehoard_item
-            name: Item
-          - entity: script.homehoard_check_out
-            name: → Check out
-            icon: mdi:export
-          - entity: script.homehoard_check_in
-            name: → Check in
-            icon: mdi:import
-
-      # ---- At-a-glance status --------------------------------------------
-      - type: glance
-        title: Inventory
-        columns: 3
-        entities:
-          - entity: sensor.homehoard_total_items
-            name: Items
-          - entity: sensor.homehoard_checked_out
-            name: Checked out
-          - entity: sensor.homehoard_total_value
-            name: Value
-          - entity: sensor.homehoard_warranties_expiring_30d
-            name: Warranties 30d
-          - entity: sensor.homehoard_maintenance_overdue
-            name: Maint. overdue
-          - entity: binary_sensor.homehoard_online
-            name: Online
-
-      # ---- What's out ----------------------------------------------------
-      - type: markdown
-        title: Checked out
-        content: |
-          {% set items = state_attr('sensor.homehoard_checked_out','items') or [] -%}
-          {% if items %}
-          {% for i in items -%}
-          - **{{ i.name }}**{% if i.to %} → {{ i.to }}{% endif %}{% if i.overdue %} · ⚠️ overdue{% endif %}
-          {% endfor -%}
-          {% else %}_Nothing is checked out._{% endif %}
-
-      # ---- Recently added ------------------------------------------------
-      - type: markdown
-        title: Recently added
-        content: |
-          {% set items = state_attr('sensor.homehoard_total_items','recent') or [] -%}
-          {% if items %}
-          {% for i in items -%}
-          - **{{ i.name }}** — {{ i.where }}{% if i.checkedOut %} · 📤 out{% endif %}
-          {% endfor -%}
-          {% else %}_No items yet._{% endif %}
-
-      # ---- Locations -----------------------------------------------------
-      - type: markdown
-        title: Locations
-        content: |
-          {% set locs = state_attr('sensor.homehoard_locations','locations') or [] -%}
-          {% if locs %}
-          {% for l in locs -%}
-          - 📍 **{{ l.name }}** — {{ l.itemCount }} items, {{ l.binCount }} bins
-          {% endfor -%}
-          {% else %}_No locations yet._{% endif %}
+# ── Option B: plain core-Lovelace cards (no custom card) ─────────────────────
+# If you'd rather not use the custom card, the equivalent built-in cards are in
+# docs/ha/overview_dashboard_core.yaml, which needs docs/ha/overview_package.yaml
+# (the input_text + script helpers) installed.

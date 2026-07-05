@@ -221,21 +221,29 @@ automation:
 ```
 
 
-#### Overview dashboard (quick actions + recent & locations)
+#### The HomeHoard card (Lovelace)
 
-Drop-in cards for Home Assistant's default **Overview** dashboard — leading with
-**quick actions** (open the app, scan-to-check-out/in, a *"where is it?" /
-*"what's inside?"* box, and lend/return) and a **recent items + locations**
-glance. It's built on the integration's sensors (the `total_items`,
-`locations`, and `checked_out` sensors carry `recent` / `locations` / `items`
-attributes) plus a few `input_text` helpers and thin scripts:
+The HACS integration **ships a custom Lovelace card and auto-registers it** — no
+manual resource, no helper entities. Add **HomeHoard Card** from the card picker
+(or `type: custom:homehoard-card`) for a full overview in a single card:
+inventory stats, **quick actions** (find · *what's inside?* · lend & return ·
+scan-to-check-out/in · open the app), the **checked-out** list, **recently
+added**, and **locations**. Its quick actions call the `homehoard.*` services
+directly (with response), so there's nothing else to wire up.
 
-- `docs/ha/overview_package.yaml` — helpers + scripts (install as a **package**).
-- `docs/ha/overview_dashboard.yaml` — the Lovelace **view** (paste into your
-  dashboard's raw config, or add the cards individually).
+```yaml
+type: custom:homehoard-card
+# all optional:
+title: HomeHoard
+app_path: /hassio/ingress/b3264f33_homehoard   # Open / Scan button target
+prefix: sensor.homehoard_                        # entity-id prefix
+```
 
-No custom cards required — it's all core Lovelace. Adjust the ingress slug in the
-dashboard's navigate actions if yours differs.
+The card is driven by the integration's sensors, whose `total_items`,
+`locations`, and `checked_out` entities carry `recent` / `locations` / `items`
+attributes. Prefer plain **core Lovelace**? `docs/ha/overview_dashboard_core.yaml`
+rebuilds the same thing from built-in cards (with `docs/ha/overview_package.yaml`
+for the input/script helpers). All examples live under `docs/ha/`.
 
 ## Features
 
