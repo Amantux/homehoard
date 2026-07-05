@@ -131,6 +131,9 @@ The companion integration (`custom_components/homehoard`) polls a consolidated
 - **Calendar** — *Warranties & maintenance*: every warranty-expiry and scheduled
   maintenance date as calendar events, so you can automate reminders
   ("notify me 30 days before any warranty expires").
+- **Branded icon** — the integration ships its own logo inline
+  (`custom_components/homehoard/brand/`, HA 2026.3+ brands proxy), so the
+  HomeHoard box shows in Devices & Services with no `home-assistant/brands` PR.
 
 #### Find, check out & query by voice & messaging
 
