@@ -8,9 +8,11 @@ rebuilt it from the ground up in Python:
 1. **Home Assistant, done properly.** HomeHoard runs as a first-class HA **add-on**
    (one-click install, Ingress, no separate login) and ships a companion
    **HACS integration** with inventory **sensors**, a warranties/maintenance
-   **calendar**, a **voice intent** ("where is my drill?"), a `homehoard.locate`
-   **service** for notifications/messaging, and an in-container **MCP server** so
-   an LLM-powered Assist can search and check items in/out.
+   **calendar**, **voice intents** ("where is my drill?", "check out the drill",
+   "what's in the garage?"), `homehoard.locate` / `check_out` / `check_in` /
+   `contents` **services** for notifications & automations, and an in-container
+   **MCP server** so an LLM-powered Assist can do **everything except adding or
+   deleting items** — search, check in/out, and even edit or move things.
 2. **QR codes and barcodes that actually fit my life.** Generate printable QR
    labels *and* register your **own** existing QR labels or product barcodes
    (UPC/EAN), stick as many codes as you like on a single bin, and scan any of
@@ -29,11 +31,14 @@ Raspberry Pi 5.
 > under **AGPL-3.0**. Huge thanks to [@hay-kot](https://github.com/hay-kot) and
 > the homebox community.
 
-## 🏆 The headline: ask Home Assistant where your stuff is
+## 🏆 The headline: run your inventory from Home Assistant
 
-HomeHoard exposes your whole inventory to Home Assistant through an **MCP server
-that runs inside the same add-on container** — so an LLM-powered Assist can
-answer *"where is my drill?"* and even check tools in and out, by voice or chat.
+HomeHoard exposes your whole inventory to Home Assistant — by **voice** (plain
+Assist sentences, no LLM needed) and through an **MCP server that runs inside the
+same add-on container** for an LLM-powered Assist. Ask *"where is my drill?"*, say
+*"check out the drill"* or *"what's in the garage?"*, and — with an LLM agent —
+edit or move things too. **Everything except adding or deleting items**, right
+from chat or voice.
 
 ![HomeHoard MCP integration with Home Assistant Assist](docs/screenshots/mcp.png)
 
@@ -49,31 +54,38 @@ answer *"where is my drill?"* and even check tools in and out, by voice or chat.
 
 ## ✨ What's new
 
-- **🤖 MCP server for Home Assistant** — 10 inventory tools (`where_is`,
-  `check_out_item`, `list_checkouts`, …) over SSE, in the same container.
-- **🔎 "Where is it?" search** across items, bins, and locations, with full
-  location paths — in the app, by **voice** ("where is my drill?"), and via the
-  `homehoard.locate` service for **notifications/messaging**.
-- **📥 Check in / out** — "yes it's here / no it's not," with who has it, a due
-  date, overdue flags, and history.
-- **📷 Inventory-only scanning** — scan your **own** QR labels and product
-  barcodes; no outbound calls. Known code → the record (or a bin/location's
-  contents); unknown → create or link on the spot.
+- **⚡ One-click check-out** — one tap checks an item out immediately; add who
+  has it, a due date, and notes as an optional next step (in the app and via the
+  scanner).
+- **🤖 Full MCP surface for Home Assistant** — **12** inventory tools (`where_is`,
+  `check_out_item`, `move_item`, `update_item`, `set_checkout_details`, …) over
+  SSE, in the same container. **Everything except adding/deleting items** is
+  available to an LLM-powered Assist. *(Also fixed the MCP host-header check so
+  HA's MCP Client can actually connect to the add-on by hostname.)*
+- **🗣️ Voice, no LLM required** — Assist sentences for *"where is my drill?"*,
+  *"check out / check in the drill"*, and *"what's in the garage?"* (a bin or
+  location's contents), plus matching `homehoard.locate` / `check_out` /
+  `check_in` / `contents` services for automations & messaging.
+- **📷 Scan-to-checkout** — the camera scanner has **Open / Check out / Check in**
+  modes: scan a label to lend or return an item on the spot, or scan a bin /
+  location to glance at what's inside — inventory-only, no outbound calls.
 - **🗃️ Bins** with photos, plus items that inherit (and follow) their bin's
   location.
 - **🩺 HA sensors + calendar** — totals, insured value, checked-out count,
   warranties-expiring, maintenance-overdue, and a warranties/maintenance
   **calendar**.
+- **🎨 Polished add-on** — a proper HomeHoard icon & logo, and one-tap
+  auto-discovery of the companion integration (no duplicate entries).
 - **🚀 Reliable CI** — native amd64 + **arm64 (Raspberry Pi 5)** images, merged
   into a multi-arch manifest and auto-versioned on every push.
 
 ## 🗺️ Roadmap
 
-- Voice **"what's in the garage?"** (speak a bin/location's contents)
 - **Consumables / low-stock** thresholds → a to-do / shopping list entity
-- **Scan-to-checkout** ("scan → check out to me") and richer QR label sheets
+- Richer printable QR label sheets
 - Multi-language Assist sentences
 - Actionable notifications ("Reorder" / "Mark maintenance done")
+- Optional **photo recognition** for label-less bins/shelves (AI vision)
 
 
 ## Home Assistant
@@ -120,18 +132,26 @@ The companion integration (`custom_components/homehoard`) polls a consolidated
   maintenance date as calendar events, so you can automate reminders
   ("notify me 30 days before any warranty expires").
 
-#### Find things by voice & messaging
+#### Find, check out & query by voice & messaging
 
-The integration wires HomeHoard's search into Home Assistant so you can ask
-**"where is my drill?"** — it answers with the location (e.g. *"Drill is in Tool
-Bin · Garage › Shelf."*). Search matches **items, bins, and locations**.
+The integration wires HomeHoard into Home Assistant so you can **find**, **check
+out / in**, and **look inside** your inventory by voice — **no LLM required**
+(these are plain Assist intents). *"Where is my drill?"* answers with the
+location (e.g. *"Drill is in Tool Bin · Garage › Shelf."*); *"check out the
+drill"* lends it; *"what's in the garage?"* reads back the contents.
 
 - **Voice (Assist):** copy
   `custom_components/homehoard/custom_sentences/en/homehoard.yaml` to
-  `<your HA config>/custom_sentences/en/homehoard.yaml` and restart HA. Then say
-  *"where is my …"*, *"find the …"*, *"which bin has the …"*.
-- **Service / messaging:** call **`homehoard.locate`** (a response service) from
-  any automation or script — great for Telegram/notify bots:
+  `<your HA config>/custom_sentences/en/homehoard.yaml` and restart HA. Then say:
+  - **Find** — *"where is my …"*, *"find the …"*, *"which bin has the …"*
+  - **Check out / in** — *"check out the …"*, *"I'm borrowing the …"*,
+    *"check in the …"*, *"put back the …"*
+  - **Contents** — *"what's in the …"*, *"what's inside the …"*,
+    *"contents of the …"* (a bin or location)
+- **Services (automations / messaging):** `homehoard.locate` and
+  `homehoard.contents` (response services returning `{ speech, … }`), plus
+  `homehoard.check_out` / `homehoard.check_in` (by item `name`). Great for
+  Telegram/notify bots:
 
   ```yaml
   # Reply to a Telegram message like "where is my passport"
@@ -156,19 +176,29 @@ Bin · Garage › Shelf."*). Search matches **items, bins, and locations**.
 
 HomeHoard ships an **MCP server** that runs **in the same container** (no extra
 service) and exposes inventory tools to Home Assistant's **MCP Client**
-integration — so an LLM-powered Assist can call them directly:
+integration — so an **LLM-powered** Assist can call them directly. Everything
+**except adding or deleting items** is available:
 
-`where_is`, `search_inventory`, `get_item`, `get_bin_contents`,
-`get_location_contents`, `list_checkouts`, `check_out_item`, `check_in_item`,
-`create_item`, `inventory_statistics`.
+- **Query** — `where_is`, `search_inventory`, `get_item`, `get_bin_contents`,
+  `get_location_contents`, `list_checkouts`, `inventory_statistics`
+- **Act** — `check_out_item`, `check_in_item`, `set_checkout_details`,
+  `update_item` (edit details), `move_item` (into a bin/location)
 
-- It's served over **SSE on port `7766`** (`/sse`), enabled by default (add-on
-  option `enable_mcp`).
-- In Home Assistant: **Settings → Devices & Services → Add Integration → Model
-  Context Protocol**, and point it at
-  `http://<homehoard-host>:7766/sse`
-  (e.g. your HA host's IP, since the add-on maps port 7766). Assist can then
-  answer *"where is my drill?"* and check items in/out via the MCP tools.
+> Adding and deleting items are intentionally **not** exposed to Home Assistant —
+> do that in the app. HA is for finding, checking out, editing, and moving.
+
+- Served over **SSE on port `7766`** (`/sse`), enabled by default (add-on option
+  `enable_mcp`).
+- **Connect it in HA:** **Settings → Devices & Services → Add Integration →
+  _Model Context Protocol_** — this is the MCP **Client** (it connects HA *to*
+  HomeHoard); it is **not** the *MCP Server* integration, which points the other
+  way. Point it at
+  `http://<addon-hostname>:7766/sse` — e.g. `http://b3264f33-homehoard:7766/sse`
+  (the add-on's Supervisor hostname, shown on its info page), or your HA host's
+  IP as a fallback.
+- The MCP tools are only used when your **conversation agent is an LLM**
+  (Settings → Voice assistants → *Conversation agent*). With the default,
+  non-LLM agent, use the voice sentences above instead.
 - Standalone (outside HA): `python backend/mcp_server.py`
   (`HBOX_MCP_API` points it at the app's API; defaults to `http://127.0.0.1:7745/api/v1`).
 
@@ -203,15 +233,17 @@ automation:
   codes on one physical object; scanning any of them opens that record. QR
   images and print-ready pages included.
 - **Check in / out** — mark an item as *here* or *checked out* ("yes it's there,
-  no it's not"), optionally noting who has it and a due date. `/checkouts` lists
-  everything currently out (with overdue flags); a *Checked out* HA sensor tracks
-  the count.
+  no it's not"). **One click checks it out immediately**; who has it, a due date,
+  and notes are an optional next step. `/checkouts` lists everything currently out
+  (with overdue flags); a *Checked out* HA sensor tracks the count.
 - **"Where is it?" search** — a spotlight-style search (top bar or the `/` key)
   matching **items, bins, and locations** and showing the full location path
   (e.g. *Drill → Tool Bin · Garage › Shelf*). Also powers HA voice/MCP.
-- **Scan to find** — the camera scanner (QR + 1D barcodes) is **inventory-only,
-  no outbound calls**: a known code opens the item, or shows a bin/location's
-  contents; an unknown code lets you create or link it on the spot.
+- **Scan to find & act** — the camera scanner (QR + 1D barcodes) is
+  **inventory-only, no outbound calls**, with **Open / Check out / Check in**
+  modes: a known code opens the record, checks the item out/in, or shows a
+  bin/location's contents inline; an unknown code lets you create or link it on
+  the spot.
 - **Photos on bins too** — attach photos/files to bins the same way as items.
 - File **attachments** & photos (primary photo support)
 - **Maintenance** logs per item with cost totals
@@ -239,9 +271,10 @@ The Vue 3 SPA is a full homebox-style interface:
   maintenance log form.
 - **Location & bin detail** pages with tabbed items/bins/sub-locations and QR.
 - **Maintenance** page aggregating scheduled/overdue/completed tasks group-wide.
-- **Scanner** page using the browser `BarcodeDetector` API to scan a QR with the
-  camera and jump straight to the item/bin/location (with a manual-entry
-  fallback).
+- **Scanner** page/modal using the browser `BarcodeDetector` API to scan a QR or
+  barcode with the camera and jump to the item/bin/location — or switch to a
+  **Check out / Check in** mode to act on the scanned item, or view a
+  bin/location's contents inline (with a manual-entry fallback).
 - Toasts, loading skeletons, and empty states throughout.
 
 ### Bins & QR codes
@@ -369,6 +402,7 @@ Search, scan, check in/out & Home Assistant:
 | GET | `/search?q=` | Find items, bins, and locations with a location path (`?types=item,bin,location`) |
 | GET | `/barcode/{code}` | Inventory-only lookup — registered code → record (+ bin/location contents), else `not_found` |
 | POST | `/items/{id}/checkout` | Check an item out (`{ person?, due?, notes? }`) |
+| PATCH | `/items/{id}/checkout` | Update an active checkout's details (`{ person?, due?, notes? }`) |
 | POST | `/items/{id}/checkin` | Check an item back in |
 | GET | `/items/{id}/checkout` | Current status + check in/out history |
 | GET | `/checkouts` | Everything currently checked out (with `overdue` flags) |
