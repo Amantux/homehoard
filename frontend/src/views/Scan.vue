@@ -14,6 +14,7 @@ const kind = ref('item')
 const targetId = ref('')
 const targets = ref({ item: [], bin: [], location: [] })
 const newName = ref('')
+const newItemName = ref('')
 const busy = ref(false)
 // When the scan was launched in "check out / in" mode we act on the item
 // instead of just opening it.
@@ -89,6 +90,25 @@ async function createAndLink() {
   }
 }
 
+// Scanned a bin/location → drop a brand-new item straight into it.
+async function addItemHere() {
+  if (!newItemName.value.trim()) return
+  busy.value = true
+  try {
+    const payload = { name: newItemName.value.trim() }
+    if (containerKind.value === 'bin') payload.binId = container.value.id
+    else payload.locationId = container.value.id
+    const created = await api.post('/items', payload)
+    container.value.items = [...(container.value.items || []), { id: created.id, name: created.name }]
+    newItemName.value = ''
+    ui.toast(`Added to ${container.value.name}`)
+  } catch (e) {
+    ui.error(e.message)
+  } finally {
+    busy.value = false
+  }
+}
+
 async function linkExisting() {
   if (!targetId.value) return
   busy.value = true
@@ -154,7 +174,15 @@ onMounted(resolve)
           Bins: <span v-for="(b, idx) in container.bins" :key="b.id">{{ b.name }} ({{ b.itemCount }}){{ idx < container.bins.length - 1 ? ', ' : '' }}</span>
         </div>
 
-        <div class="row" style="gap:8px">
+        <label class="field"><span>Add an item here</span>
+          <div class="row" style="gap:8px">
+            <input v-model="newItemName" style="flex:1" placeholder="Item name"
+                   @keyup.enter="addItemHere" />
+            <button :disabled="!newItemName.trim() || busy" @click="addItemHere">＋ Add</button>
+          </div>
+        </label>
+
+        <div class="row" style="gap:8px;margin-top:12px">
           <button class="secondary" @click="router.replace(dest(containerKind, container.id))">Open</button>
           <button class="ghost" @click="router.push('/')">Done</button>
         </div>

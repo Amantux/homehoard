@@ -15,6 +15,7 @@ const bin = ref(null)
 const locations = ref([])
 const allItems = ref([])
 const addItemId = ref('')
+const newItemName = ref('')
 const tab = ref('items')
 const editing = ref(false)
 
@@ -61,6 +62,14 @@ async function addItem() {
   addItemId.value = ''
   ui.toast('Item added to bin')
   await load()
+}
+async function createItemHere() {
+  if (!newItemName.value.trim()) return
+  await api.post('/items', { name: newItemName.value.trim(), binId: id })
+  newItemName.value = ''
+  ui.toast('Item created in bin')
+  await load()
+  allItems.value = (await api.get('/items?pageSize=500')).items
 }
 async function removeItem(item) {
   await api.del(`/bins/${id}/items/${item.id}`)
@@ -115,12 +124,16 @@ async function remove() {
     </div>
 
     <div v-show="tab==='items'">
-      <div class="toolbar">
-        <select v-model="addItemId" style="max-width:280px">
+      <div class="toolbar" style="flex-wrap:wrap;gap:8px">
+        <input v-model="newItemName" style="max-width:220px" placeholder="New item name…"
+               @keyup.enter="createItemHere" />
+        <button :disabled="!newItemName.trim()" @click="createItemHere">＋ Create here</button>
+        <span class="muted" style="align-self:center">or</span>
+        <select v-model="addItemId" style="max-width:240px">
           <option value="">Add an existing item…</option>
           <option v-for="i in allItems" :key="i.id" :value="i.id">{{ i.name }}</option>
         </select>
-        <button :disabled="!addItemId" @click="addItem">Add to bin</button>
+        <button class="secondary" :disabled="!addItemId" @click="addItem">Add to bin</button>
       </div>
       <div v-if="bin.items.length" class="card-grid">
         <div v-for="i in bin.items" :key="i.id" class="item-card">

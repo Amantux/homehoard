@@ -12,6 +12,8 @@ const ui = useUI()
 const id = route.params.id
 
 const item = ref(null)
+const binId = ref('')
+const locationId = ref('')
 const path = ref([])
 const locations = ref([])
 const bins = ref([])
@@ -31,11 +33,8 @@ function dateInput(v) { return v ? v.slice(0, 10) : '' }
 
 // When an item is placed in a bin, its location is inherited from that bin.
 function onBinChange() {
-  const b = item.value.bin
-  if (b) {
-    const full = bins.value.find((x) => x.id === b.id) || b
-    item.value.location = full.location || null
-  }
+  const b = bins.value.find((x) => x.id === binId.value)
+  if (b && b.location) locationId.value = b.location.id
 }
 const primaryImg = computed(() => {
   const a = item.value?.attachments?.find((x) => x.primary)
@@ -44,6 +43,8 @@ const primaryImg = computed(() => {
 
 async function loadAll() {
   item.value = await api.get('/items/' + id)
+  binId.value = item.value.bin?.id || ''
+  locationId.value = item.value.location?.id || ''
   ;[path.value, maint.value] = await Promise.all([
     api.get(`/items/${id}/path`),
     api.get(`/items/${id}/maintenance`),
@@ -66,7 +67,8 @@ async function save() {
     purchaseFrom: i.purchaseFrom, purchasePrice: Number(i.purchasePrice) || 0,
     purchaseDate: i.purchaseDate || null, warrantyExpires: i.warrantyExpires || null,
     lifetimeWarranty: i.lifetimeWarranty, warrantyDetails: i.warrantyDetails,
-    locationId: i.location?.id || null, binId: i.bin?.id || null,
+    binId: binId.value || null,
+    locationId: binId.value ? null : (locationId.value || null),
     labelIds: i.labels.map((l) => l.id),
   })
   editing.value = false
@@ -241,13 +243,13 @@ async function addMaint() {
             <div class="row">
               <label class="field fill"><span>Quantity</span><input type="number" v-model.number="item.quantity" /></label>
               <label class="field fill"><span>Bin</span>
-                <select v-model="item.bin" @change="onBinChange"><option :value="null">None</option>
-                  <option v-for="b in bins" :key="b.id" :value="b">{{ b.name }}</option></select></label>
+                <select v-model="binId" @change="onBinChange"><option value="">None</option>
+                  <option v-for="b in bins" :key="b.id" :value="b.id">{{ b.name }}</option></select></label>
               <label class="field fill">
-                <span>Location{{ item.bin ? ' (from bin)' : '' }}</span>
-                <select v-model="item.location" :disabled="!!item.bin">
-                  <option :value="null">None</option>
-                  <option v-for="l in locations" :key="l.id" :value="l">{{ l.name }}</option></select></label>
+                <span>Location{{ binId ? ' (from bin)' : '' }}</span>
+                <select v-model="locationId" :disabled="!!binId">
+                  <option value="">None</option>
+                  <option v-for="l in locations" :key="l.id" :value="l.id">{{ l.name }}</option></select></label>
             </div>
             <label class="field"><span>Labels</span>
               <select multiple v-model="selectedLabels" size="4">

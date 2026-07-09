@@ -13,17 +13,37 @@ const ui = useUI()
 const id = route.params.id
 const loc = ref(null)
 const allLocations = ref([])
+const allItems = ref([])
+const addItemId = ref('')
+const newItemName = ref('')
 const tab = ref('items')
 const editing = ref(false)
 
 async function load() {
   loc.value = await api.get('/locations/' + id)
 }
+async function refreshItems() { allItems.value = (await api.get('/items?pageSize=500')).items }
 onMounted(async () => {
   await loadCurrency()
   await load()
-  allLocations.value = await api.get('/locations')
+  ;[allLocations.value] = await Promise.all([api.get('/locations'), refreshItems()])
 })
+
+async function createItemHere() {
+  if (!newItemName.value.trim()) return
+  await api.post('/items', { name: newItemName.value.trim(), locationId: id })
+  newItemName.value = ''
+  ui.toast('Item created here')
+  await load(); await refreshItems()
+}
+async function addItem() {
+  if (!addItemId.value) return
+  // Directly in a location means it's not in a bin.
+  await api.patch('/items/' + addItemId.value, { locationId: id, binId: null })
+  addItemId.value = ''
+  ui.toast('Item moved here')
+  await load(); await refreshItems()
+}
 
 async function save() {
   await api.put('/locations/' + id, {
@@ -84,6 +104,17 @@ async function remove() {
     </div>
 
     <div v-show="tab==='items'">
+      <div class="toolbar" style="flex-wrap:wrap;gap:8px">
+        <input v-model="newItemName" style="max-width:220px" placeholder="New item name…"
+               @keyup.enter="createItemHere" />
+        <button :disabled="!newItemName.trim()" @click="createItemHere">＋ Create here</button>
+        <span class="muted" style="align-self:center">or</span>
+        <select v-model="addItemId" style="max-width:240px">
+          <option value="">Move an existing item here…</option>
+          <option v-for="i in allItems" :key="i.id" :value="i.id">{{ i.name }}</option>
+        </select>
+        <button class="secondary" :disabled="!addItemId" @click="addItem">Move here</button>
+      </div>
       <div v-if="loc.items?.length" class="card-grid"><ItemCard v-for="i in loc.items" :key="i.id" :item="i" /></div>
       <div v-else class="card muted">No items directly in this location.</div>
     </div>
