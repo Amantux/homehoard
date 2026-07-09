@@ -16,6 +16,7 @@ const locations = ref([])
 const allItems = ref([])
 const addItemId = ref('')
 const newItemName = ref('')
+const newItemQty = ref(1)
 const tab = ref('items')
 const editing = ref(false)
 
@@ -65,8 +66,11 @@ async function addItem() {
 }
 async function createItemHere() {
   if (!newItemName.value.trim()) return
-  await api.post('/items', { name: newItemName.value.trim(), binId: id })
+  await api.post('/items', {
+    name: newItemName.value.trim(), quantity: Number(newItemQty.value) || 1, binId: id,
+  })
   newItemName.value = ''
+  newItemQty.value = 1
   ui.toast('Item created in bin')
   await load()
   allItems.value = (await api.get('/items?pageSize=500')).items
@@ -125,8 +129,10 @@ async function remove() {
 
     <div v-show="tab==='items'">
       <div class="toolbar" style="flex-wrap:wrap;gap:8px">
-        <input v-model="newItemName" style="max-width:220px" placeholder="New item name…"
+        <input v-model="newItemName" style="max-width:200px" placeholder="New item name…"
                @keyup.enter="createItemHere" />
+        <input type="number" min="1" v-model.number="newItemQty" style="max-width:76px"
+               title="Quantity" @keyup.enter="createItemHere" />
         <button :disabled="!newItemName.trim()" @click="createItemHere">＋ Create here</button>
         <span class="muted" style="align-self:center">or</span>
         <select v-model="addItemId" style="max-width:240px">
