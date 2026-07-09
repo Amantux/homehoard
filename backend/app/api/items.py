@@ -177,6 +177,7 @@ def create_item():
     item = Item(
         name=data.get("name", ""),
         description=data.get("description", ""),
+        quantity=data.get("quantity") or 1,
         group_id=current_group().id,
         location_id=location_id,
         bin_id=bin_id,

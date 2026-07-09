@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api'
 import { useUI } from '../stores/ui'
@@ -12,12 +12,15 @@ const ui = useUI()
 const kind = ref(props.initialKind)
 const name = ref('')
 const description = ref('')
+const quantity = ref(1)
 const locationId = ref('')
 const binId = ref('')
 const code = ref('')
 const locations = ref([])
 const bins = ref([])
 const busy = ref(false)
+const sessionCount = ref(0)
+const nameInput = ref(null)
 
 onMounted(async () => {
   try {
@@ -54,7 +57,8 @@ async function linkCode(kindName, targetId) {
   }
 }
 
-async function submit() {
+// stay = keep the modal open for the next item (bin/location stay selected).
+async function submit(stay = false) {
   if (!name.value) return
   busy.value = true
   try {
@@ -63,28 +67,40 @@ async function submit() {
       // binId wins — the backend inherits the bin's location automatically.
       created = await api.post('/items', {
         name: name.value, description: description.value,
+        quantity: Number(quantity.value) || 1,
         binId: binId.value || null,
         locationId: binId.value ? null : (locationId.value || null),
       })
       await linkCode('item', created.id)
-      router.push('/items/' + created.id)
+      if (!stay) router.push('/items/' + created.id)
     } else if (kind.value === 'bin') {
       created = await api.post('/bins', {
         name: name.value, description: description.value, locationId: locationId.value || null,
       })
       await linkCode('bin', created.id)
-      router.push('/bins/' + created.id)
+      if (!stay) router.push('/bins/' + created.id)
     } else if (kind.value === 'location') {
       created = await api.post('/locations', { name: name.value, description: description.value })
       await linkCode('location', created.id)
-      router.push('/locations')
+      if (!stay) router.push('/locations')
     } else {
       await api.post('/labels', { name: name.value, description: description.value })
-      router.push('/labels')
+      if (!stay) router.push('/labels')
     }
+    sessionCount.value += 1
     ui.toast(`${name.value} created`)
     emit('created')
-    emit('close')
+    if (stay) {
+      // Keep the sticky container; clear only the per-item fields.
+      name.value = ''
+      description.value = ''
+      code.value = ''
+      quantity.value = 1
+      await nextTick()
+      nameInput.value?.focus()
+    } else {
+      emit('close')
+    }
   } catch (e) {
     ui.error(e.message)
   } finally {
@@ -110,10 +126,13 @@ async function submit() {
       </div>
 
       <label class="field"><span>Name</span>
-        <input v-model="name" autofocus placeholder="e.g. Cordless Drill"
-               @keyup.enter="submit" /></label>
+        <input ref="nameInput" v-model="name" autofocus placeholder="e.g. Cordless Drill"
+               @keyup.enter="submit(true)" /></label>
       <label class="field"><span>Description</span>
         <textarea v-model="description" rows="2"></textarea></label>
+
+      <label v-if="kind === 'item'" class="field" style="max-width:130px"><span>Quantity</span>
+        <input type="number" min="1" v-model.number="quantity" @keyup.enter="submit(true)" /></label>
 
       <!-- Item: choose a bin (location follows) or a bare location -->
       <div v-if="kind === 'item'" class="row">
@@ -145,11 +164,15 @@ async function submit() {
       <!-- Barcode / QR — attach a code you can scan later -->
       <label v-if="kind !== 'label'" class="field"><span>Barcode / QR code (optional)</span>
         <input v-model="code" placeholder="Scan or type a code to attach"
-               @keyup.enter="submit" /></label>
+               @keyup.enter="submit(true)" /></label>
 
-      <div class="row" style="justify-content:flex-end;margin-top:6px">
-        <button class="secondary" @click="emit('close')">Cancel</button>
-        <button :disabled="!name || busy" @click="submit">Create {{ kind }}</button>
+      <div class="row" style="justify-content:space-between;align-items:center;margin-top:6px">
+        <span class="muted" style="font-size:0.85rem">{{ sessionCount ? sessionCount + ' added' : '' }}</span>
+        <div class="row" style="gap:8px">
+          <button class="secondary" @click="emit('close')">{{ sessionCount ? 'Done' : 'Cancel' }}</button>
+          <button class="secondary" :disabled="!name || busy" @click="submit(true)">Save &amp; add another</button>
+          <button :disabled="!name || busy" @click="submit(false)">Create {{ kind }}</button>
+        </div>
       </div>
     </div>
   </div>
