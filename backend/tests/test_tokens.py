@@ -56,6 +56,38 @@ def test_revoked_token_stops_working(app, auth_client):
     assert auth_client.get("/api/v1/tokens").get_json() == []
 
 
+def _second_group_client(app):
+    """A logged-in client in a different group (registration creates a group)."""
+    c = app.test_client()
+    c.post(
+        "/api/v1/users/register",
+        json={"email": "other@t.com", "password": "password", "name": "Other"},
+    )
+    token = c.post(
+        "/api/v1/users/login",
+        json={"username": "other@t.com", "password": "password"},
+    ).get_json()["token"]
+    c.environ_base["HTTP_AUTHORIZATION"] = token
+    return c
+
+
+def test_tokens_are_group_isolated(app, auth_client):
+    """A user in another group can neither see nor revoke this group's token."""
+    created = _make_token(auth_client, "Group A token")
+    other = _second_group_client(app)
+
+    # Not visible to the other group.
+    assert other.get("/api/v1/tokens").get_json() == []
+    # Cannot be revoked cross-group.
+    assert other.delete(f"/api/v1/tokens/{created['id']}").status_code == 404
+    # Still works for group A after the failed cross-group revoke.
+    assert len(auth_client.get("/api/v1/tokens").get_json()) == 1
+    raw = created["token"]
+    assert app.test_client().get(
+        "/api/v1/ha/summary", headers={"Authorization": f"Bearer {raw}"}
+    ).status_code == 200
+
+
 def test_last_used_recorded_on_use(app, auth_client):
     raw = _make_token(auth_client)["token"]
     assert auth_client.get("/api/v1/tokens").get_json()[0]["lastUsedAt"] is None

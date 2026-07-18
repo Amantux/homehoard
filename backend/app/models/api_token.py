@@ -37,5 +37,7 @@ class ApiToken(IDMixin, TimestampMixin, db.Model):
     last_used_at: Mapped[str] = mapped_column(DateTime, nullable=True)
 
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"))
-    group_id: Mapped[str] = mapped_column(String(36), ForeignKey("groups.id"))
+    group_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("groups.id"), index=True
+    )
     user = relationship("User")
