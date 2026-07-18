@@ -258,6 +258,40 @@ def set_checkout_details(name_or_id: str, person: str = "", due: str = "") -> st
 
 
 @mcp.tool()
+def suggest_placement(item: str, labels: str = "") -> list[dict]:
+    """Suggest where to put an item, based on where similar items already live.
+
+    Use for "where should I put my ...?" / "where does this go?". `item` is the
+    item's name (or a short description). Returns ranked bins/locations, each
+    with why it was suggested and a few example items already there. This only
+    suggests — use `move_item` to actually place an existing item.
+    """
+    params = {"name": item}
+    if labels:
+        params["labels"] = labels
+    data = _get("/items/suggest-placement", params)
+    out = []
+    for s in data.get("suggestions", []):
+        where = f" ({s['where']})" if s.get("where") else ""
+        why = (
+            f"{s['count']} similar item(s) already here"
+            if s.get("basis") == "similar"
+            else "one of your most-used places"
+        )
+        out.append(
+            {
+                "place": f"{s['type']}: {s['name']}{where}",
+                "why": why,
+                "examples": s.get("samples", []),
+            }
+        )
+    if not out:
+        return [{"place": "", "why": "No suggestion — your inventory is empty.",
+                 "examples": []}]
+    return out
+
+
+@mcp.tool()
 def inventory_statistics() -> dict:
     """Totals + attention counts (items, value, warranties expiring, checked out)."""
     s = _get("/ha/summary")

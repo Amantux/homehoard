@@ -57,8 +57,8 @@ from chat or voice.
 - **⚡ One-click check-out** — one tap checks an item out immediately; add who
   has it, a due date, and notes as an optional next step (in the app and via the
   scanner).
-- **🤖 Full MCP surface for Home Assistant** — **12** inventory tools (`where_is`,
-  `check_out_item`, `move_item`, `update_item`, `set_checkout_details`, …) over
+- **🤖 Full MCP surface for Home Assistant** — **13** inventory tools (`where_is`,
+  `suggest_placement`, `check_out_item`, `move_item`, `update_item`, …) over
   SSE, in the same container. **Everything except adding/deleting items** is
   available to an LLM-powered Assist. *(Also fixed the MCP host-header check so
   HA's MCP Client can actually connect to the add-on by hostname.)*
@@ -206,7 +206,9 @@ integration — so an **LLM-powered** Assist can call them directly. Everything
 **except adding or deleting items** is available:
 
 - **Query** — `where_is`, `search_inventory`, `get_item`, `get_bin_contents`,
-  `get_location_contents`, `list_checkouts`, `inventory_statistics`
+  `get_location_contents`, `list_checkouts`, `inventory_statistics`,
+  `suggest_placement` (*"where should this go?"* — ranks bins/locations by where
+  similar items already live)
 - **Act** — `check_out_item`, `check_in_item`, `set_checkout_details`,
   `update_item` (edit details), `move_item` (into a bin/location)
 

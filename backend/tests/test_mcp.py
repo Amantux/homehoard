@@ -18,6 +18,7 @@ def test_mcp_tools_registered():
         "move_item",
         "set_checkout_details",
         "inventory_statistics",
+        "suggest_placement",
     ):
         assert expected in tools
     # Adding and deleting items are intentionally NOT exposed to Home Assistant.
