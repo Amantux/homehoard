@@ -1,3 +1,4 @@
+import re
 from datetime import datetime
 
 from flask import Blueprint, request, jsonify, abort
@@ -5,7 +6,8 @@ from flask import Blueprint, request, jsonify, abort
 from ..extensions import db
 from ..models import Item, ItemField, Label, Location, Bin
 from ..auth import login_required, current_group
-from ..schemas.serializers import item_out, item_summary, location_summary
+from ..schemas.serializers import item_out, item_summary
+from .lookup import location_path_str
 
 bp = Blueprint("items", __name__)
 
@@ -241,6 +243,110 @@ def item_path(item_id):
     path.extend(reversed(chain))
     path.append({"id": item.id, "name": item.name, "type": "item"})
     return jsonify(path)
+
+
+def _placement_of(item):
+    """Where an item currently lives, as a ('bin'|'location', id, name, where)
+    tuple — or None if it's unplaced."""
+    if item.bin_id and item.bin:
+        loc = location_path_str(item.bin.location) if item.bin.location else ""
+        return ("bin", item.bin_id, item.bin.name, loc)
+    if item.location_id and item.location:
+        loc = location_path_str(item.location.parent) if item.location.parent else ""
+        return ("location", item.location_id, item.location.name, loc)
+    return None
+
+
+def _popular_placements(gid, limit):
+    """Fallback when nothing similar is found: the most-populated places."""
+    out = []
+    bins = sorted(
+        db.session.query(Bin).filter_by(group_id=gid).all(),
+        key=lambda b: len(b.items),
+        reverse=True,
+    )
+    for b in bins:
+        if b.items:
+            where = location_path_str(b.location) if b.location else ""
+            out.append({"type": "bin", "id": b.id, "name": b.name, "where": where,
+                        "count": len(b.items), "samples": [], "basis": "popular"})
+    locs = sorted(
+        db.session.query(Location).filter_by(group_id=gid).all(),
+        key=lambda loc: len(loc.items),
+        reverse=True,
+    )
+    for loc in locs:
+        if loc.items:
+            where = location_path_str(loc.parent) if loc.parent else ""
+            out.append({"type": "location", "id": loc.id, "name": loc.name,
+                        "where": where, "count": len(loc.items), "samples": [],
+                        "basis": "popular"})
+    return out[:limit]
+
+
+def _placement_suggestions(gid, name, label_ids, exclude_id, limit):
+    """Rank places to put an item by where *similar* items already live.
+
+    Similarity = the item name shares a word with an existing item's name,
+    description, manufacturer, model, or a label — or they share a label id.
+    Falls back to the most-populated places when nothing matches.
+    """
+    tokens = [t for t in re.split(r"[^a-z0-9]+", (name or "").lower()) if len(t) >= 3]
+    conds = []
+    for t in tokens:
+        like = f"%{t}%"
+        conds.extend([
+            Item.name.ilike(like),
+            Item.description.ilike(like),
+            Item.manufacturer.ilike(like),
+            Item.model_number.ilike(like),
+            Item.labels.any(Label.name.ilike(like)),
+        ])
+    if label_ids:
+        conds.append(Item.labels.any(Label.id.in_(label_ids)))
+
+    agg = {}
+    if conds:
+        q = db.session.query(Item).filter(Item.group_id == gid)
+        if exclude_id:
+            q = q.filter(Item.id != exclude_id)
+        for item in q.filter(db.or_(*conds)).all():
+            placement = _placement_of(item)
+            if placement is None:
+                continue
+            kind, pid, pname, where = placement
+            entry = agg.setdefault(
+                (kind, pid),
+                {"type": kind, "id": pid, "name": pname, "where": where,
+                 "count": 0, "samples": [], "basis": "similar"},
+            )
+            entry["count"] += 1
+            if len(entry["samples"]) < 3 and item.name not in entry["samples"]:
+                entry["samples"].append(item.name)
+
+    results = sorted(agg.values(), key=lambda e: e["count"], reverse=True)[:limit]
+    if not results:
+        results = _popular_placements(gid, limit)
+    return results
+
+
+@bp.get("/items/suggest-placement")
+@login_required
+def suggest_placement():
+    """Suggest bins/locations to put a (possibly not-yet-created) item, based
+    on where similar items already live. Powers the create flow and the HA MCP
+    ``suggest_placement`` tool."""
+    args = request.args
+    label_ids = [x for x in args.get("labels", "").split(",") if x]
+    limit = max(1, min(int(args.get("limit", 3) or 3), 10))
+    suggestions = _placement_suggestions(
+        current_group().id,
+        args.get("name", ""),
+        label_ids,
+        args.get("exclude") or None,
+        limit,
+    )
+    return jsonify({"suggestions": suggestions})
 
 
 @bp.get("/items/fields")
