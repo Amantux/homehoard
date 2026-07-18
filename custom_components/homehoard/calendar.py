@@ -10,7 +10,7 @@ from homeassistant.helpers import aiohttp_client
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util import dt as dt_util
 
-from .const import CONF_HOST, CONF_PORT, DEFAULT_CALENDAR_PATH, DOMAIN
+from .const import CONF_HOST, CONF_PORT, CONF_TOKEN, DEFAULT_CALENDAR_PATH
 from .entity import device_info
 from .helpers import build_url
 
@@ -35,6 +35,9 @@ class HomeHoardCalendar(CalendarEntity):
         self._url = build_url(
             entry.data[CONF_HOST], int(entry.data[CONF_PORT]), DEFAULT_CALENDAR_PATH
         )
+        # Auth header for auth-enabled (standalone) servers; empty for the add-on.
+        token = entry.data.get(CONF_TOKEN, "")
+        self._headers = {"Authorization": f"Bearer {token}"} if token else {}
         self._attr_unique_id = f"{entry.entry_id}_calendar"
         self._attr_device_info = device_info(entry)
         self._next: CalendarEvent | None = None
@@ -57,7 +60,7 @@ class HomeHoardCalendar(CalendarEntity):
         params = {"start": start.date().isoformat(), "end": end.date().isoformat()}
         try:
             async with self._session.get(
-                self._url, params=params, timeout=_TIMEOUT
+                self._url, params=params, headers=self._headers, timeout=_TIMEOUT
             ) as resp:
                 resp.raise_for_status()
                 raw = await resp.json()
