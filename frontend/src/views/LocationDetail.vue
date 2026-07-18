@@ -1,17 +1,19 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '../api'
 import { money, loadCurrency } from '../format'
 import { useUI } from '../stores/ui'
 import ItemCard from '../components/ItemCard.vue'
 import QrPanel from '../components/QrPanel.vue'
+import { indexById, pathString } from '../locationTree'
 
 const route = useRoute()
 const router = useRouter()
 const ui = useUI()
 const id = route.params.id
 const loc = ref(null)
+const path = ref([])
 const allLocations = ref([])
 const allItems = ref([])
 const addItemId = ref('')
@@ -20,8 +22,34 @@ const newItemQty = ref(1)
 const tab = ref('items')
 const editing = ref(false)
 
+const byId = computed(() => indexById(allLocations.value))
+
+// Valid parents = everything except this location and its descendants (moving a
+// location under its own descendant would be a cycle — the API rejects it too).
+const descendantIds = computed(() => {
+  const out = new Set([id])
+  let added = true
+  while (added) {
+    added = false
+    for (const l of allLocations.value) {
+      if (l.parent?.id && out.has(l.parent.id) && !out.has(l.id)) {
+        out.add(l.id)
+        added = true
+      }
+    }
+  }
+  return out
+})
+const parentOptions = computed(() =>
+  allLocations.value
+    .filter((l) => !descendantIds.value.has(l.id))
+    .map((l) => ({ id: l.id, path: pathString(l, byId.value) }))
+    .sort((a, b) => a.path.localeCompare(b.path)),
+)
+
 async function load() {
   loc.value = await api.get('/locations/' + id)
+  path.value = await api.get(`/locations/${id}/path`)
 }
 async function refreshItems() { allItems.value = (await api.get('/items?pageSize=500')).items }
 onMounted(async () => {
@@ -49,14 +77,24 @@ async function addItem() {
   await load(); await refreshItems()
 }
 
+const editParentId = ref('')
+function startEdit() {
+  editParentId.value = loc.value.parent?.id || ''
+  editing.value = true
+}
+
 async function save() {
-  await api.put('/locations/' + id, {
-    name: loc.value.name, description: loc.value.description,
-    parentId: loc.value.parent?.id || '',
-  })
-  editing.value = false
-  ui.toast('Saved')
-  await load()
+  try {
+    await api.put('/locations/' + id, {
+      name: loc.value.name, description: loc.value.description,
+      parentId: editParentId.value || null,
+    })
+    editing.value = false
+    ui.toast('Saved')
+    await load()
+  } catch (e) {
+    ui.error(e.message)
+  }
 }
 async function remove() {
   if (!confirm('Delete this location and its bins?')) return
@@ -70,11 +108,11 @@ async function remove() {
   <div v-if="loc">
     <div class="breadcrumb" style="margin-bottom:10px">
       <router-link to="/locations">Locations</router-link>
-      <template v-if="loc.parent">
+      <template v-for="(p, idx) in path" :key="p.id">
         <span class="sep">/</span>
-        <router-link :to="'/locations/' + loc.parent.id">{{ loc.parent.name }}</router-link>
+        <router-link v-if="idx < path.length - 1" :to="'/locations/' + p.id">{{ p.name }}</router-link>
+        <span v-else>{{ p.name }}</span>
       </template>
-      <span class="sep">/</span><span>{{ loc.name }}</span>
     </div>
 
     <div class="page-head">
@@ -87,16 +125,18 @@ async function remove() {
       </template>
       <template v-else>
         <button class="danger secondary" @click="remove">Delete</button>
-        <button @click="editing=true">Edit</button>
+        <button @click="startEdit">Edit</button>
       </template>
     </div>
 
     <div v-if="editing" class="card">
       <label class="field"><span>Name</span><input v-model="loc.name" /></label>
       <label class="field"><span>Description</span><textarea v-model="loc.description" rows="2"></textarea></label>
-      <label class="field"><span>Parent</span>
-        <select v-model="loc.parent"><option :value="null">None</option>
-          <option v-for="l in allLocations.filter(x=>x.id!==id)" :key="l.id" :value="l">{{ l.name }}</option></select></label>
+      <label class="field"><span>Parent location</span>
+        <select v-model="editParentId">
+          <option value="">None — top-level site</option>
+          <option v-for="o in parentOptions" :key="o.id" :value="o.id">{{ o.path }}</option>
+        </select></label>
     </div>
     <p v-else-if="loc.description" class="muted">{{ loc.description }}</p>
 
