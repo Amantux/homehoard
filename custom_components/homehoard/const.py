@@ -2,6 +2,7 @@ DOMAIN = "homehoard"
 
 CONF_HOST = "host"
 CONF_PORT = "port"
+CONF_TOKEN = "token"
 CONF_UPDATE_INTERVAL = "update_interval"
 
 DEFAULT_HOST = "http://127.0.0.1"

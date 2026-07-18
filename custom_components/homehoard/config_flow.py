@@ -5,9 +5,8 @@ import logging
 from typing import Any
 
 import voluptuous as vol
-from aiohttp import ClientError, ClientTimeout
+from aiohttp import ClientError, ClientResponseError, ClientTimeout
 from homeassistant import config_entries
-from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import aiohttp_client
 from homeassistant.helpers.service_info.hassio import HassioServiceInfo
@@ -15,10 +14,11 @@ from homeassistant.helpers.service_info.hassio import HassioServiceInfo
 from .const import (
     CONF_HOST,
     CONF_PORT,
+    CONF_TOKEN,
     CONF_UPDATE_INTERVAL,
     DEFAULT_HOST,
     DEFAULT_PORT,
-    DEFAULT_STATUS_PATH,
+    DEFAULT_SUMMARY_PATH,
     DEFAULT_UPDATE_INTERVAL,
     DOMAIN,
 )
@@ -92,6 +92,8 @@ class HomeHoardConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_PORT: int(
                         self._hassio_discovery.config.get(CONF_PORT, DEFAULT_PORT)
                     ),
+                    # Add-on runs auth-disabled behind ingress — no token needed.
+                    CONF_TOKEN: "",
                 },
             )
         self._set_confirm_only()
@@ -110,18 +112,27 @@ class HomeHoardConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             host = str(user_input[CONF_HOST]).strip().rstrip("/")
             port = int(user_input[CONF_PORT])
+            token = str(user_input.get(CONF_TOKEN, "")).strip()
             # Idempotent: adding the same host twice (or on top of the
             # auto-discovered add-on) just points at the existing entry.
             await self.async_set_unique_id(f"{host}:{port}".lower())
             self._abort_if_unique_id_configured()
             try:
-                await self._async_validate(host, port)
+                await self._async_validate(host, port, token)
+            except ClientResponseError as exc:
+                if exc.status in (401, 403):
+                    # Auth is on and the token is missing/invalid.
+                    errors["base"] = "invalid_auth"
+                else:
+                    _LOGGER.warning("HomeHoard returned %s", exc.status)
+                    errors["base"] = "cannot_connect"
             except (ClientError, asyncio.TimeoutError) as exc:
                 _LOGGER.warning("Cannot reach HomeHoard: %s", exc)
                 errors["base"] = "cannot_connect"
             else:
                 return self.async_create_entry(
-                    title="HomeHoard", data={CONF_HOST: host, CONF_PORT: port}
+                    title="HomeHoard",
+                    data={CONF_HOST: host, CONF_PORT: port, CONF_TOKEN: token},
                 )
         return self.async_show_form(
             step_id="user",
@@ -129,13 +140,17 @@ class HomeHoardConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 {
                     vol.Required(CONF_HOST, default=DEFAULT_HOST): str,
                     vol.Required(CONF_PORT, default=DEFAULT_PORT): int,
+                    vol.Optional(CONF_TOKEN, default=""): str,
                 }
             ),
             errors=errors,
         )
 
-    async def _async_validate(self, host: str, port: int) -> None:
+    async def _async_validate(self, host: str, port: int, token: str = "") -> None:
+        """Probe an authenticated endpoint so an auth-on server without a valid
+        token fails here (401) instead of silently going unavailable later."""
         session = aiohttp_client.async_get_clientsession(self.hass)
-        url = build_url(host, port, DEFAULT_STATUS_PATH)
-        async with session.get(url, timeout=_TIMEOUT) as response:
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
+        url = build_url(host, port, DEFAULT_SUMMARY_PATH)
+        async with session.get(url, headers=headers, timeout=_TIMEOUT) as response:
             response.raise_for_status()

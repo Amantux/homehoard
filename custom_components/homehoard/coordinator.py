@@ -13,6 +13,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from .const import (
     CONF_HOST,
     CONF_PORT,
+    CONF_TOKEN,
     CONF_UPDATE_INTERVAL,
     DEFAULT_SEARCH_PATH,
     DEFAULT_SUMMARY_PATH,
@@ -34,6 +35,10 @@ class HomeHoardDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._session = session
         self.host = entry.data[CONF_HOST]
         self.port = int(entry.data[CONF_PORT])
+        # Long-lived API token for auth-enabled (standalone) servers. Empty for
+        # the add-on, which runs auth-disabled behind ingress.
+        token = entry.data.get(CONF_TOKEN, "")
+        self._headers = {"Authorization": f"Bearer {token}"} if token else {}
         self._summary_url = build_url(self.host, self.port, DEFAULT_SUMMARY_PATH)
         interval = int(entry.options.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL))
         super().__init__(
@@ -42,7 +47,9 @@ class HomeHoardDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def _async_update_data(self) -> dict[str, Any]:
         try:
-            async with self._session.get(self._summary_url, timeout=_TIMEOUT) as resp:
+            async with self._session.get(
+                self._summary_url, headers=self._headers, timeout=_TIMEOUT
+            ) as resp:
                 resp.raise_for_status()
                 return await resp.json()
         except (ClientError, asyncio.TimeoutError) as err:
@@ -53,7 +60,10 @@ class HomeHoardDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         url = build_url(self.host, self.port, DEFAULT_SEARCH_PATH)
         try:
             async with self._session.get(
-                url, params={"q": query, "types": types}, timeout=_TIMEOUT
+                url,
+                params={"q": query, "types": types},
+                headers=self._headers,
+                timeout=_TIMEOUT,
             ) as resp:
                 resp.raise_for_status()
                 data = await resp.json()
@@ -64,7 +74,7 @@ class HomeHoardDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _get_json(self, path: str, params: dict | None = None):
         url = build_url(self.host, self.port, path)
         async with self._session.get(
-            url, params=params or {}, timeout=_TIMEOUT
+            url, params=params or {}, headers=self._headers, timeout=_TIMEOUT
         ) as resp:
             resp.raise_for_status()
             return await resp.json()
@@ -107,7 +117,10 @@ class HomeHoardDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         path = f"/api/v1/items/{item['id']}/checkout"
         try:
             async with self._session.post(
-                build_url(self.host, self.port, path), json={}, timeout=_TIMEOUT
+                build_url(self.host, self.port, path),
+                json={},
+                headers=self._headers,
+                timeout=_TIMEOUT,
             ) as resp:
                 if resp.status == 409:
                     return {"status": "already_out", "name": item["name"]}
@@ -124,7 +137,10 @@ class HomeHoardDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         path = f"/api/v1/items/{item['id']}/checkin"
         try:
             async with self._session.post(
-                build_url(self.host, self.port, path), json={}, timeout=_TIMEOUT
+                build_url(self.host, self.port, path),
+                json={},
+                headers=self._headers,
+                timeout=_TIMEOUT,
             ) as resp:
                 if resp.status == 409:
                     return {"status": "already_in", "name": item["name"]}

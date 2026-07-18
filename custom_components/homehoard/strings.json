@@ -3,9 +3,11 @@
     "step": {
       "user": {
         "title": "Connect to HomeHoard",
+        "description": "Add-on users are set up automatically. Only fill in an API token if your HomeHoard has authentication enabled — generate one in HomeHoard under “Home Assistant”.",
         "data": {
           "host": "HomeHoard host (e.g. http://127.0.0.1)",
-          "port": "Port"
+          "port": "Port",
+          "token": "API token (only if auth is enabled)"
         }
       },
       "hassio_confirm": {
@@ -14,7 +16,8 @@
       }
     },
     "error": {
-      "cannot_connect": "Unable to connect. Make sure HomeHoard is installed and running."
+      "cannot_connect": "Unable to connect. Make sure HomeHoard is installed and running.",
+      "invalid_auth": "HomeHoard rejected the request. Enter a valid API token (generate one in HomeHoard under “Home Assistant”)."
     },
     "abort": {
       "already_configured": "HomeHoard is already configured.",
