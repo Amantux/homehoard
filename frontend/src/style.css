@@ -282,8 +282,11 @@ tbody tr.clickable:hover td { background: var(--accent-soft); }
 .toast {
   background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--accent);
   border-radius: var(--radius-sm); padding: 12px 16px; box-shadow: var(--shadow-lg);
-  min-width: 240px; animation: slidein 0.18s ease-out;
+  min-width: 240px; max-width: 360px; animation: slidein 0.18s ease-out; cursor: pointer;
+  display: flex; align-items: flex-start; gap: 10px;
 }
+.toast > span { flex: 1; }
+.toast .toast-close { width: 22px; height: 22px; padding: 0; font-size: 0.8rem; margin: -2px -6px 0 0; }
 .toast.error { border-left-color: var(--danger); }
 .toast.success { border-left-color: var(--success); }
 @keyframes slidein { from { transform: translateX(30px); opacity: 0; } }
@@ -299,8 +302,38 @@ tbody tr.clickable:hover td { background: var(--accent-soft); }
 .kv dt { color: var(--muted); font-size: 0.85rem; }
 .kv dd { margin: 0; }
 
+/* ---------- Bulk selection ---------- */
+.bulk-bar {
+  position: sticky; top: var(--topbar-h); z-index: 15;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 10px 14px; margin-bottom: 16px;
+  background: var(--accent-soft); border: 1px solid var(--accent);
+  border-radius: var(--radius-sm); box-shadow: var(--shadow);
+}
+.bulk-bar select { background: var(--surface); }
+.select-all {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 0.82rem; color: var(--muted); margin-bottom: 12px; cursor: pointer;
+}
+.select-wrap { position: relative; }
+.select-wrap .select-check {
+  position: absolute; top: 8px; left: 8px; z-index: 2;
+  width: 28px; height: 28px; border-radius: 8px;
+  background: var(--surface); border: 1px solid var(--border);
+  display: grid; place-items: center; cursor: pointer;
+  box-shadow: var(--shadow); opacity: 0; transition: opacity 0.12s;
+}
+/* Reveal the checkbox on hover, on keyboard focus, or once anything is selected. */
+.select-wrap:hover .select-check,
+.select-wrap .select-check:focus-within,
+.select-wrap.selected .select-check { opacity: 1; }
+.select-wrap.selected .item-card { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+tbody tr.row-selected td { background: var(--accent-soft); }
+
 @media (max-width: 720px) {
   .sidebar { display: none; }
+  /* Checkbox is always visible on touch — there is no hover to reveal it. */
+  .select-wrap .select-check { opacity: 1; }
   .content { padding: 18px 14px; }
   .topbar { padding: 0 14px; }
   .topbar .search { min-width: 0; }

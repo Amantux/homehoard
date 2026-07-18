@@ -6,8 +6,16 @@ export const useUI = defineStore('ui', {
   state: () => ({
     theme: localStorage.getItem('easyinv_theme') || 'auto',
     toasts: [],
+    // When set, App.vue opens the Create modal pre-set to this kind.
+    createKind: null,
   }),
   actions: {
+    openCreate(kind = 'item') {
+      this.createKind = kind
+    },
+    closeCreate() {
+      this.createKind = null
+    },
     applyTheme() {
       const resolved =
         this.theme === 'auto'
@@ -29,7 +37,8 @@ export const useUI = defineStore('ui', {
     toast(message, type = 'success') {
       const id = ++toastId
       this.toasts.push({ id, message, type })
-      setTimeout(() => this.dismiss(id), 3200)
+      // Errors persist until dismissed; success/info auto-dismiss.
+      if (type !== 'error') setTimeout(() => this.dismiss(id), 3200)
     },
     error(message) {
       this.toast(message, 'error')

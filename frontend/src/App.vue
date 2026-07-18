@@ -88,7 +88,8 @@ const nav = [
       </div>
     </div>
 
-    <QuickCreate v-if="showCreate" @close="showCreate = false" />
+    <QuickCreate v-if="showCreate || ui.createKind" :initial-kind="ui.createKind || 'item'"
+                 @close="showCreate = false; ui.closeCreate()" />
     <ScannerModal v-if="showScanner" @close="showScanner = false" />
     <SearchModal v-if="showSearch" @close="showSearch = false" />
     <Toasts />
