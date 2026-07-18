@@ -119,6 +119,21 @@ manual configuration needed.
 The add-on opens from the sidebar (Ingress, no separate login), stores data in
 `/share/homehoard`, and builds for **aarch64** (Raspberry Pi 5) and amd64.
 
+#### Connecting a **standalone** HomeHoard (auth enabled)
+
+The add-on runs auth-disabled behind Ingress, so it connects with **no
+credentials**. If instead you run HomeHoard standalone (Docker/Pi) **with
+authentication on**, give the integration an **API token**:
+
+1. In HomeHoard, open **Home Assistant** in the sidebar → **Generate token** →
+   copy it (shown once).
+2. In Home Assistant, add the **HomeHoard** integration manually
+   (**Settings → Devices & Services → Add Integration → HomeHoard**), enter the
+   host/port, and paste the token into **API token**.
+
+The same page shows the exact **MCP** URL to paste into HA's MCP Client. (For the
+standalone MCP server, set `HBOX_MCP_API_TOKEN` to a token too.)
+
 #### What the integration gives you
 
 The companion integration (`custom_components/homehoard`) polls a consolidated
@@ -137,13 +152,21 @@ The companion integration (`custom_components/homehoard`) polls a consolidated
 
 #### Find, check out & query by voice & messaging
 
-The integration wires HomeHoard into Home Assistant so you can **find**, **check
-out / in**, and **look inside** your inventory by voice — **no LLM required**
-(these are plain Assist intents). *"Where is my drill?"* answers with the
-location (e.g. *"Drill is in Tool Bin · Garage › Shelf."*); *"check out the
-drill"* lends it; *"what's in the garage?"* reads back the contents.
+You can **find**, **check out / in**, and **look inside** your inventory by voice
+or chat. There are two ways to do it — pick one:
 
-- **Voice (Assist):** copy
+> **Recommended: the MCP server + an LLM Assist pipeline.** If your Assist
+> conversation agent is an LLM (OpenAI, Google, Ollama, …), just connect the
+> **MCP Client** (see [MCP server](#mcp-server-for-assist--llms) below). Nothing
+> to install, no sentence files, full natural language — ask *"where's the drill
+> and is it lent out?"* and it just works. **This is the easiest path and the one
+> to reach for first.**
+
+The alternative below (plain Assist **sentences**) needs **no LLM** but only
+understands fixed phrasings and requires a one-time file copy. Use it if you run
+the default, non-LLM conversation agent.
+
+- **Voice sentences (no LLM, optional):** copy
   `custom_components/homehoard/custom_sentences/en/homehoard.yaml` to
   `<your HA config>/custom_sentences/en/homehoard.yaml` and restart HA. Then say:
   - **Find** — *"where is my …"*, *"find the …"*, *"which bin has the …"*

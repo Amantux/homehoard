@@ -46,21 +46,28 @@ Install the **HomeHoard** HACS integration for one **HomeHoard** device with:
   labels, warranties-expiring (30d), maintenance-overdue, and **checked-out**.
 - **Binary sensor** — Online.
 - **Calendar** — warranty expirations + scheduled maintenance.
-- **Voice** — *"where is my drill?"* (copy the shipped `custom_sentences` file).
+- **Voice & chat** — ask *"where is my drill?"*, *"check out the drill"*. The
+  easiest way is the **MCP server** below with an LLM Assist pipeline (no setup).
+  A no-LLM option (plain Assist sentences) also ships — see the main README.
 - **Service** — `homehoard.locate` for notifications / messaging (Telegram, …).
 
 When this add-on is running, Home Assistant offers the integration automatically
-via discovery ("New device found").
+via discovery ("New device found"). The add-on runs auth-disabled behind Ingress,
+so it connects with no token. (Connecting a *standalone* HomeHoard with auth on?
+Generate an **API token** in HomeHoard → **Home Assistant** and paste it into the
+integration — see the README.)
 
-## MCP server (Assist / LLMs)
+## MCP server — the easy voice & chat path (Assist / LLMs)
 
 This add-on also runs an **MCP server** (SSE on port **7766**, `/sse`) exposing
-10 inventory tools. Add it in **Settings → Devices & Services → Add Integration
-→ Model Context Protocol** with URL:
+inventory tools to Home Assistant's **MCP Client**. With an **LLM-powered** Assist
+conversation agent this is the simplest way to talk to your inventory — full
+natural language, no sentence files. Add it in **Settings → Devices & Services →
+Add Integration → Model Context Protocol** with URL:
 
 ```
 http://<this-host>:7766/sse
 ```
 
-Assist can then *find items, list checkouts, and check things in/out* by voice
-or chat. Disable with the `enable_mcp` option.
+Assist can then *find items, list checkouts, check things in/out, edit, and move*
+by voice or chat. Disable with the `enable_mcp` option.
