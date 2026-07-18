@@ -32,23 +32,23 @@ def user_out(u):
     }
 
 
-def label_summary(l):
+def label_summary(lbl):
     return {
-        "id": l.id,
-        "name": l.name,
-        "description": l.description,
-        "color": l.color,
-        "icon": l.icon,
-        "parentId": l.parent_id,
-        "createdAt": iso(l.created_at),
-        "updatedAt": iso(l.updated_at),
+        "id": lbl.id,
+        "name": lbl.name,
+        "description": lbl.description,
+        "color": lbl.color,
+        "icon": lbl.icon,
+        "parentId": lbl.parent_id,
+        "createdAt": iso(lbl.created_at),
+        "updatedAt": iso(lbl.updated_at),
     }
 
 
-def label_out(l):
-    data = label_summary(l)
-    data["items"] = [item_summary(i) for i in l.items]
-    data["children"] = [label_summary(c) for c in l.children]
+def label_out(lbl):
+    data = label_summary(lbl)
+    data["items"] = [item_summary(i) for i in lbl.items]
+    data["children"] = [label_summary(c) for c in lbl.children]
     return data
 
 
@@ -69,6 +69,8 @@ def location_out(loc, with_items=True):
     data["bins"] = [
         {"id": b.id, "name": b.name, "itemCount": len(b.items)} for b in loc.bins
     ]
+    data["itemCount"] = len(loc.items)
+    data["childCount"] = len(loc.children)
     if with_items:
         data["items"] = [item_summary(i) for i in loc.items]
         data["totalPrice"] = sum((i.purchase_price or 0) * (i.quantity or 1)
@@ -149,7 +151,7 @@ def item_summary(i):
         "imageId": primary.document_id if primary else None,
         "location": location_summary(i.location) if i.location else None,
         "bin": bin_summary(i.bin) if i.bin else None,
-        "labels": [label_summary(l) for l in i.labels],
+        "labels": [label_summary(lbl) for lbl in i.labels],
         "checkedOut": i.checked_out,
         "checkedOutTo": i.checked_out_to,
         "createdAt": iso(i.created_at),
