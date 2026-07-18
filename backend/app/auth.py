@@ -16,7 +16,8 @@ from flask import current_app, g, request, jsonify
 from passlib.hash import bcrypt
 
 from .extensions import db
-from .models import User, Group
+from .models import User, Group, ApiToken, hash_token
+from .models.api_token import TOKEN_PREFIX
 
 DEFAULT_EMAIL = "local@easyinventory"
 DEFAULT_GROUP = "Home"
@@ -78,10 +79,29 @@ def load_current_user():
     if not header.startswith("Bearer "):
         return None
     token = header[len("Bearer "):].strip()
+    # Long-lived API keys are prefixed so we can route them without a JWT decode.
+    if token.startswith(TOKEN_PREFIX):
+        return _user_from_api_token(token)
     user_id = decode_token(token)
     if not user_id:
         return None
     return db.session.get(User, user_id)
+
+
+def _user_from_api_token(raw: str):
+    record = (
+        db.session.query(ApiToken)
+        .filter_by(token_hash=hash_token(raw))
+        .first()
+    )
+    if record is None:
+        return None
+    # Record usage, but at most once a minute to avoid a write on every request.
+    now = datetime.utcnow()
+    if record.last_used_at is None or (now - record.last_used_at).total_seconds() > 60:
+        record.last_used_at = now
+        db.session.commit()
+    return db.session.get(User, record.user_id)
 
 
 def login_required(fn):
