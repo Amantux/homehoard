@@ -9,6 +9,7 @@ const ui = useUI()
 
 const tokens = ref([])
 const loading = ref(true)
+const loadError = ref('')
 const creating = ref(false)
 const newName = ref('')
 // The raw token is returned by the API exactly once — held here until the user
@@ -17,8 +18,14 @@ const revealed = ref(null)
 
 async function load() {
   loading.value = true
-  tokens.value = await api.get('/tokens')
-  loading.value = false
+  loadError.value = ''
+  try {
+    tokens.value = await api.get('/tokens')
+  } catch (e) {
+    loadError.value = e.message
+  } finally {
+    loading.value = false
+  }
 }
 onMounted(load)
 
@@ -39,9 +46,13 @@ async function create() {
 async function revoke(t) {
   if (!confirm(`Revoke the token “${t.name}”? Anything using it will stop working immediately.`))
     return
-  await api.del('/tokens/' + t.id)
-  ui.toast('Token revoked')
-  await load()
+  try {
+    await api.del('/tokens/' + t.id)
+    ui.toast('Token revoked')
+    await load()
+  } catch (e) {
+    ui.error('Could not revoke: ' + e.message)
+  }
 }
 
 async function copy(text) {
@@ -56,8 +67,9 @@ async function copy(text) {
 // Best-effort MCP SSE URL for the Home Assistant "MCP Client" integration.
 // The MCP server listens on 7766 regardless of how the app itself is reached.
 const mcpUrl = computed(() => {
+  const proto = window.location.protocol === 'https:' ? 'https' : 'http'
   const host = window.location.hostname || 'your-homehoard-host'
-  return `http://${host}:7766/sse`
+  return `${proto}://${host}:7766/sse`
 })
 </script>
 
@@ -141,6 +153,11 @@ const mcpUrl = computed(() => {
 
     <div v-if="loading" class="skeleton" style="height:80px"></div>
 
+    <div v-else-if="loadError" class="load-error">
+      <span>Couldn’t load tokens — {{ loadError }}</span>
+      <button class="secondary sm" @click="load">Retry</button>
+    </div>
+
     <table v-else-if="tokens.length">
       <thead>
         <tr><th>Name</th><th>Token</th><th>Created</th><th>Last used</th><th></th></tr>
@@ -179,4 +196,11 @@ const mcpUrl = computed(() => {
 }
 .reveal .code-row { background: var(--surface); }
 .tok { user-select: all; font-weight: 600; }
+.load-error {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  color: var(--danger); font-size: 0.88rem;
+  background: var(--danger-soft); border: 1px solid var(--danger);
+  border-radius: var(--radius-sm); padding: 10px 12px;
+}
+.load-error span { flex: 1; }
 </style>
