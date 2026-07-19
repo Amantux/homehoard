@@ -6,6 +6,40 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.0.0] – 2026-07-19
+
+First stable release.
+
+### Added
+- **Nested locations / multi-site support.** Locations form a tree — top-level
+  sites (homes, storage lockers, rentals) with rooms, shelves, and bins nested
+  inside. New collapsible site-tree view, full-path breadcrumbs
+  (`GET /locations/<id>/path`), and path-qualified parent pickers.
+- **Free-text create flow.** Natural-language quick-add ("3 AA batteries in the
+  kitchen drawer"), typeahead bin/location pickers with create-on-the-fly, and
+  one-tap **suggested placements** based on where similar items already live
+  (`GET /items/suggest-placement`).
+- **Bulk item actions.** Select items in grid or table and move, label, archive,
+  or delete them in one pass.
+- **Long-lived API tokens** for machine clients, managed on a new in-app **Home
+  Assistant** page, so a standalone (auth-enabled) instance can drive the HA
+  integration.
+- **`suggest_placement` MCP tool** ("where should this go?"), bringing the Home
+  Assistant MCP surface to 13 inventory tools.
+
+### Changed
+- The MCP Client + an LLM Assist pipeline is now the documented, recommended
+  path for voice and chat; the no-LLM Assist sentences are an optional fallback.
+
+### Fixed
+- Home Assistant integration sends its API token on every request (coordinator
+  **and** calendar), so auth-enabled standalone servers no longer show empty
+  sensors/calendar; the config flow validates the authenticated endpoint.
+- Guardrails on nested locations: a location can't be parented under itself or a
+  descendant, and cross-group parents are rejected.
+
+---
+
 ## [0.2.0] – 2026-07-02
 
 ### Changed

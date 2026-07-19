@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.0.0
+- **First stable release.**
+- **Nested locations / multi-site support** — sites (homes, storage lockers,
+  rentals) with rooms, shelves, and bins nested inside, as a navigable tree.
+- **Free-text create flow** — natural-language quick-add, create-on-the-fly
+  bin/location pickers, and one-tap suggested placements.
+- **Bulk item actions** (move / label / archive / delete).
+- **API tokens + in-app Home Assistant page** so a standalone (auth-enabled)
+  instance can connect the HA integration; the integration now sends its token
+  on every call (sensors **and** calendar).
+- **`suggest_placement` MCP tool** — "where should this go?" (13 MCP tools).
+- MCP + an LLM Assist pipeline is now the recommended voice/chat path.
+
 ## 0.2.0
 - **Rebrand: Shelfie is now HomeHoard.** New name, add-on slug (`homehoard`),
   image (`ghcr.io/amantux/homehoard`), and companion integration domain
