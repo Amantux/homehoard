@@ -20,7 +20,8 @@ Blockers to close first:
 - [ ] **Offsite, encrypted, scheduled backups** (today: on-demand, local). *(P2)*
 - [ ] **External uptime monitoring** on `/api/v1/ready` + alerting. *(P1)*
 - [ ] **TLS/HSTS reverse proxy** in front (app sets HSTS only when `is_secure`).
-- [ ] Set `HBOX_MCP_SERVER_TOKEN` or firewall `:7766`.
+- [ ] **Standalone only:** set `HBOX_MCP_SERVER_TOKEN` or firewall `:7766`. (The
+      HA add-on already keeps `:7766` internal — no host port is published.)
 - [ ] Set `HBOX_PROXY_HOPS` to the real proxy hop count.
 - [ ] Measure real RTO on prod-sized data.
 

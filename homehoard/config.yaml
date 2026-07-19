@@ -18,11 +18,12 @@ panel_title: HomeHoard
 # Advertise to Home Assistant so the companion integration auto-discovers us.
 discovery:
   - homehoard
-# Expose the MCP server (SSE) so the Home Assistant MCP Client can connect.
-ports:
-  7766/tcp: 7766
-ports_description:
-  7766/tcp: HomeHoard MCP server (SSE) for the Home Assistant MCP Client
+# NOTE: the MCP server (SSE :7766) is intentionally NOT published to the host.
+# Everything reaches HomeHoard inside Home Assistant's boundary: the UI/API via
+# Ingress (port 7745, authenticated by HA), and the MCP server only over the
+# internal Supervisor network — Home Assistant's MCP Client connects to it by
+# the add-on's container hostname (http://<slug>-homehoard:7766/sse), so 7766 is
+# never exposed on the host/LAN.
 map:
   - share:rw
 options:

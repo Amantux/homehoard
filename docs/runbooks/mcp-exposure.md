@@ -12,7 +12,11 @@ docker port homehoard 7766 2>/dev/null           # standalone: should NOT be pub
 # From an untrusted host, this should FAIL/timeout:
 curl -m 3 http://<host>:7766/sse ; echo "exit=$?"
 ```
-For the HA add-on, `7766` is intended for the Supervisor/HA network only.
+For the HA add-on, `7766` is **not published to the host** (no `ports:` entry in
+`config.yaml`) — it is reachable only on the internal Supervisor network by the
+add-on's container hostname. So the add-on is already internal-only by default;
+`docker port` on the HA host shows nothing. The steps below apply to **standalone**
+deployments (or if you manually add a `-p 7766:7766` mapping).
 
 ## 2. Remediate — require a token
 ```bash

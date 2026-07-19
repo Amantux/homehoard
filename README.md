@@ -216,14 +216,17 @@ integration — so an **LLM-powered** Assist can call them directly. Everything
 > do that in the app. HA is for finding, checking out, editing, and moving.
 
 - Served over **SSE on port `7766`** (`/sse`), enabled by default (add-on option
-  `enable_mcp`).
+  `enable_mcp`). **The port is not published to your host/LAN** — it's reachable
+  only on Home Assistant's internal network, so nothing about HomeHoard is
+  exposed outside the HA boundary (the UI/API go through Ingress; MCP stays
+  internal).
 - **Connect it in HA:** **Settings → Devices & Services → Add Integration →
   _Model Context Protocol_** — this is the MCP **Client** (it connects HA *to*
   HomeHoard); it is **not** the *MCP Server* integration, which points the other
-  way. Point it at
+  way. Point it at the add-on's **internal container hostname**:
   `http://<addon-hostname>:7766/sse` — e.g. `http://b3264f33-homehoard:7766/sse`
-  (the add-on's Supervisor hostname, shown on its info page), or your HA host's
-  IP as a fallback.
+  (shown on the add-on's info page). HA Core reaches this over the Supervisor
+  network; there is no host IP to use because the port isn't published.
 - The MCP tools are only used when your **conversation agent is an LLM**
   (Settings → Voice assistants → *Conversation agent*). With the default,
   non-LLM agent, use the voice sentences above instead.

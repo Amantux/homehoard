@@ -60,13 +60,17 @@ integration — see the README.)
 ## MCP server — the easy voice & chat path (Assist / LLMs)
 
 This add-on also runs an **MCP server** (SSE on port **7766**, `/sse`) exposing
-inventory tools to Home Assistant's **MCP Client**. With an **LLM-powered** Assist
-conversation agent this is the simplest way to talk to your inventory — full
-natural language, no sentence files. Add it in **Settings → Devices & Services →
-Add Integration → Model Context Protocol** with URL:
+inventory tools to Home Assistant's **MCP Client**. The port is **not published to
+your host/LAN** — it's reachable only on Home Assistant's internal network, so
+HomeHoard stays entirely inside the HA boundary (UI/API via Ingress, MCP
+internal-only). With an **LLM-powered** Assist conversation agent this is the
+simplest way to talk to your inventory — full natural language, no sentence files.
+Add it in **Settings → Devices & Services → Add Integration → Model Context
+Protocol** using the add-on's internal container hostname (shown on the add-on's
+info page):
 
 ```
-http://<this-host>:7766/sse
+http://<slug>-homehoard:7766/sse
 ```
 
 Assist can then *find items, list checkouts, check things in/out, edit, and move*
