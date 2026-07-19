@@ -15,12 +15,12 @@ def test_register_login_self(client):
     assert (
         client.post(
             "/api/v1/users/register",
-            json={"email": "a@b.com", "password": "pw12345", "name": "A"},
+            json={"email": "a@b.com", "password": "pw123456", "name": "A"},
         ).status_code
         == 201
     )
     tok = client.post(
-        "/api/v1/users/login", json={"username": "a@b.com", "password": "pw12345"}
+        "/api/v1/users/login", json={"username": "a@b.com", "password": "pw123456"}
     ).get_json()["token"]
     r = client.get("/api/v1/users/self", headers={"Authorization": tok})
     assert r.get_json()["item"]["email"] == "a@b.com"
@@ -29,7 +29,7 @@ def test_register_login_self(client):
 def test_bad_login(client):
     client.post(
         "/api/v1/users/register",
-        json={"email": "a@b.com", "password": "pw12345", "name": "A"},
+        json={"email": "a@b.com", "password": "pw123456", "name": "A"},
     )
     assert (
         client.post(
@@ -67,10 +67,10 @@ def test_group_scoping(client):
     def make(email):
         client.post(
             "/api/v1/users/register",
-            json={"email": email, "password": "pw12345", "name": "X"},
+            json={"email": email, "password": "pw123456", "name": "X"},
         )
         return client.post(
-            "/api/v1/users/login", json={"username": email, "password": "pw12345"}
+            "/api/v1/users/login", json={"username": email, "password": "pw123456"}
         ).get_json()["token"]
 
     a = make("a@x.com")

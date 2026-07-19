@@ -9,6 +9,7 @@ Supports two modes:
   Assistant ingress, which already authenticates the user.
 """
 import functools
+import logging
 from datetime import datetime, timezone
 
 import jwt
@@ -18,6 +19,8 @@ from passlib.hash import bcrypt
 from .extensions import db
 from .models import User, Group, ApiToken, hash_token
 from .models.api_token import TOKEN_PREFIX
+
+_LOGGER = logging.getLogger("homehoard.auth")
 
 DEFAULT_EMAIL = "local@easyinventory"
 DEFAULT_GROUP = "Home"
@@ -35,8 +38,8 @@ def verify_password(password: str, hashed: str) -> bool:
 
 
 def create_token(user: User) -> str:
-    exp = datetime.now(timezone.utc) + current_app.config["JWT_EXPIRES"]
-    payload = {"sub": user.id, "exp": exp}
+    now = datetime.now(timezone.utc)
+    payload = {"sub": user.id, "iat": now, "exp": now + current_app.config["JWT_EXPIRES"]}
     return jwt.encode(payload, current_app.config["SECRET_KEY"], algorithm="HS256")
 
 
@@ -109,6 +112,10 @@ def login_required(fn):
     def wrapper(*args, **kwargs):
         user = load_current_user()
         if user is None:
+            _LOGGER.warning(
+                "unauthorized %s %s from %s",
+                request.method, request.path, request.remote_addr,
+            )
             return jsonify({"error": "unauthorized"}), 401
         g.current_user = user
         g.current_group = user.group

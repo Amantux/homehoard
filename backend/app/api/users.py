@@ -1,9 +1,10 @@
+import logging
 from datetime import datetime, timezone
 
-from flask import Blueprint, request, jsonify, g
+from flask import Blueprint, request, jsonify, current_app
 
-from ..extensions import db
-from ..models import User, Group
+from ..extensions import db, limiter
+from ..models import User, Group, GroupInvitation
 from ..auth import (
     login_required,
     current_user,
@@ -14,12 +15,45 @@ from ..auth import (
 from ..schemas.serializers import user_out
 
 bp = Blueprint("users", __name__)
+_LOGGER = logging.getLogger("homehoard.auth")
+
+# Precomputed hash so a login for a non-existent user still spends the same
+# bcrypt time as a real one — removes the user-enumeration timing oracle.
+_DUMMY_HASH = hash_password("this-is-not-a-real-password")
+
+
+def _valid_invitation(token: str):
+    """Return the invitation if it exists, is unexpired, and has uses left."""
+    inv = db.session.query(GroupInvitation).filter_by(token=token).first()
+    if not inv:
+        return None
+    if inv.uses is not None and inv.uses <= 0:
+        return None
+    if inv.expires_at:
+        try:
+            exp = datetime.fromisoformat(str(inv.expires_at).replace("Z", "+00:00"))
+        except ValueError:
+            exp = None
+        if exp is not None:
+            now = datetime.now(exp.tzinfo) if exp.tzinfo else datetime.utcnow()
+            if now > exp:
+                return None
+    return inv
+
+
+def _password_ok(password: str):
+    """(valid, error_response) for a candidate password."""
+    if len(password or "") < current_app.config["MIN_PASSWORD_LENGTH"]:
+        n = current_app.config["MIN_PASSWORD_LENGTH"]
+        return False, (jsonify({"error": f"password must be at least {n} characters"}), 422)
+    if len(password) > 4096:  # bound bcrypt input work
+        return False, (jsonify({"error": "password too long"}), 422)
+    return True, None
 
 
 @bp.post("/users/register")
+@limiter.limit("5 per minute")
 def register():
-    from flask import current_app
-
     if not current_app.config["ALLOW_REGISTRATION"]:
         return jsonify({"error": "registration disabled"}), 403
 
@@ -27,18 +61,21 @@ def register():
     email = (data.get("email") or "").strip().lower()
     name = data.get("name") or ""
     password = data.get("password") or ""
-    if not email or not password:
-        return jsonify({"error": "email and password required"}), 422
+    if not email:
+        return jsonify({"error": "email required"}), 422
+    ok, err = _password_ok(password)
+    if not ok:
+        return err
     if db.session.query(User).filter_by(email=email).first():
         return jsonify({"error": "email already registered"}), 409
 
     token = data.get("token")
     if token:
-        group = db.session.query(Group).join(Group.invitations).filter_by(
-            token=token
-        ).first()
-        if not group:
-            return jsonify({"error": "invalid invitation token"}), 422
+        invitation = _valid_invitation(token)
+        if invitation is None:
+            return jsonify({"error": "invalid or expired invitation token"}), 422
+        invitation.uses -= 1  # consume one use
+        group = invitation.group
         is_owner = False
     else:
         group = Group(name=data.get("groupName") or f"{name}'s Group")
@@ -60,6 +97,7 @@ def register():
 
 
 @bp.post("/users/login")
+@limiter.limit("10 per minute")
 def login():
     data = request.get_json(force=True) or {}
     # homebox accepts form or json; support both
@@ -67,8 +105,13 @@ def login():
              request.form.get("username") or "").strip().lower()
     password = data.get("password") or request.form.get("password") or ""
     user = db.session.query(User).filter_by(email=email).first()
-    if not user or not verify_password(password, user.password_hash):
+    # Always run a bcrypt verify (against a dummy hash when the user is missing)
+    # so response time doesn't reveal whether the account exists.
+    valid = verify_password(password, user.password_hash if user else _DUMMY_HASH)
+    if not user or not valid:
+        _LOGGER.warning("login failed for %r from %s", email, request.remote_addr)
         return jsonify({"error": "invalid credentials"}), 401
+    _LOGGER.info("login ok for %r from %s", email, request.remote_addr)
     token = create_token(user)
     return jsonify(
         {
@@ -107,7 +150,16 @@ def update_self():
     if "name" in data:
         user.name = data["name"]
     if "email" in data:
-        user.email = data["email"].strip().lower()
+        new_email = data["email"].strip().lower()
+        if new_email != user.email:
+            taken = (
+                db.session.query(User)
+                .filter(User.email == new_email, User.id != user.id)
+                .first()
+            )
+            if taken:
+                return jsonify({"error": "email already in use"}), 409
+            user.email = new_email
     db.session.commit()
     return jsonify({"item": user_out(user)})
 
@@ -127,6 +179,9 @@ def change_password():
     user = current_user()
     if not verify_password(data.get("current", ""), user.password_hash):
         return jsonify({"error": "current password incorrect"}), 400
+    ok, err = _password_ok(data.get("new", ""))
+    if not ok:
+        return err
     user.password_hash = hash_password(data.get("new", ""))
     db.session.commit()
     return "", 204

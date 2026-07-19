@@ -1,6 +1,3 @@
-import os
-import tempfile
-
 import pytest
 
 from app import create_app
@@ -15,6 +12,8 @@ def app(tmp_path):
         DATABASE_URL = f"sqlite:///{tmp_path}/test.db"
         DISABLE_AUTH = False
         SECRET_KEY = "test-secret-key-that-is-long-enough-32b"
+        RATELIMIT_ENABLED = False
+        PROXY_HOPS = 0
 
     app = create_app(TestConfig)
     yield app
@@ -48,5 +47,7 @@ def noauth_app(tmp_path):
         DATABASE_URL = f"sqlite:///{tmp_path}/test.db"
         DISABLE_AUTH = True
         SECRET_KEY = "test-secret-key-that-is-long-enough-32b"
+        RATELIMIT_ENABLED = False
+        PROXY_HOPS = 0
 
     return create_app(NoAuthConfig)

@@ -4,13 +4,17 @@ A Python (Flask) port of homebox — the inventory & organization system for the
 home user. Ships an optional-auth JSON API under ``/api/v1`` and serves the
 built Vue SPA.
 """
+import logging
 import os
 
-from flask import Flask, jsonify, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from .config import Config
-from .extensions import db
+from .extensions import db, limiter
+
+_LOGGER = logging.getLogger("homehoard")
 
 
 def create_app(config_object=Config):
@@ -20,8 +24,33 @@ def create_app(config_object=Config):
     app.config["attachments_dir"] = config_object.attachments_dir
     app.config["MAX_CONTENT_LENGTH"] = config_object.MAX_UPLOAD_BYTES
 
-    CORS(app, supports_credentials=True)
+    # Fail closed: never sign real tokens with a shipped default secret.
+    if (
+        not app.config["DISABLE_AUTH"]
+        and app.config["SECRET_KEY"] in app.config["KNOWN_DEFAULT_SECRETS"]
+    ):
+        raise RuntimeError(
+            "HBOX_SECRET_KEY is unset or a known default. Set a strong random "
+            "secret (>=32 bytes) before enabling authentication."
+        )
+    if app.config["DISABLE_AUTH"]:
+        _LOGGER.warning(
+            "HBOX_DISABLE_AUTH is on: every request runs as the default user "
+            "with NO authentication. Only expose this behind Home Assistant "
+            "ingress or a trusted authenticating proxy."
+        )
+
+    # Trust N reverse proxies so rate limiting keys on the real client IP.
+    hops = app.config["PROXY_HOPS"]
+    if hops > 0:
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=hops, x_proto=hops)
+
+    # CORS: explicit allowlist only. Empty => same-origin (no CORS headers).
+    origins = app.config["CORS_ORIGINS"]
+    CORS(app, origins=origins or [], supports_credentials=bool(origins))
+
     db.init_app(app)
+    limiter.init_app(app)
 
     from . import models  # noqa: F401  (register models)
 
@@ -32,7 +61,42 @@ def create_app(config_object=Config):
     _register_blueprints(app)
     _register_spa(app)
     _register_errors(app)
+    _register_security_headers(app)
     return app
+
+
+def _register_security_headers(app):
+    """Baseline hardening headers on every response."""
+    disable_auth = app.config["DISABLE_AUTH"]
+
+    @app.after_request
+    def _set_headers(resp):
+        resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+        resp.headers.setdefault("Referrer-Policy", "no-referrer")
+        # Content Security Policy. 'unsafe-inline' for styles only — the app
+        # uses many inline style attributes; scripts stay 'self'.
+        csp = (
+            "default-src 'self'; "
+            "img-src 'self' data: blob:; "
+            "style-src 'self' 'unsafe-inline'; "
+            "script-src 'self'; "
+            "connect-src 'self'; "
+            "base-uri 'self'; "
+            "form-action 'self'; "
+            "object-src 'none'"
+        )
+        # Under HA ingress the app is legitimately framed by Home Assistant, so
+        # only assert anti-clickjacking when running standalone (auth enabled).
+        if not disable_auth:
+            csp += "; frame-ancestors 'self'"
+            resp.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+        resp.headers.setdefault("Content-Security-Policy", csp)
+        # HSTS only over HTTPS (harmless/ignored over plain HTTP).
+        if request.is_secure:
+            resp.headers.setdefault(
+                "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
+            )
+        return resp
 
 
 def _migrate(app):
@@ -146,6 +210,10 @@ def _register_errors(app):
     @app.errorhandler(413)
     def too_large(e):
         return jsonify({"error": "upload too large"}), 413
+
+    @app.errorhandler(429)
+    def rate_limited(e):
+        return jsonify({"error": "too many requests, slow down"}), 429
 
 
 # --- SPA serving ---------------------------------------------------------

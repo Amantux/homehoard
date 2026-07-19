@@ -209,10 +209,10 @@ def test_qr_group_scoped(client):
     def make(email):
         client.post(
             "/api/v1/users/register",
-            json={"email": email, "password": "pw12345", "name": "X"},
+            json={"email": email, "password": "pw123456", "name": "X"},
         )
         return client.post(
-            "/api/v1/users/login", json={"username": email, "password": "pw12345"}
+            "/api/v1/users/login", json={"username": email, "password": "pw123456"}
         ).get_json()["token"]
 
     a = make("qa@x.com")

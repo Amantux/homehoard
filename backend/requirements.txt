@@ -1,6 +1,8 @@
 Flask==3.0.3
 Flask-SQLAlchemy==3.1.1
-Flask-Cors==4.0.1
+# >=5.0.0 for CVE-2024-6221 (ACL Private-Network) and related CORS fixes.
+Flask-Cors>=5.0.0
+Flask-Limiter>=3.8.0
 SQLAlchemy==2.0.32
 marshmallow==3.22.0
 PyJWT>=2.10.1
@@ -9,7 +11,8 @@ passlib==1.7.4
 bcrypt==4.0.1
 python-dotenv>=1.1.0
 qrcode[pil]==7.4.2
-gunicorn==22.0.0
+# >=23.0.0 for CVE-2024-6827 (Transfer-Encoding request smuggling).
+gunicorn>=23.0.0
 # MCP server exposed to Home Assistant (runs alongside the app in the same container)
 mcp>=1.9.0
 uvicorn>=0.29.0
