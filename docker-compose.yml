@@ -5,11 +5,18 @@ services:
     ports:
       - "7745:7745"
     environment:
-      # Set a strong secret in production (>= 32 chars).
-      HBOX_SECRET_KEY: "please-change-me-to-a-long-random-string"
-      # Set to "true" when running behind Home Assistant ingress / a trusted proxy.
+      # REQUIRED: a strong random secret (>= 32 bytes). The app refuses to boot
+      # with a default when auth is enabled. Put it in a .env file next to this
+      # compose file, e.g.  HBOX_SECRET_KEY=$(openssl rand -base64 48)
+      HBOX_SECRET_KEY: "${HBOX_SECRET_KEY:?set HBOX_SECRET_KEY to a long random string}"
+      # Set to "true" ONLY when running behind Home Assistant ingress / a trusted
+      # authenticating proxy — it disables authentication entirely.
       HBOX_DISABLE_AUTH: "false"
       HBOX_ALLOW_REGISTRATION: "true"
+      # Number of trusted reverse proxies (for correct client IP / rate limiting).
+      HBOX_PROXY_HOPS: "1"
+      # Optional: restrict CORS to your frontend origin(s); leave unset for same-origin.
+      # HBOX_CORS_ORIGINS: "https://inventory.example.com"
     volumes:
       - homehoard-data:/data
     restart: unless-stopped

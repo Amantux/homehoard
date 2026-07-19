@@ -15,13 +15,23 @@ ENV PYTHONUNBUFFERED=1 \
     HBOX_FRONTEND_DIST=/app/frontend/dist \
     HBOX_PORT=7745
 
+# gosu lets the entrypoint do its privileged setup (read the HA add-on's
+# options.json, fix /data ownership) as root, then drop to a non-root user for
+# the actual server processes. A non-root app user is the CIS-hardening default.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends gosu \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd -r app && useradd -r -g app -u 1000 app
+
 COPY backend/requirements.txt ./backend/requirements.txt
 RUN pip install --no-cache-dir -r backend/requirements.txt
 
 COPY backend/ ./backend/
 COPY --from=frontend /build/dist ./frontend/dist
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh
-RUN chmod +x /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh \
+    && mkdir -p /data \
+    && chown -R app:app /app /data
 
 VOLUME ["/data"]
 EXPOSE 7745
