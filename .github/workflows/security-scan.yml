@@ -26,11 +26,11 @@ jobs:
         language: [python, javascript-typescript]
     steps:
       - uses: actions/checkout@v4
-      - uses: github/codeql-action/init@v3
+      - uses: github/codeql-action/init@v4
         with:
           language: ${{ matrix.language }}
           queries: security-and-quality
-      - uses: github/codeql-action/analyze@v3
+      - uses: github/codeql-action/analyze@v4
         with:
           category: "/language:${{ matrix.language }}"
 
@@ -86,7 +86,7 @@ jobs:
           trivy fs --scanners vuln,misconfig,secret \
             --format sarif --output trivy.sarif \
             --severity HIGH,CRITICAL --exit-code 0 .
-      - uses: github/codeql-action/upload-sarif@v3
+      - uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy.sarif
           category: trivy-fs
