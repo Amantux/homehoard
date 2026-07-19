@@ -34,10 +34,21 @@ Then set the same token in HA's MCP Client config. (Note: some HA MCP Client
 versions can't send an auth header — if so, keep `:7766` firewalled to the HA
 network instead of publishing it.)
 
-## 3. Or don't publish the port
+## 3. Control exposure with the compose toggle (standalone)
+`docker-compose.yml` publishes 7766 via `${HBOX_MCP_BIND:-127.0.0.1}:7766:7766`,
+so exposure is a single `.env` variable — no file edits:
+
 ```bash
-# Simplest: only publish 7745; leave 7766 unpublished (reachable only inside the
-# container / HA network). Remove any `-p 7766:7766` and the compose ports entry.
+# Loopback only (default): reachable by an HA/MCP client on THIS host, not the LAN.
+#   (leave HBOX_MCP_BIND unset)
+# LAN-exposed: set BOTH of these in .env, then `docker compose up -d`
+echo 'HBOX_MCP_BIND=0.0.0.0'                                  >> .env
+echo "HBOX_MCP_SERVER_TOKEN=$(openssl rand -base64 32)"       >> .env
+# Not running MCP at all:
+echo 'HBOX_MCP_ENABLED=false'                                 >> .env
 ```
+
+Verify after applying (`docker compose config | grep -A3 'target: 7766'` shows the
+`host_ip`).
 
 **Do not** expose `:7766` on the public Internet under any configuration.

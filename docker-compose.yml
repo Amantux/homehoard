@@ -4,6 +4,14 @@ services:
     container_name: homehoard
     ports:
       - "7745:7745"
+      # MCP server (for a Home Assistant MCP Client / other LLM clients).
+      # Exposure is TOGGLEABLE via HBOX_MCP_BIND (set it in your .env):
+      #   unset / 127.0.0.1  → published on the host's LOOPBACK only (safe default;
+      #                        reachable by an HA instance on THIS host, not the LAN)
+      #   0.0.0.0            → published on ALL interfaces (LAN) — only do this
+      #                        with HBOX_MCP_SERVER_TOKEN set (see below)
+      # To not run MCP at all, set HBOX_MCP_ENABLED=false (the process won't start).
+      - "${HBOX_MCP_BIND:-127.0.0.1}:7766:7766"
     environment:
       # REQUIRED: a strong random secret (>= 32 bytes). The app refuses to boot
       # with a default when auth is enabled. Put it in a .env file next to this
@@ -19,6 +27,12 @@ services:
       HBOX_PROXY_HOPS: "0"
       # Optional: restrict CORS to your frontend origin(s); leave unset for same-origin.
       # HBOX_CORS_ORIGINS: "https://inventory.example.com"
+      # --- MCP server (Home Assistant / LLM tool endpoint) ---
+      # Run the MCP server? (default true). Set false to disable it entirely.
+      HBOX_MCP_ENABLED: "${HBOX_MCP_ENABLED:-true}"
+      # REQUIRED if you set HBOX_MCP_BIND=0.0.0.0 (LAN-exposed): a bearer token
+      # the MCP endpoint then demands. Leave unset only for loopback-only use.
+      # HBOX_MCP_SERVER_TOKEN: "${HBOX_MCP_SERVER_TOKEN}"
     volumes:
       - homehoard-data:/data
     restart: unless-stopped

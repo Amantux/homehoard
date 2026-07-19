@@ -32,8 +32,17 @@ upstream CVE can't wedge the pipeline.
 | Secrets | env / secret manager | **never** in git |
 
 Required in production (auth enabled): **`HBOX_SECRET_KEY`** (≥32 random bytes —
-the app refuses to boot otherwise). Recommended: `HBOX_PROXY_HOPS`,
-`HBOX_MCP_SERVER_TOKEN`, optionally `HBOX_CORS_ORIGINS`.
+the app refuses to boot otherwise). Recommended: `HBOX_PROXY_HOPS`, optionally
+`HBOX_CORS_ORIGINS`.
+
+**MCP exposure (standalone):** the HA add-on keeps MCP internal (no host port).
+For standalone compose it's toggleable via `.env`:
+
+| Goal | Set in `.env` |
+|---|---|
+| Loopback only (default — HA/MCP client on the same host) | *(nothing)* |
+| Exposed to the LAN (HA on another host) | `HBOX_MCP_BIND=0.0.0.0` **and** `HBOX_MCP_SERVER_TOKEN=<token>` |
+| Don't run MCP at all | `HBOX_MCP_ENABLED=false` |
 
 There is **no `.env.local` as production source of truth** and **no second repo
 clone** in the deploy path — the image is self-contained.
