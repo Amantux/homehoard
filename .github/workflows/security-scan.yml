@@ -1,0 +1,117 @@
+name: Security scan
+
+# Advisory quality/security gates. Kept separate from CI/CD so an upstream CVE
+# or a scanner hiccup never blocks the auto-release pipeline; results surface in
+# the repo's Security tab (SARIF) and as job status on PRs.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "27 6 * * 1" # weekly, Monday 06:27 UTC — catch newly-disclosed CVEs
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  codeql:
+    name: CodeQL (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, javascript-typescript]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          language: ${{ matrix.language }}
+          queries: security-and-quality
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
+
+  python-deps:
+    name: Python dependency audit (pip-audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      # Advisory: report known-vulnerable Python deps without blocking releases.
+      - name: pip-audit
+        continue-on-error: true
+        run: |
+          pip install pip-audit
+          pip-audit -r backend/requirements.txt --desc
+
+  npm-deps:
+    name: npm dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: npm audit (high+)
+        continue-on-error: true
+        working-directory: frontend
+        run: npm audit --audit-level=high
+
+  dependency-review:
+    name: Dependency review (PRs)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+
+  trivy-fs:
+    name: Trivy filesystem + config scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Trivy
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+            | sh -s -- -b /usr/local/bin
+      - name: Scan repo (vulns, misconfig, secrets) → SARIF
+        run: |
+          trivy fs --scanners vuln,misconfig,secret \
+            --format sarif --output trivy.sarif \
+            --severity HIGH,CRITICAL --exit-code 0 .
+      - uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy.sarif
+          category: trivy-fs
+
+  gitleaks:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install & run gitleaks
+        run: |
+          curl -sfL -o gitleaks.tar.gz \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz
+          tar -xzf gitleaks.tar.gz gitleaks
+          ./gitleaks detect --source . --redact --verbose
+
+  sbom:
+    name: SBOM (SPDX)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: spdx-json
+          artifact-name: homehoard-sbom.spdx.json

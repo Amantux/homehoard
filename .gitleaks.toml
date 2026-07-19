@@ -1,0 +1,18 @@
+# gitleaks config — extend the default rules, allowlist known non-secrets so the
+# CI secret scan doesn't false-positive on test fixtures / env-var references.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Test fixtures and env-var references are not real secrets"
+paths = [
+  '''backend/tests/.*''',
+]
+regexes = [
+  # docker-compose env-var reference, not a literal secret
+  '''\$\{HBOX_SECRET_KEY[^}]*\}''',
+  # dummy values used only to make timing constant / illustrate config
+  '''this-is-not-a-real-password''',
+  '''change-me-in-production''',
+  '''please-change-me-to-a-long-random-string''',
+]
