@@ -54,6 +54,17 @@ def test_sqlite_wal_and_foreign_keys_enabled(app):
         assert int(fk) == 1
 
 
+def test_delete_user_with_owned_rows_succeeds_under_fk_enforcement(auth_client):
+    # Regression: foreign_keys=ON must not RESTRICT account deletion when the
+    # user owns cascade-able rows (API tokens, notifiers). Would 500 without the
+    # ORM cascades on User.api_tokens / User.notifiers.
+    assert auth_client.post("/api/v1/tokens", json={"name": "k"}).status_code == 201
+    assert auth_client.post(
+        "/api/v1/notifiers", json={"name": "n", "url": "tgram://a/b"}
+    ).status_code == 201
+    assert auth_client.delete("/api/v1/users/self").status_code == 204
+
+
 def test_backup_and_restore_verification_roundtrip(tmp_path):
     """DR gate: seed a data dir, back it up, then run the restore-verifier and
     require it to PASS (checksums, integrity, app boot, count match)."""

@@ -21,7 +21,14 @@ class User(IDMixin, TimestampMixin, db.Model):
     tokens = relationship(
         "AuthToken", back_populates="user", cascade="all, delete-orphan"
     )
-    notifiers = relationship("Notifier", back_populates="user")
+    # cascade so deleting a user (delete_self) removes their owned rows. Required
+    # now that foreign_keys=ON enforces these FKs (else the delete RESTRICTs → 500).
+    notifiers = relationship(
+        "Notifier", back_populates="user", cascade="all, delete-orphan"
+    )
+    api_tokens = relationship(
+        "ApiToken", back_populates="user", cascade="all, delete-orphan"
+    )
 
 
 class AuthToken(IDMixin, db.Model):

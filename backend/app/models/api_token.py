@@ -40,4 +40,4 @@ class ApiToken(IDMixin, TimestampMixin, db.Model):
     group_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("groups.id"), index=True
     )
-    user = relationship("User")
+    user = relationship("User", back_populates="api_tokens")
