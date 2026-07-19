@@ -302,7 +302,42 @@ def inventory_statistics() -> dict:
     }
 
 
+def _require_token(asgi_app, token: str):
+    """ASGI wrapper that rejects HTTP requests lacking `Authorization: Bearer
+    <token>`. Guards the (otherwise unauthenticated) MCP SSE endpoint so that
+    reaching the port isn't enough to read/mutate the inventory."""
+    expected = f"Bearer {token}"
+
+    async def wrapper(scope, receive, send):
+        if scope["type"] == "http":
+            headers = dict(scope.get("headers") or [])
+            if headers.get(b"authorization", b"").decode() != expected:
+                await send({
+                    "type": "http.response.start", "status": 401,
+                    "headers": [(b"content-type", b"text/plain")],
+                })
+                await send({"type": "http.response.body", "body": b"unauthorized"})
+                return
+        await asgi_app(scope, receive, send)
+
+    return wrapper
+
+
 if __name__ == "__main__":
-    mcp.settings.host = os.environ.get("HBOX_MCP_HOST", "0.0.0.0")
-    mcp.settings.port = int(os.environ.get("HBOX_MCP_PORT", "7766"))
-    mcp.run(transport="sse")
+    host = os.environ.get("HBOX_MCP_HOST", "0.0.0.0")
+    port = int(os.environ.get("HBOX_MCP_PORT", "7766"))
+    server_token = os.environ.get("HBOX_MCP_SERVER_TOKEN", "")
+
+    app = mcp.sse_app()
+    if server_token:
+        app = _require_token(app, server_token)
+    else:
+        import sys
+        print(
+            "WARNING: HBOX_MCP_SERVER_TOKEN is not set — the MCP endpoint is "
+            "UNAUTHENTICATED. Set it and keep port 7766 on a trusted network.",
+            file=sys.stderr,
+        )
+
+    import uvicorn
+    uvicorn.run(app, host=host, port=port)
