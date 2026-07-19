@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { useAuth } from './stores/auth'
 import { useUI } from './stores/ui'
 import Toasts from './components/Toasts.vue'
@@ -9,7 +9,6 @@ import ScannerModal from './components/ScannerModal.vue'
 import SearchModal from './components/SearchModal.vue'
 
 const route = useRoute()
-const router = useRouter()
 const auth = useAuth()
 const ui = useUI()
 

@@ -4,7 +4,7 @@ from datetime import datetime, timezone, timedelta
 from flask import Blueprint, request, jsonify
 
 from ..extensions import db
-from ..models import Group, GroupInvitation, Item, Label, Location, User
+from ..models import GroupInvitation, Item, Label, Location, User
 from ..auth import login_required, current_group
 from ..schemas.serializers import group_out
 
@@ -98,12 +98,12 @@ def label_stats():
     return jsonify(
         [
             {
-                "id": l.id,
-                "name": l.name,
+                "id": lbl.id,
+                "name": lbl.name,
                 "total": sum((i.purchase_price or 0) * (i.quantity or 1)
-                             for i in l.items),
+                             for i in lbl.items),
             }
-            for l in labels
+            for lbl in labels
         ]
     )
 

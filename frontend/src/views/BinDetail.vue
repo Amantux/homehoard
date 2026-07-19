@@ -4,7 +4,6 @@ import { useRoute, useRouter } from 'vue-router'
 import { api, apiUrl } from '../api'
 import { money, loadCurrency } from '../format'
 import { useUI } from '../stores/ui'
-import ItemCard from '../components/ItemCard.vue'
 import QrPanel from '../components/QrPanel.vue'
 
 const route = useRoute()

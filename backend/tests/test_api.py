@@ -105,7 +105,7 @@ def test_csv_roundtrip(auth_client):
     items = auth_client.get("/api/v1/items").get_json()["items"]
     assert items[0]["name"] == "Wrench"
     assert items[0]["location"]["name"] == "Shed"
-    assert {l["name"] for l in items[0]["labels"]} == {"tools", "hand"}
+    assert {lbl["name"] for lbl in items[0]["labels"]} == {"tools", "hand"}
 
     export = auth_client.get("/api/v1/items/export").data.decode()
     assert "Wrench" in export and "HB.name" in export

@@ -64,7 +64,7 @@ function printTag(t) {
     <body style="text-align:center;font-family:sans-serif;padding:40px">
     <img src="${images.value[t.id]}" style="width:260px;height:260px" />
     <h2>${t.description || props.kind}</h2><p style="color:#888">${t.token}</p>
-    <script>window.onload=()=>window.print()<\/script></body></html>`)
+    <script>window.onload=()=>window.print()</scr${''}ipt></body></html>`)
   w.document.close()
 }
 onMounted(load)

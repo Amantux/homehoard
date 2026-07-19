@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { api, apiUrl, getToken } from '../api'
+import { api, apiUrl } from '../api'
 import { money, shortDate, loadCurrency } from '../format'
 import { useUI } from '../stores/ui'
 import QrPanel from '../components/QrPanel.vue'

@@ -19,7 +19,7 @@ def _get(label_id):
 @login_required
 def list_labels():
     labels = db.session.query(Label).filter_by(group_id=current_group().id).all()
-    return jsonify([label_summary(l) for l in labels])
+    return jsonify([label_summary(lbl) for lbl in labels])
 
 
 @bp.post("/labels")
