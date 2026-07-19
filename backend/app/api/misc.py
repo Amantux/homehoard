@@ -3,11 +3,10 @@ import io
 
 from flask import Blueprint, request, jsonify, Response, send_file
 
-from ..extensions import db
+from ..extensions import db, limiter
 from ..models import Item
 from ..auth import login_required, current_group
 from ..services.csv_io import export_items, import_items
-from ..schemas.serializers import _fmt_asset
 
 bp = Blueprint("misc", __name__)
 
@@ -47,6 +46,8 @@ def qrcode_gen():
     import qrcode
 
     data = request.args.get("data", "")
+    if len(data) > 1024:  # bound CPU/image size (QR practical limit is ~3KB)
+        return jsonify({"error": "data too long"}), 422
     img = qrcode.make(data)
     buf = io.BytesIO()
     img.save(buf, format="PNG")
@@ -68,6 +69,7 @@ def export():
 
 @bp.post("/items/import")
 @login_required
+@limiter.limit("6 per minute")
 def do_import():
     file = request.files.get("csv") or request.files.get("file")
     if file:

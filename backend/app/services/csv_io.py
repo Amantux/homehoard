@@ -54,6 +54,18 @@ def _bool(value):
     return str(value).strip().lower() in {"1", "true", "yes"}
 
 
+def _csv_safe(value):
+    """Neutralize spreadsheet formula injection (CWE-1236): a cell starting with
+    = + - @ (or a control char) is prefixed with a single quote so Excel/Sheets
+    treats it as text, not a formula."""
+    if value is None:
+        return ""
+    s = str(value)
+    if s and s[0] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + s
+    return s
+
+
 def export_items(group_id) -> str:
     items = db.session.query(Item).filter_by(group_id=group_id).all()
     field_names = sorted(
@@ -68,7 +80,7 @@ def export_items(group_id) -> str:
         row = [
             i.import_ref,
             i.location.name if i.location else "",
-            ";".join(l.name for l in i.labels),
+            ";".join(lbl.name for lbl in i.labels),
             i.quantity,
             i.name,
             i.description,
@@ -90,7 +102,7 @@ def export_items(group_id) -> str:
         ]
         field_map = {f.name: f.text_value for f in i.fields}
         row += [field_map.get(n, "") for n in field_names]
-        writer.writerow(row)
+        writer.writerow([_csv_safe(v) for v in row])
     return out.getvalue()
 
 

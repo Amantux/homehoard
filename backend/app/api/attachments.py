@@ -7,7 +7,7 @@ from werkzeug.utils import secure_filename
 from ..extensions import db
 from ..models import Item, Bin, Attachment, Document
 from ..auth import login_required, current_group
-from ..schemas.serializers import item_out, bin_out, attachment_out
+from ..schemas.serializers import item_out, bin_out
 
 bp = Blueprint("attachments", __name__)
 
@@ -54,7 +54,8 @@ def download(item_id, attachment_id):
     att = db.session.get(Attachment, attachment_id)
     if not att or att.item_id != item_id:
         abort(404)
-    return send_file(att.document.path, download_name=att.document.title)
+    return send_file(att.document.path, download_name=att.document.title,
+                     as_attachment=True)
 
 
 @bp.put("/items/<item_id>/attachments/<attachment_id>")
@@ -136,7 +137,8 @@ def bin_download(bin_id, attachment_id):
     att = db.session.get(Attachment, attachment_id)
     if not att or att.bin_id != bin_id:
         abort(404)
-    return send_file(att.document.path, download_name=att.document.title)
+    return send_file(att.document.path, download_name=att.document.title,
+                     as_attachment=True)
 
 
 @bp.put("/bins/<bin_id>/attachments/<attachment_id>")
@@ -182,4 +184,4 @@ def get_document(document_id):
     doc = db.session.get(Document, document_id)
     if not doc or doc.group_id != current_group().id:
         abort(404)
-    return send_file(doc.path, download_name=doc.title)
+    return send_file(doc.path, download_name=doc.title, as_attachment=True)
