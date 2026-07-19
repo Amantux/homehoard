@@ -117,7 +117,10 @@ def main() -> int:
                 for m in tar.getmembers():
                     if m.name.startswith("/") or ".." in m.name.split("/"):
                         raise ValueError(f"unsafe tar member: {m.name}")
-                tar.extractall(att_dir)  # members validated above
+                try:
+                    tar.extractall(att_dir, filter="data")  # py>=3.12: blocks unsafe members
+                except TypeError:
+                    tar.extractall(att_dir)  # older Python: members validated above
 
         # 3) SQLite integrity checks on the restored DB.
         conn = sqlite3.connect(db_dst)

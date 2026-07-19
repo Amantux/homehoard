@@ -133,6 +133,9 @@ jobs:
           docker stop -t 15 hh-ci
           rc=$(docker inspect -f '{{.State.ExitCode}}' hh-ci)
           echo "exit code: $rc"
+          # gunicorn exits 0 on a graceful SIGTERM; 137 = SIGKILL after the grace
+          # period (ignored SIGTERM). Fail the gate on a non-graceful shutdown.
+          test "$rc" = "0"
       - name: Container logs (on failure)
         if: failure()
         run: docker logs hh-ci || true

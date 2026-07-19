@@ -1,6 +1,7 @@
 """Miscellaneous endpoints: status, currency, qrcode, actions, reporting, import/export."""
 import io
 import os
+import tempfile
 import time
 
 from flask import Blueprint, request, jsonify, Response, send_file, current_app
@@ -59,10 +60,14 @@ def ready():
 
     try:
         d = current_app.config["attachments_dir"]()
-        probe = os.path.join(d, ".readycheck")
-        with open(probe, "w") as f:
-            f.write("ok")
-        os.remove(probe)
+        # Unique probe file so concurrent readiness checks (2 workers) can't
+        # race to remove a shared name. Still exercises write + free-space.
+        fd, probe = tempfile.mkstemp(prefix=".readycheck-", dir=d)
+        try:
+            os.write(fd, b"ok")
+        finally:
+            os.close(fd)
+            os.remove(probe)
         checks["storage"] = "ok"
     except Exception:  # noqa: BLE001
         checks["storage"] = "error"

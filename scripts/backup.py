@@ -64,10 +64,12 @@ def main() -> int:
     dst_db = os.path.join(args.out, "homehoard.db")
     src = sqlite3.connect(f"file:{src_db}?mode=ro", uri=True)
     dst = sqlite3.connect(dst_db)
-    with dst:
-        src.backup(dst)
-    src.close()
-    dst.close()
+    try:
+        with dst:
+            src.backup(dst)
+    finally:
+        src.close()
+        dst.close()
 
     # 2) Attachments tarball (best-effort; dir may not exist yet).
     dst_att = os.path.join(args.out, "attachments.tar.gz")
