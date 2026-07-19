@@ -1,7 +1,8 @@
 from flask import Blueprint, request, jsonify, abort
+from sqlalchemy.orm import selectinload
 
 from ..extensions import db
-from ..models import Location
+from ..models import Location, Bin
 from ..auth import login_required, current_group
 from ..schemas.serializers import location_out, location_tree
 
@@ -41,7 +42,17 @@ def _validate_parent(parent_id, moving=None):
 @login_required
 def list_locations():
     filter_children = request.args.get("filterChildren", "false").lower() == "true"
-    q = db.session.query(Location).filter_by(group_id=current_group().id)
+    # Eager-load the collections location_out counts/lists so a list of N
+    # locations stays a handful of queries, not ~4N lazy loads.
+    q = (
+        db.session.query(Location)
+        .filter_by(group_id=current_group().id)
+        .options(
+            selectinload(Location.items),
+            selectinload(Location.children),
+            selectinload(Location.bins).selectinload(Bin.items),
+        )
+    )
     locs = q.all()
     if filter_children:
         locs = [loc for loc in locs if loc.parent_id is None]

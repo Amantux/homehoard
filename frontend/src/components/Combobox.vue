@@ -1,5 +1,9 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, getCurrentInstance } from 'vue'
+
+const uid = 'combo-' + getCurrentInstance().uid
+const listId = uid + '-list'
+const optId = (i) => `${uid}-opt-${i}`
 
 const props = defineProps({
   modelValue: { type: String, default: '' },
@@ -74,6 +78,7 @@ function move(delta) {
   if (!open.value) { open.value = true; return }
   const n = rowCount.value
   if (n === 0) return
+  if (highlight.value < 0) { highlight.value = delta > 0 ? 0 : n - 1; return }
   highlight.value = (highlight.value + delta + n) % n
 }
 </script>
@@ -87,6 +92,8 @@ function move(delta) {
         :aria-label="ariaLabel || placeholder"
         role="combobox"
         :aria-expanded="open"
+        :aria-controls="listId"
+        :aria-activedescendant="highlight >= 0 ? optId(highlight) : undefined"
         autocomplete="off"
         @focus="onFocus"
         @input="onInput"
@@ -99,10 +106,11 @@ function move(delta) {
               aria-label="Clear" @click="clear">✕</button>
     </div>
 
-    <ul v-if="open && (filtered.length || canCreate)" class="combo-list" role="listbox">
+    <ul v-if="open && (filtered.length || canCreate)" :id="listId" class="combo-list" role="listbox">
       <li
         v-for="(o, i) in filtered"
         :key="o.id"
+        :id="optId(i)"
         role="option"
         :aria-selected="o.id === modelValue"
         class="combo-opt"
@@ -115,6 +123,7 @@ function move(delta) {
       </li>
       <li
         v-if="canCreate"
+        :id="optId(filtered.length)"
         role="option"
         class="combo-opt combo-create"
         :class="{ hi: highlight === filtered.length }"

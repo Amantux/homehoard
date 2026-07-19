@@ -45,6 +45,7 @@ async function load() {
 onMounted(load)
 
 async function create() {
+  if (busy.value) return
   busy.value = true
   try {
     await api.post('/locations', {

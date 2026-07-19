@@ -2,6 +2,7 @@ import re
 from datetime import datetime
 
 from flask import Blueprint, request, jsonify, abort
+from sqlalchemy.orm import selectinload
 
 from ..extensions import db
 from ..models import Item, ItemField, Label, Location, Bin
@@ -258,30 +259,37 @@ def _placement_of(item):
 
 
 def _popular_placements(gid, limit):
-    """Fallback when nothing similar is found: the most-populated places."""
+    """Fallback when nothing similar is found: the most-populated places.
+
+    Item counts are eager-loaded (one query per collection, not per row), and
+    the ancestor path is only walked for the top-N that are actually returned.
+    """
+    bins = (
+        db.session.query(Bin)
+        .options(selectinload(Bin.items))
+        .filter_by(group_id=gid)
+        .all()
+    )
+    locs = (
+        db.session.query(Location)
+        .options(selectinload(Location.items))
+        .filter_by(group_id=gid)
+        .all()
+    )
+    scored = [("bin", b, len(b.items)) for b in bins if b.items]
+    scored += [("location", loc, len(loc.items)) for loc in locs if loc.items]
+    scored.sort(key=lambda t: t[2], reverse=True)
+
     out = []
-    bins = sorted(
-        db.session.query(Bin).filter_by(group_id=gid).all(),
-        key=lambda b: len(b.items),
-        reverse=True,
-    )
-    for b in bins:
-        if b.items:
-            where = location_path_str(b.location) if b.location else ""
-            out.append({"type": "bin", "id": b.id, "name": b.name, "where": where,
-                        "count": len(b.items), "samples": [], "basis": "popular"})
-    locs = sorted(
-        db.session.query(Location).filter_by(group_id=gid).all(),
-        key=lambda loc: len(loc.items),
-        reverse=True,
-    )
-    for loc in locs:
-        if loc.items:
-            where = location_path_str(loc.parent) if loc.parent else ""
-            out.append({"type": "location", "id": loc.id, "name": loc.name,
-                        "where": where, "count": len(loc.items), "samples": [],
-                        "basis": "popular"})
-    return out[:limit]
+    for kind, obj, count in scored[:limit]:
+        where = (
+            location_path_str(obj.location) if kind == "bin" and obj.location
+            else location_path_str(obj.parent) if kind == "location" and obj.parent
+            else ""
+        )
+        out.append({"type": kind, "id": obj.id, "name": obj.name, "where": where,
+                    "count": count, "samples": [], "basis": "popular"})
+    return out
 
 
 def _placement_suggestions(gid, name, label_ids, exclude_id, limit):

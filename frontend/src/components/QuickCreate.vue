@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, onMounted, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api'
 import { useUI } from '../stores/ui'
@@ -103,6 +103,7 @@ watch([name, kind], () => {
     } catch (e) { /* non-critical */ }
   }, 300)
 })
+onUnmounted(() => clearTimeout(suggestTimer))
 function applySuggestion(s) {
   if (s.type === 'bin') binId.value = s.id
   else { binId.value = ''; locationId.value = s.id }
@@ -140,7 +141,7 @@ function resetPerItem() {
 
 // stay = keep the modal open for the next item (bin/location stay selected).
 async function submit(stay = false) {
-  if (!name.value) return
+  if (!name.value || busy.value) return
   busy.value = true
   try {
     let created
