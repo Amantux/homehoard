@@ -112,12 +112,18 @@ def _apply(item: Item, data: dict):
 @login_required
 def list_items():
     args = request.args
-    page = max(1, int(args.get("page", 1) or 1))
+    def _int(name, default):
+        try:
+            return int(args.get(name, default) or default)
+        except (TypeError, ValueError):
+            return default
+
+    page = max(1, _int("page", 1))
     # Clamp page size: never unbounded (pageSize<=0 would dump the whole table
     # → memory DoS / excessive data exposure). Upper bound covers the internal
     # "load many for a picker" callers without allowing an attacker to ask for
-    # millions of rows.
-    per_page = min(max(1, int(args.get("pageSize", 50) or 50)), 1000)
+    # millions of rows. Non-numeric input falls back to the default (no 500).
+    per_page = min(max(1, _int("pageSize", 50)), 1000)
     q = db.session.query(Item).filter_by(group_id=current_group().id)
 
     search = args.get("q")

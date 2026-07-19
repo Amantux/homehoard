@@ -13,8 +13,10 @@ services:
       # authenticating proxy — it disables authentication entirely.
       HBOX_DISABLE_AUTH: "false"
       HBOX_ALLOW_REGISTRATION: "true"
-      # Number of trusted reverse proxies (for correct client IP / rate limiting).
-      HBOX_PROXY_HOPS: "1"
+      # Trusted reverse-proxy hop count. 0 = direct exposure (don't trust
+      # X-Forwarded-For — it's spoofable). Set to 1+ ONLY if a real proxy
+      # (nginx/Traefik) sits in front and sets XFF.
+      HBOX_PROXY_HOPS: "0"
       # Optional: restrict CORS to your frontend origin(s); leave unset for same-origin.
       # HBOX_CORS_ORIGINS: "https://inventory.example.com"
     volumes:

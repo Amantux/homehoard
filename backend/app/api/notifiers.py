@@ -11,10 +11,20 @@ from ..schemas.serializers import notifier_out
 
 bp = Blueprint("notifiers", __name__)
 
-# Schemes that carry an arbitrary network host (SSRF-relevant). Provider schemes
-# like discord://, tgram://, slack:// target fixed provider endpoints and are
-# left alone.
-_HOST_SCHEMES = {"http", "https", "json", "jsons", "xml", "xmls", "form", "forms"}
+# Schemes that speak to an arbitrary, user-chosen network host (SSRF-relevant):
+# the generic HTTP family plus self-hostable providers (ntfy/mqtt/matrix). For
+# these we resolve the host and reject internal targets. Fixed-endpoint provider
+# schemes (discord://, tgram://, slack://, …) whose "host" is really an ID/token
+# are left alone — but a literal internal IP is blocked for ANY scheme below.
+_HOST_SCHEMES = {
+    "http", "https", "json", "jsons", "xml", "xmls", "form", "forms",
+    "ntfy", "ntfys", "mqtt", "mqtts", "matrix", "matrixs",
+}
+
+
+def _is_blocked_ip(ip) -> bool:
+    return (ip.is_private or ip.is_loopback or ip.is_link_local
+            or ip.is_reserved or ip.is_multicast or ip.is_unspecified)
 
 
 def _url_is_safe(url: str) -> bool:
@@ -26,21 +36,24 @@ def _url_is_safe(url: str) -> bool:
         return False
     if not parsed.scheme:
         return False
-    if parsed.scheme.lower() not in _HOST_SCHEMES:
-        return True  # provider scheme → fixed endpoint, not attacker-chosen
     host = parsed.hostname
+
+    # A literal internal IP is never allowed, whatever the scheme.
+    if host:
+        try:
+            return not _is_blocked_ip(ipaddress.ip_address(host))
+        except ValueError:
+            pass  # not an IP literal — fall through to hostname handling
+
+    if parsed.scheme.lower() not in _HOST_SCHEMES:
+        return True  # provider scheme with a non-host id/token — leave alone
     if not host:
         return False
     try:
         infos = socket.getaddrinfo(host, None)
     except socket.gaierror:
-        return False  # unresolvable → refuse rather than let apprise try
-    for info in infos:
-        ip = ipaddress.ip_address(info[4][0])
-        if (ip.is_private or ip.is_loopback or ip.is_link_local
-                or ip.is_reserved or ip.is_multicast or ip.is_unspecified):
-            return False
-    return True
+        return False  # unresolvable http-family host → refuse
+    return all(not _is_blocked_ip(ipaddress.ip_address(i[4][0])) for i in infos)
 
 
 def _get(notifier_id):

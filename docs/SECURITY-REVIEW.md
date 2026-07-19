@@ -96,6 +96,16 @@ Counts: **1 Critical · 3 High · 8 Medium · 8 Low · 5 Informational.**
   not eliminated.
 - **L2 (MFA), L7 (row-level locking), at-rest encryption, a hardened
   TLS/HSTS/WAF reverse-proxy reference** remain roadmap items.
+- **H1 residual (DNS rebinding / redirects):** `_url_is_safe` validates the
+  resolved IP at save/test time, but Apprise re-resolves and follows redirects
+  when it actually sends, so a rebinding or redirect-to-internal attack is not
+  fully closed. Full mitigation needs a pinned-IP resolver / egress firewall.
+- **H3 residual (limiter storage):** the rate limiter uses in-memory storage,
+  so limits are per-gunicorn-worker (currently 2) and reset on restart. For a
+  hard global limit, point `RATELIMIT_STORAGE_URI` at Redis.
+- **M2 residual (JWT on restart):** the container generates a random
+  `HBOX_SECRET_KEY` when none is provided, so all sessions are invalidated on
+  restart. Set a persistent secret to keep sessions across restarts.
 
 ## Deployment guidance (public exposure)
 

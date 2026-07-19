@@ -33,11 +33,10 @@ def _valid_invitation(token: str):
         try:
             exp = datetime.fromisoformat(str(inv.expires_at).replace("Z", "+00:00"))
         except ValueError:
-            exp = None
-        if exp is not None:
-            now = datetime.now(exp.tzinfo) if exp.tzinfo else datetime.utcnow()
-            if now > exp:
-                return None
+            return None  # unparseable expiry → fail closed, not open
+        now = datetime.now(exp.tzinfo) if exp.tzinfo else datetime.utcnow()
+        if now > exp:
+            return None
     return inv
 
 
@@ -74,7 +73,16 @@ def register():
         invitation = _valid_invitation(token)
         if invitation is None:
             return jsonify({"error": "invalid or expired invitation token"}), 422
-        invitation.uses -= 1  # consume one use
+        # Consume a use atomically: only one concurrent registration can win the
+        # last use (UPDATE ... WHERE uses > 0 → 0 rows means we lost the race).
+        consumed = (
+            db.session.query(GroupInvitation)
+            .filter(GroupInvitation.id == invitation.id, GroupInvitation.uses > 0)
+            .update({GroupInvitation.uses: GroupInvitation.uses - 1})
+        )
+        if not consumed:
+            db.session.rollback()
+            return jsonify({"error": "invalid or expired invitation token"}), 422
         group = invitation.group
         is_owner = False
     else:

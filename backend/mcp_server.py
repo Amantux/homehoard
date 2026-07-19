@@ -7,6 +7,7 @@ or check items in/out via Assist.
 
 Run:  python mcp_server.py    (serves SSE on HBOX_MCP_HOST:HBOX_MCP_PORT/sse)
 """
+import hmac
 import os
 
 import httpx
@@ -311,7 +312,8 @@ def _require_token(asgi_app, token: str):
     async def wrapper(scope, receive, send):
         if scope["type"] == "http":
             headers = dict(scope.get("headers") or [])
-            if headers.get(b"authorization", b"").decode() != expected:
+            presented = headers.get(b"authorization", b"").decode()
+            if not hmac.compare_digest(presented, expected):
                 await send({
                     "type": "http.response.start", "status": 401,
                     "headers": [(b"content-type", b"text/plain")],

@@ -24,15 +24,16 @@ def create_app(config_object=Config):
     app.config["attachments_dir"] = config_object.attachments_dir
     app.config["MAX_CONTENT_LENGTH"] = config_object.MAX_UPLOAD_BYTES
 
-    # Fail closed: never sign real tokens with a shipped default secret.
-    if (
-        not app.config["DISABLE_AUTH"]
-        and app.config["SECRET_KEY"] in app.config["KNOWN_DEFAULT_SECRETS"]
-    ):
-        raise RuntimeError(
-            "HBOX_SECRET_KEY is unset or a known default. Set a strong random "
-            "secret (>=32 bytes) before enabling authentication."
-        )
+    # Fail closed: never sign real tokens with a shipped default or a weak
+    # (too-short) secret when authentication is enabled.
+    if not app.config["DISABLE_AUTH"]:
+        secret = app.config["SECRET_KEY"] or ""
+        if secret in app.config["KNOWN_DEFAULT_SECRETS"] or len(secret) < 32:
+            raise RuntimeError(
+                "HBOX_SECRET_KEY is unset, a known default, or shorter than 32 "
+                "characters. Set a strong random secret before enabling "
+                "authentication (e.g. `openssl rand -base64 48`)."
+            )
     if app.config["DISABLE_AUTH"]:
         _LOGGER.warning(
             "HBOX_DISABLE_AUTH is on: every request runs as the default user "

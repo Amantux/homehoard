@@ -19,6 +19,18 @@ def test_boot_refuses_default_secret_with_auth(tmp_path):
         create_app(BadConfig)
 
 
+def test_boot_refuses_weak_custom_secret(tmp_path):
+    class WeakConfig(Config):
+        DATA_DIR = str(tmp_path)
+        DATABASE_URL = f"sqlite:///{tmp_path}/w.db"
+        DISABLE_AUTH = False
+        SECRET_KEY = "tooshort"  # not a known default, but < 32 chars
+        RATELIMIT_ENABLED = False
+
+    with pytest.raises(RuntimeError):
+        create_app(WeakConfig)
+
+
 def test_default_secret_allowed_when_auth_disabled(tmp_path):
     class NoAuthDefault(Config):
         DATA_DIR = str(tmp_path)
@@ -56,6 +68,9 @@ def test_register_rejects_short_password(client):
     "http://127.0.0.1:8080/",                     # loopback
     "http://10.0.0.5/hook",                        # RFC1918
     "http://[::1]/x",                              # ipv6 loopback
+    "ntfy://10.0.0.5/topic",                       # self-hosted provider → internal host
+    "mqtt://192.168.1.9",                          # provider scheme, private IP
+    "http://2130706433/",                          # decimal-encoded 127.0.0.1
 ])
 def test_notifier_blocks_internal_urls(auth_client, url):
     r = auth_client.post("/api/v1/notifiers", json={"name": "x", "url": url})
@@ -111,6 +126,8 @@ def test_pagesize_zero_does_not_dump_everything(auth_client):
         auth_client.post("/api/v1/items", json={"name": f"i{n}"})
     r = auth_client.get("/api/v1/items?pageSize=0").get_json()
     assert r["pageSize"] >= 1  # clamped, not 0/unbounded
+    # Non-numeric input must not 500.
+    assert auth_client.get("/api/v1/items?pageSize=abc&page=xyz").status_code == 200
 
 
 # --- M4: CSV export neutralizes formulas -----------------------------------

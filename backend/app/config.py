@@ -49,7 +49,9 @@ class Config:
     ]
     # Number of trusted reverse proxies in front of the app, so the real client
     # IP (X-Forwarded-For) drives rate limiting instead of the proxy's IP.
-    PROXY_HOPS = int(os.environ.get("HBOX_PROXY_HOPS", "1"))
+    # Default 0 = trust nothing: a direct-exposed app must NOT honor a spoofable
+    # X-Forwarded-For. Operators behind a real proxy set this to the hop count.
+    PROXY_HOPS = int(os.environ.get("HBOX_PROXY_HOPS", "0"))
     # Enable request rate limiting (disabled automatically under tests).
     RATELIMIT_ENABLED = _bool("HBOX_RATELIMIT_ENABLED", True)
 
