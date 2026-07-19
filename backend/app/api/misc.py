@@ -1,7 +1,10 @@
 """Miscellaneous endpoints: status, currency, qrcode, actions, reporting, import/export."""
 import io
+import os
+import time
 
-from flask import Blueprint, request, jsonify, Response, send_file
+from flask import Blueprint, request, jsonify, Response, send_file, current_app
+from sqlalchemy import text
 
 from ..extensions import db, limiter
 from ..models import Item
@@ -25,6 +28,7 @@ CURRENCIES = [
 
 @bp.get("/status")
 def status():
+    """Liveness: the process is up and serving. Cheap, no dependency access."""
     return jsonify(
         {
             "health": True,
@@ -33,6 +37,38 @@ def status():
             "message": "HomeHoard — homebox port running on Flask",
         }
     )
+
+
+@bp.get("/ready")
+def ready():
+    """Readiness: dependencies are actually usable (DB reachable, data dir
+    writable). Distinct from /status (liveness) so an orchestrator/healthcheck
+    can tell 'process running' from 'able to serve requests'. Returns 503 when a
+    dependency is down; body reports each check as ok/error (no internals)."""
+    checks = {}
+    ok = True
+
+    started = time.monotonic()
+    try:
+        db.session.execute(text("SELECT 1"))
+        checks["database"] = "ok"
+    except Exception:  # noqa: BLE001 - readiness must never leak a stack trace
+        checks["database"] = "error"
+        ok = False
+    checks["dbLatencyMs"] = round((time.monotonic() - started) * 1000, 1)
+
+    try:
+        d = current_app.config["attachments_dir"]()
+        probe = os.path.join(d, ".readycheck")
+        with open(probe, "w") as f:
+            f.write("ok")
+        os.remove(probe)
+        checks["storage"] = "ok"
+    except Exception:  # noqa: BLE001
+        checks["storage"] = "error"
+        ok = False
+
+    return jsonify({"ready": ok, "checks": checks}), (200 if ok else 503)
 
 
 @bp.get("/currency")
