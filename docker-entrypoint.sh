@@ -38,6 +38,13 @@ python3 /app/backend/ha_discovery.py || true
 
 cd /app/backend
 
+# Initialize / migrate the database ONCE, before starting workers. Otherwise
+# each of gunicorn's workers races to run create_all()/_migrate() on a fresh DB
+# and one crashes with "table already exists". After this, the per-worker
+# create_all() is a safe no-op.
+echo "Initializing database schema…"
+$RUN_AS python3 -c "from app import create_app; create_app()"
+
 # MCP server for Home Assistant — runs alongside the app in this same container,
 # talking to the local API. Exposes an SSE endpoint on HBOX_MCP_PORT.
 if [ "${HBOX_MCP_ENABLED}" = "true" ]; then
