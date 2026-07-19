@@ -43,7 +43,7 @@ Counts: **1 Critical · 3 High · 8 Medium · 8 Low · 5 Informational.**
 | L2 | Low | Weak password policy / no MFA | / CWE-521 | Partial (min length; MFA = roadmap) |
 | L3 | Low | `update_self` email change w/o uniqueness | / CWE-708 | Fixed |
 | L4 | Low | Container runs as root | / CWE-250 | Fixed (non-root USER) |
-| L5 | Low | Dependency hygiene (flask-cors, gunicorn, no scanning) | / CWE-1104,1035 | Fixed (bumps + Dependabot) |
+| L5 | Low | Dependency hygiene (flask-cors, gunicorn, no scanning) | / CWE-1104,1035 | Fixed (bumps + Dependabot + CI scanning; Flask/marshmallow CVEs cleared) |
 | L6 | Low | `get_json(force=True)` ignores Content-Type | | Accepted (no cookie auth → no CSRF) |
 | L7 | Low | Race conditions (asset_id, checkout, token last_used) | / CWE-362 | Accepted (single-writer home app) |
 | L8 | Low | `/qrcode` unbounded input DoS | / CWE-400 | Fixed (length cap) |
