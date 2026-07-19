@@ -1,7 +1,7 @@
 {
   "domain": "homehoard",
   "name": "HomeHoard",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "documentation": "https://github.com/Amantux/homehoard",
   "issue_tracker": "https://github.com/Amantux/homehoard/issues",
   "dependencies": [],
