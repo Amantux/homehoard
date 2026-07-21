@@ -1,9 +1,12 @@
 from flask import Blueprint, request, jsonify, abort
 
 from ..extensions import db
+from sqlalchemy.orm import selectinload, joinedload
+
 from ..models import Bin, Item
 from ..auth import login_required, current_group
 from ..schemas.serializers import bin_out, bin_summary, item_summary
+from ..services.holdings import resync_item, primary_holding, resync_bin_holdings
 
 bp = Blueprint("bins", __name__)
 
@@ -18,11 +21,13 @@ def _get(bin_id) -> Bin:
 @bp.get("/bins")
 @login_required
 def list_bins():
-    q = db.session.query(Bin).filter_by(group_id=current_group().id)
+    q = (db.session.query(Bin).filter_by(group_id=current_group().id)
+         .options(selectinload(Bin.holdings), selectinload(Bin.attachments),
+                  joinedload(Bin.location)))
     location_id = request.args.get("location")
     if location_id:
         q = q.filter(Bin.location_id == location_id)
-    return jsonify([bin_summary(b) | {"itemCount": len(b.items)} for b in q.all()])
+    return jsonify([bin_summary(b) | {"itemCount": len(b.holdings)} for b in q.all()])
 
 
 @bp.post("/bins")
@@ -57,11 +62,9 @@ def update_bin(bin_id):
         b.description = data["description"]
     if "locationId" in data:
         b.location_id = data["locationId"] or None
-        # Moving a bin carries its contents: every item in the bin follows the
-        # bin to its new location.
-        if b.location_id:
-            for item in b.items:
-                item.location_id = b.location_id
+        # Moving a bin carries its contents: every placement in the bin follows
+        # it to the new location, and each affected item is resynced.
+        resync_bin_holdings(b)
     db.session.commit()
     return jsonify(bin_out(b))
 
@@ -70,10 +73,15 @@ def update_bin(bin_id):
 @login_required
 def delete_bin(bin_id):
     b = _get(bin_id)
-    # Detach items rather than deleting them along with the bin.
-    for item in b.items:
-        item.bin_id = None
+    # Detach placements (keep the items, in the bin's location) rather than
+    # deleting them with the bin. Null bin_id BEFORE delete to avoid an FK break.
+    affected = {h.item for h in b.holdings if h.item}
+    for h in list(b.holdings):
+        h.bin_id = None
     db.session.delete(b)
+    db.session.flush()
+    for item in affected:
+        resync_item(item)
     db.session.commit()
     return "", 204
 
@@ -89,6 +97,11 @@ def add_item(bin_id, item_id):
     # An item in a bin inherits the bin's location for consistency.
     if b.location_id:
         item.location_id = b.location_id
+    ph = primary_holding(item)  # move the item's primary placement into the bin
+    if ph:
+        ph.bin_id = item.bin_id
+        ph.location_id = item.location_id
+    resync_item(item)
     db.session.commit()
     return jsonify(item_summary(item))
 
@@ -101,5 +114,9 @@ def remove_item(bin_id, item_id):
     if not item or item.bin_id != bin_id:
         abort(404)
     item.bin_id = None
+    ph = primary_holding(item)  # pull the primary placement out of the bin
+    if ph and ph.bin_id == bin_id:
+        ph.bin_id = None
+    resync_item(item)
     db.session.commit()
     return "", 204

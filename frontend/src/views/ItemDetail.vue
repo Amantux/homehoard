@@ -76,6 +76,42 @@ async function save() {
   await loadAll()
 }
 
+// ── Placements (multi-location quantities) ───────────────────────────────────
+const placement = ref({ binId: '', quantity: 1 })
+const moveFor = ref(null)
+const moveForm = ref({ toBinId: '', quantity: null })
+
+async function addPlacement() {
+  if (!placement.value.binId) return
+  try {
+    await api.post(`/items/${id}/holdings`,
+      { binId: placement.value.binId, quantity: Number(placement.value.quantity) || 1 })
+    placement.value = { binId: '', quantity: 1 }
+    await loadAll(); ui.toast('Placement added')
+  } catch (e) { ui.error(e.message) }
+}
+async function editHolding(h, qty) {
+  const q = Number(qty)
+  if (!(q > 0)) { await loadAll(); return }
+  try { await api.put(`/holdings/${h.id}`, { quantity: q }); await loadAll() }
+  catch (e) { ui.error(e.message) }
+}
+async function removeHolding(h) {
+  const where = h.bin?.name || h.location?.name || 'Unassigned'
+  if (!confirm(`Remove the placement in ${where}?`)) return
+  try { await api.del(`/holdings/${h.id}`); await loadAll() } catch (e) { ui.error(e.message) }
+}
+function openMove(h) { moveFor.value = h; moveForm.value = { toBinId: '', quantity: h.quantity } }
+async function doMove() {
+  const q = Number(moveForm.value.quantity)
+  if (!(q > 0)) { ui.error('Enter a quantity to move'); return }
+  try {
+    await api.post(`/holdings/${moveFor.value.id}/move`,
+      { toBinId: moveForm.value.toBinId || null, quantity: q })
+    moveFor.value = null; await loadAll(); ui.toast('Moved')
+  } catch (e) { ui.error(e.message) }
+}
+
 async function remove() {
   if (!confirm('Delete this item?')) return
   await api.del('/items/' + id)
@@ -216,7 +252,7 @@ async function addMaint() {
             <dl class="kv">
               <dt>Location</dt><dd>{{ item.location?.name || '—' }}</dd>
               <dt>Bin</dt><dd>{{ item.bin?.name || '—' }}</dd>
-              <dt>Quantity</dt><dd>{{ item.quantity }}</dd>
+              <dt>Quantity</dt><dd>{{ item.quantity }}<span v-if="item.placementCount > 1" class="muted"> · in {{ item.placementCount }} places</span></dd>
               <dt>Manufacturer</dt><dd>{{ item.manufacturer || '—' }}</dd>
               <dt>Model #</dt><dd>{{ item.modelNumber || '—' }}</dd>
               <dt>Serial #</dt><dd>{{ item.serialNumber || '—' }}</dd>
@@ -234,6 +270,33 @@ async function addMaint() {
             </div>
             <div v-if="item.notes" class="divider"></div>
             <p v-if="item.notes" class="muted" style="white-space:pre-wrap">{{ item.notes }}</p>
+
+            <!-- Placements: this item's quantity across bins/locations -->
+            <div class="divider"></div>
+            <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:6px">
+              <strong>Placements</strong>
+              <span class="muted sm">{{ item.quantity }} total</span>
+            </div>
+            <div v-for="h in item.holdings" :key="h.id" class="row"
+              style="align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
+              <span style="flex:1">{{ h.bin?.name || h.location?.name || 'Unassigned' }}
+                <span v-if="h.bin && h.location" class="muted sm">· {{ h.location.name }}</span></span>
+              <input type="number" min="0" step="1" style="width:76px" :value="h.quantity"
+                @change="(e) => editHolding(h, e.target.value)" />
+              <button class="secondary sm" @click="openMove(h)">Move</button>
+              <button v-if="item.holdings.length > 1" class="danger secondary sm"
+                title="Remove this placement" @click="removeHolding(h)">✕</button>
+            </div>
+            <div class="row" style="gap:8px;margin-top:10px;align-items:flex-end">
+              <label class="field" style="flex:1"><span>Add placement — bin</span>
+                <select v-model="placement.binId">
+                  <option value="">(choose a bin)</option>
+                  <option v-for="b in bins" :key="b.id" :value="b.id">{{ b.name }}</option>
+                </select></label>
+              <label class="field" style="width:88px"><span>Qty</span>
+                <input type="number" min="1" v-model.number="placement.quantity" /></label>
+              <button :disabled="!placement.binId" @click="addPlacement">Add</button>
+            </div>
           </template>
 
           <!-- EDIT FORM -->
@@ -338,4 +401,23 @@ async function addMaint() {
   </div>
 
   <div v-else class="card"><div class="skeleton" style="height:300px"></div></div>
+
+  <!-- Move a placement -->
+  <div v-if="moveFor" @click.self="moveFor = null"
+    style="position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:50">
+    <div class="card" style="width:min(420px,92vw)">
+      <h3 style="margin-top:0">Move from {{ moveFor.bin?.name || moveFor.location?.name || 'Unassigned' }}</h3>
+      <label class="field"><span>To bin</span>
+        <select v-model="moveForm.toBinId">
+          <option value="">(no bin)</option>
+          <option v-for="b in bins" :key="b.id" :value="b.id">{{ b.name }}</option>
+        </select></label>
+      <label class="field"><span>Quantity to move (max {{ moveFor.quantity }})</span>
+        <input type="number" min="1" :max="moveFor.quantity" v-model.number="moveForm.quantity" /></label>
+      <div class="row" style="justify-content:flex-end;gap:8px;margin-top:12px">
+        <button class="ghost" @click="moveFor = null">Cancel</button>
+        <button @click="doMove">Move</button>
+      </div>
+    </div>
+  </div>
 </template>

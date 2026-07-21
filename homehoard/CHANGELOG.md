@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.10
+
+- **The same item in multiple places.** An item can now be stocked across several
+  bins/locations with a quantity in each (e.g. "20 AA batteries: 8 in the kitchen
+  drawer, 12 in the garage bin"), rolling up to a total. The item page has a
+  **Placements** section to add, edit, move, and remove placements; a bin or
+  location now shows each item's quantity **there**; and item cards note "in N
+  places". Assist/MCP can add a placement and read where things are stocked by
+  voice. Existing items are migrated automatically (each becomes one placement),
+  and single-placement items work exactly as before.
+
 ## 1.0.8
 
 - **Multi-user behind Home Assistant.** Each HA user now gets their own HomeHoard

@@ -23,6 +23,7 @@ class Location(IDMixin, TimestampMixin, db.Model):
     )
 
     items = relationship("Item", back_populates="location")
+    holdings = relationship("ItemHolding", back_populates="location")
     bins = relationship(
         "Bin", back_populates="location", cascade="all, delete-orphan"
     )

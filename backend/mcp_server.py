@@ -116,6 +116,12 @@ def get_item(name_or_id: str) -> dict:
         "quantity": item.get("quantity"),
         "location": (item.get("location") or {}).get("name"),
         "bin": (item.get("bin") or {}).get("name"),
+        # Where it's stocked, per placement (multi-location quantities).
+        "placements": [
+            {"where": (h.get("bin") or h.get("location") or {}).get("name") or "unassigned",
+             "quantity": h.get("quantity")}
+            for h in item.get("holdings", [])
+        ],
         "checkedOut": item.get("checkedOut"),
         "checkedOutTo": item.get("checkedOutTo"),
         "manufacturer": item.get("manufacturer"),
@@ -131,7 +137,9 @@ def get_bin_contents(name: str) -> dict:
     if not bins:
         return {"error": f"No bin matching '{name}'."}
     b = _get(f"/bins/{bins[0]['id']}")
-    return {"bin": b["name"], "items": [i["name"] for i in b.get("items", [])]}
+    return {"bin": b["name"],
+            "items": [{"name": i["name"], "quantity": i.get("quantityHere")}
+                      for i in b.get("items", [])]}
 
 
 @mcp.tool()
@@ -144,9 +152,37 @@ def get_location_contents(name: str) -> dict:
     loc = _get(f"/locations/{locs[0]['id']}")
     return {
         "location": loc["name"],
-        "items": [i["name"] for i in loc.get("items", [])],
+        "items": [{"name": i["name"], "quantity": i.get("quantityHere")}
+                  for i in loc.get("items", [])],
         "bins": [b["name"] for b in loc.get("bins", [])],
     }
+
+
+@mcp.tool()
+def add_item_placement(name_or_id: str, to_bin: str = "", to_location: str = "",
+                       quantity: float = 1) -> str:
+    """Stock some of an item in ANOTHER bin/location (multi-location quantities) —
+    e.g. 'add 12 AA batteries to the garage bin' when 8 are already in a drawer.
+    Adds to the running total; use move_item to relocate the whole thing."""
+    item = _resolve_item(name_or_id)
+    if not item:
+        return f"No item matching '{name_or_id}'."
+    payload: dict = {"quantity": quantity}
+    if to_bin:
+        b = _resolve_named("bin", to_bin)
+        if not b:
+            return f"No bin matching '{to_bin}'."
+        payload["binId"] = b["id"]
+    elif to_location:
+        loc = _resolve_named("location", to_location)
+        if not loc:
+            return f"No location matching '{to_location}'."
+        payload["locationId"] = loc["id"]
+    else:
+        return "Tell me which bin or location to stock it in."
+    res = _post(f"/items/{item['id']}/holdings", payload)
+    return (f"Stocked {quantity} {item['name']} in {to_bin or to_location} "
+            f"(total now {res.get('quantity')}).")
 
 
 @mcp.tool()

@@ -25,7 +25,14 @@ function thumb() {
       <div class="sub" v-if="item.location || item.bin">
         {{ item.bin ? '🗃️ ' + item.bin.name : '📍 ' + item.location.name }}
       </div>
-      <div class="sub" v-if="Number(item.quantity) !== 1">Qty: {{ item.quantity }}</div>
+      <div class="sub" v-if="item.quantityHere !== undefined">
+        Qty here: {{ item.quantityHere }}
+        <span v-if="item.placementCount > 1" class="muted">· of {{ item.quantity }} in {{ item.placementCount }} places</span>
+      </div>
+      <div class="sub" v-else-if="Number(item.quantity) !== 1 || item.placementCount > 1">
+        Qty: {{ item.quantity }}
+        <span v-if="item.placementCount > 1" class="muted">· in {{ item.placementCount }} places</span>
+      </div>
       <div class="labels">
         <span v-for="l in item.labels" :key="l.id" class="chip"
               :style="l.color ? { background: l.color + '22', color: l.color } : {}">

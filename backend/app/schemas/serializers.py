@@ -67,14 +67,19 @@ def location_out(loc, with_items=True):
     data["parent"] = location_summary(loc.parent) if loc.parent else None
     data["children"] = [location_summary(c) for c in loc.children]
     data["bins"] = [
-        {"id": b.id, "name": b.name, "itemCount": len(b.items)} for b in loc.bins
+        {"id": b.id, "name": b.name, "itemCount": len(b.holdings)} for b in loc.bins
     ]
-    data["itemCount"] = len(loc.items)
+    # Holding-aware: every placement in this location (directly or in one of its
+    # bins), each with the quantity HERE rather than the item's household total.
+    holdings = sorted((h for h in loc.holdings if h.item),
+                      key=lambda h: (h.item.name or "").lower())
+    data["itemCount"] = len(holdings)
     data["childCount"] = len(loc.children)
     if with_items:
-        data["items"] = [item_summary(i) for i in loc.items]
-        data["totalPrice"] = sum((i.purchase_price or 0) * (i.quantity or 1)
-                                 for i in loc.items)
+        data["items"] = [item_summary(h.item) | {"quantityHere": h.quantity}
+                         for h in holdings]
+        data["totalPrice"] = sum((h.item.purchase_price or 0) * (h.quantity or 1)
+                                 for h in holdings)
     return data
 
 
@@ -144,6 +149,8 @@ def item_summary(i):
         "name": i.name,
         "description": i.description,
         "quantity": i.quantity,
+        # Number of distinct placements (bins/locations) this item is stocked in.
+        "placementCount": len(i.holdings),
         "insured": i.insured,
         "archived": i.archived,
         "assetId": _fmt_asset(i.asset_id),
@@ -188,9 +195,22 @@ def item_out(i):
             "children": [item_summary(c) for c in i.children],
             "fields": [field_out(f) for f in i.fields],
             "attachments": [attachment_out(a) for a in i.attachments],
+            # Per-placement quantities, largest first. quantity above is the total.
+            "holdings": [holding_out(h) for h in
+                         sorted(i.holdings, key=lambda h: -(h.quantity or 0))],
         }
     )
     return data
+
+
+def holding_out(h):
+    return {
+        "id": h.id,
+        "quantity": h.quantity,
+        "notes": h.notes,
+        "location": location_summary(h.location) if h.location else None,
+        "bin": bin_summary(h.bin) if h.bin else None,
+    }
 
 
 def notifier_out(n):
@@ -222,10 +242,15 @@ def bin_summary(b):
 
 def bin_out(b):
     data = bin_summary(b)
-    data["items"] = [item_summary(i) for i in b.items]
-    data["itemCount"] = len(b.items)
-    data["totalPrice"] = sum((i.purchase_price or 0) * (i.quantity or 1)
-                             for i in b.items)
+    # Holding-aware: every item stocked in this bin (even if its primary bin is
+    # elsewhere), each with the quantity HERE — not its household-wide total.
+    holdings = sorted((h for h in b.holdings if h.item),
+                      key=lambda h: (h.item.name or "").lower())
+    data["items"] = [item_summary(h.item) | {"quantityHere": h.quantity}
+                     for h in holdings]
+    data["itemCount"] = len(holdings)
+    data["totalPrice"] = sum((h.item.purchase_price or 0) * (h.quantity or 1)
+                             for h in holdings)
     data["attachments"] = [attachment_out(a) for a in b.attachments]
     return data
 

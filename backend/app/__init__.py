@@ -176,6 +176,20 @@ def _migrate(app):
                 )
                 conn.execute(text("DROP TABLE attachments_old"))
 
+    # Multi-location: give every existing item an initial holding mirroring its
+    # current placement, so holdings become the source of truth for per-placement
+    # quantities without breaking single-placement reads. Idempotent — items that
+    # already have a holding are skipped, so a re-run (or a fresh DB with no items)
+    # is a no-op.
+    if inspector.has_table("item_holdings") and inspector.has_table("items"):
+        from .models import Item
+        from .services.holdings import ensure_holding
+        orphans = db.session.query(Item).filter(~Item.holdings.any()).all()
+        for it in orphans:
+            ensure_holding(it)
+        if orphans:
+            db.session.commit()
+
 
 def _register_blueprints(app):
     from .api.users import bp as users_bp
@@ -183,6 +197,7 @@ def _register_blueprints(app):
     from .api.locations import bp as locations_bp
     from .api.labels import bp as labels_bp
     from .api.items import bp as items_bp
+    from .api.holdings import bp as holdings_bp
     from .api.bins import bp as bins_bp
     from .api.qrtags import bp as qrtags_bp
     from .api.attachments import bp as attachments_bp
@@ -201,6 +216,7 @@ def _register_blueprints(app):
         locations_bp,
         labels_bp,
         items_bp,
+        holdings_bp,
         bins_bp,
         qrtags_bp,
         attachments_bp,

@@ -78,6 +78,12 @@ class Item(IDMixin, TimestampMixin, db.Model):
     fields = relationship(
         "ItemField", back_populates="item", cascade="all, delete-orphan"
     )
+    # Per-placement quantities. `quantity` above is the SUM of these; `location`/
+    # `bin` above mirror the primary (largest) holding — both kept in sync so
+    # existing single-placement reads keep working. See services/holdings.py.
+    holdings = relationship(
+        "ItemHolding", back_populates="item", cascade="all, delete-orphan"
+    )
     attachments = relationship(
         "Attachment", back_populates="item", cascade="all, delete-orphan"
     )
@@ -102,3 +108,30 @@ class ItemField(IDMixin, TimestampMixin, db.Model):
 
     item_id: Mapped[str] = mapped_column(String(36), ForeignKey("items.id"))
     item = relationship("Item", back_populates="fields")
+
+
+class ItemHolding(IDMixin, TimestampMixin, db.Model):
+    """One placement of an item: a quantity in a specific bin/location. An item's
+    total quantity is the sum of its holdings; item.location/bin mirror the
+    primary (largest) holding for backward compatibility."""
+
+    __tablename__ = "item_holdings"
+
+    quantity: Mapped[float] = mapped_column(Float, default=1)
+    notes: Mapped[str] = mapped_column(String(255), default="")
+
+    item_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("items.id"), index=True
+    )
+    item = relationship("Item", back_populates="holdings")
+
+    location_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("locations.id"), nullable=True
+    )
+    location = relationship("Location", back_populates="holdings")
+    bin_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("bins.id"), nullable=True
+    )
+    bin = relationship("Bin", back_populates="holdings")
+
+    group_id: Mapped[str] = mapped_column(String(36), ForeignKey("groups.id"))

@@ -8,9 +8,28 @@ from ..extensions import db
 from ..models import Item, ItemField, Label, Location, Bin
 from ..auth import login_required, current_group
 from ..schemas.serializers import item_out, item_summary
+from ..services.holdings import ensure_holding, resync_item, primary_holding
 from .lookup import location_path_str
 
 bp = Blueprint("items", __name__)
+
+
+def _sync_holdings_from_item_form(item, data):
+    """Reflect item-form edits to location/bin/quantity into the holdings, then
+    resync the denormalized total + primary. Single-placement items stay fully
+    editable via the item form; with multiple placements the holdings own the
+    quantity (edit them via the placements UI), so a form quantity is ignored."""
+    if not item.holdings:
+        ensure_holding(item)
+        return
+    if "locationId" in data or "binId" in data:
+        primary = primary_holding(item)
+        if primary:
+            primary.location_id = item.location_id
+            primary.bin_id = item.bin_id
+    if "quantity" in data and len(item.holdings) == 1:
+        item.holdings[0].quantity = data["quantity"]
+    resync_item(item)
 
 
 def _get(item_id) -> Item:
@@ -204,6 +223,8 @@ def create_item():
             .all()
         )
     db.session.add(item)
+    db.session.flush()
+    ensure_holding(item)  # start with one placement mirroring this location/bin
     db.session.commit()
     return jsonify(item_out(item)), 201
 
@@ -218,7 +239,9 @@ def get_item(item_id):
 @login_required
 def update_item(item_id):
     item = _get(item_id)
-    _apply(item, request.get_json(force=True) or {})
+    data = request.get_json(force=True) or {}
+    _apply(item, data)
+    _sync_holdings_from_item_form(item, data)
     db.session.commit()
     return jsonify(item_out(item))
 
@@ -227,7 +250,9 @@ def update_item(item_id):
 @login_required
 def patch_item(item_id):
     item = _get(item_id)
-    _apply(item, request.get_json(force=True) or {})
+    data = request.get_json(force=True) or {}
+    _apply(item, data)
+    _sync_holdings_from_item_form(item, data)
     db.session.commit()
     return jsonify(item_out(item))
 
