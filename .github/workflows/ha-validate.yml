@@ -1,0 +1,162 @@
+name: HA validate
+
+# Validates the two Home Assistant install paths this repo ships:
+#   1. custom_components/homehoard  -> HACS custom integration
+#   2. homehoard/config.yaml        -> Supervisor add-on
+# These are the checks behind the README badges. They are BLOCKING: a badge that
+# stays green while the integration is unloadable is worse than no badge.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # HA and HACS tighten their requirements over time; a repo that passed at
+    # merge can fail months later without a single commit. Catch that.
+    - cron: "0 4 * * 1"
+
+jobs:
+  hassfest:
+    name: hassfest (Home Assistant integration manifest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: home-assistant/actions/hassfest@master
+
+  hacs:
+    name: HACS (integration installability)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hacs/action@main
+        with:
+          category: integration
+          # `brands` checks that the domain is registered in home-assistant/brands,
+          # a separate PR against an upstream repo we do not control and cannot
+          # land from CI. Ignored deliberately, not silently dropped.
+          ignore: brands
+
+  addon-lint:
+    name: Add-on + HACS metadata lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate add-on config.yaml
+        run: |
+          python3 - <<'PY'
+          import sys, yaml
+          cfg = yaml.safe_load(open("homehoard/config.yaml"))
+          errors = []
+
+          for key in ("name", "version", "slug", "description", "arch", "image"):
+              if not cfg.get(key):
+                  errors.append(f"missing required add-on key: {key}")
+
+          # The ingress contract is the whole point of the no-sign-in UX: HA
+          # authenticates the user upstream and proxies to ingress_port.
+          if not cfg.get("ingress"):
+              errors.append("ingress must be true (the add-on is used via the HA sidebar)")
+          if cfg.get("ingress_port") != 7745:
+              errors.append(f"ingress_port must be 7745, got {cfg.get('ingress_port')}")
+
+          # Sign-in must be OFF by default behind ingress, or every HA user hits a
+          # login screen for an app HA already authenticated them into.
+          opts = cfg.get("options") or {}
+          if opts.get("disable_auth") is not True:
+              errors.append("options.disable_auth must default to true")
+          if (cfg.get("schema") or {}).get("disable_auth") != "bool":
+              errors.append("schema.disable_auth must be declared as bool")
+
+          # GHCR rejects mixed-case namespaces; a capitalised owner silently
+          # breaks `docker pull` on every user's box.
+          image = cfg.get("image", "")
+          if image != image.lower():
+              errors.append(f"image must be lowercase (GHCR requirement): {image}")
+
+          if errors:
+              print("Add-on config INVALID:")
+              for e in errors:
+                  print(f"  - {e}")
+              sys.exit(1)
+          print(f"Add-on config OK: {cfg['name']} {cfg['version']} -> {cfg['image']}")
+          PY
+
+      - name: Validate HACS + repository metadata
+        run: |
+          python3 - <<'PY'
+          import json, os, sys, yaml
+          errors = []
+
+          hacs = json.load(open("hacs.json"))
+          if not hacs.get("name"):
+              errors.append("hacs.json: missing name")
+          if not hacs.get("homeassistant"):
+              errors.append("hacs.json: missing minimum homeassistant version")
+          # hacs.json has a CLOSED schema — unknown keys are a hard failure in the
+          # HACS action (iot_class belongs in manifest.json, not here).
+          allowed = {"name", "content_in_root", "zip_release", "filename",
+                     "hide_default_branch", "persistent_directory",
+                     "homeassistant", "country", "hacs", "render_readme"}
+          extra = set(hacs) - allowed
+          if extra:
+              errors.append(f"hacs.json: keys not allowed by the HACS schema: {sorted(extra)}")
+
+          man = json.load(open("custom_components/homehoard/manifest.json"))
+          for key in ("domain", "name", "version", "documentation", "issue_tracker", "codeowners"):
+              if not man.get(key):
+                  errors.append(f"manifest.json: missing {key}")
+          if man.get("domain") != "homehoard":
+              errors.append(f"manifest.json: domain must be 'homehoard', got {man.get('domain')}")
+
+          # HomeHoard serves its Lovelace card via hass.http, so `http` must be a
+          # declared dependency or HA may set the integration up before it exists.
+          src = open("custom_components/homehoard/__init__.py").read()
+          if "hass.http" in src and "http" not in (man.get("dependencies") or []):
+              errors.append("manifest.json: uses hass.http but 'http' is not in dependencies")
+
+          # hassfest enforces key order: domain, name, then strict alphabetical.
+          keys = list(man)
+          expected_order = ["domain", "name"] + sorted(k for k in keys
+                                                       if k not in ("domain", "name"))
+          if keys != expected_order:
+              errors.append(f"manifest.json: keys must be ordered {expected_order}, got {keys}")
+
+          repo = yaml.safe_load(open("repository.yaml"))
+          if not repo.get("url"):
+              errors.append("repository.yaml: missing url")
+
+          # Every documentation URL must point at the repo that hosts this code, or
+          # HACS sends users somewhere that 404s.
+          base = repo["url"].rstrip("/")
+          for label in ("documentation", "issue_tracker"):
+              if not str(man.get(label, "")).startswith(base):
+                  errors.append(f"manifest.json {label} does not point at {base}")
+
+          # HA renders these as the add-on's Documentation and Changelog tabs;
+          # missing = the add-on ships with empty tabs.
+          for doc in ("homehoard/DOCS.md", "homehoard/CHANGELOG.md"):
+              if not os.path.isfile(doc) or os.path.getsize(doc) < 200:
+                  errors.append(f"missing or near-empty add-on doc: {doc}")
+
+          # The My Home Assistant buttons must point at the repo that hosts this
+          # code, or one click sends users to someone else's repository.
+          from urllib.parse import quote
+          owner_repo = base.replace("https://github.com/", "")
+          readme = open("README.md").read()
+          if "my.home-assistant.io/redirect/supervisor_add_addon_repository" not in readme:
+              errors.append("README.md: missing the add-on repository My-HA button")
+          if "my.home-assistant.io/redirect/hacs_repository" not in readme:
+              errors.append("README.md: missing the HACS My-HA button")
+          if quote(base, safe="") not in readme:
+              errors.append(f"README.md: the add-on My-HA button does not url-encode {base}")
+          o, _, r = owner_repo.partition("/")
+          if f"owner={o}&repository={r}" not in readme:
+              errors.append(f"README.md: HACS button does not point at {owner_repo}")
+
+          if errors:
+              print("HACS metadata INVALID:")
+              for e in errors:
+                  print(f"  - {e}")
+              sys.exit(1)
+          print(f"HACS metadata OK: {man['name']} {man['version']} ({man['domain']})")
+          PY

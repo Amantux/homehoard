@@ -1,14 +1,16 @@
 {
   "domain": "homehoard",
   "name": "HomeHoard",
-  "version": "1.0.6",
-  "documentation": "https://github.com/Amantux/homehoard",
-  "issue_tracker": "https://github.com/Amantux/homehoard/issues",
-  "dependencies": [],
   "codeowners": [
     "@Amantux"
   ],
-  "requirements": [],
   "config_flow": true,
-  "iot_class": "local_polling"
+  "dependencies": [
+    "http"
+  ],
+  "documentation": "https://github.com/Amantux/homehoard",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/Amantux/homehoard/issues",
+  "requirements": [],
+  "version": "1.0.6"
 }

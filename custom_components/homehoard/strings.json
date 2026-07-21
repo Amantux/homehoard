@@ -5,7 +5,7 @@
         "title": "Connect to HomeHoard",
         "description": "Add-on users are set up automatically. Only fill in an API token if your HomeHoard has authentication enabled — generate one in HomeHoard under “Home Assistant”.",
         "data": {
-          "host": "HomeHoard host (e.g. http://127.0.0.1)",
+          "host": "HomeHoard host (e.g. 127.0.0.1 or an add-on hostname)",
           "port": "Port",
           "token": "API token (only if auth is enabled)"
         }

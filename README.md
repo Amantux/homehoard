@@ -1,5 +1,12 @@
 # HomeHoard 📦
 
+[![HA validate](https://github.com/Amantux/homehoard/actions/workflows/ha-validate.yml/badge.svg)](https://github.com/Amantux/homehoard/actions/workflows/ha-validate.yml)
+[![CI](https://github.com/Amantux/homehoard/actions/workflows/ci.yml/badge.svg)](https://github.com/Amantux/homehoard/actions/workflows/ci.yml)
+[![HACS: custom](https://img.shields.io/badge/HACS-custom-41BDF5.svg)](https://hacs.xyz/docs/faq/custom_repositories)
+[![Home Assistant add-on](https://img.shields.io/badge/Home%20Assistant-add--on-41BDF5.svg?logo=home-assistant&logoColor=white)](https://www.home-assistant.io/addons/)
+[![Min HA version](https://img.shields.io/badge/Home%20Assistant-%E2%89%A5%202023.1.0-41BDF5.svg)](https://www.home-assistant.io/)
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
+
 **HomeHoard is my own personal rewrite of [homebox](https://github.com/hay-kot/homebox).**
 
 I love what homebox does, but I wanted three things it didn't give me, so I
