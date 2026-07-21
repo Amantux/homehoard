@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.1.0
+## 1.0.8
 
 - **Multi-user behind Home Assistant.** Each HA user now gets their own HomeHoard
   identity (auto-provisioned from the ingress sign-in), all sharing one
