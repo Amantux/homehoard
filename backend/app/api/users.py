@@ -15,6 +15,16 @@ from ..auth import (
 from ..schemas.serializers import user_out
 
 bp = Blueprint("users", __name__)
+
+
+@bp.get("/me")
+@login_required
+def me():
+    """Current user + role, so the UI can gate owner-only surfaces. Behind HA
+    ingress this reflects the signed-in HA user; the server enforces roles."""
+    u = current_user()
+    return jsonify({"id": u.id, "name": u.name, "isOwner": bool(u.is_owner),
+                    "ha": bool(u.ha_user_id)})
 _LOGGER = logging.getLogger("homehoard.auth")
 
 # Precomputed hash so a login for a non-existent user still spends the same

@@ -27,7 +27,12 @@ async function load() {
     loading.value = false
   }
 }
-onMounted(load)
+const isOwner = ref(true)
+onMounted(async () => {
+  try { isOwner.value = (await api.get('/me')).isOwner } catch (e) { /* default owner */ }
+  if (isOwner.value) load()
+  else loading.value = false
+})
 
 async function create() {
   creating.value = true
@@ -119,7 +124,12 @@ const mcpUrl = computed(() => {
   </div>
 
   <!-- API tokens -->
-  <div class="card">
+  <div v-if="!isOwner" class="card">
+    <h2 style="margin-top:0">API tokens</h2>
+    <p class="muted" style="margin:0">Only the household owner can manage API keys.</p>
+  </div>
+
+  <div v-else class="card">
     <div class="row" style="margin-bottom:6px">
       <h2 style="margin:0;flex:1">API tokens</h2>
     </div>

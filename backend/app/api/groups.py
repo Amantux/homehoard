@@ -5,7 +5,7 @@ from flask import Blueprint, request, jsonify
 
 from ..extensions import db
 from ..models import GroupInvitation, Item, Label, Location, User
-from ..auth import login_required, current_group
+from ..auth import login_required, owner_required, current_group
 from ..schemas.serializers import group_out
 
 bp = Blueprint("groups", __name__)
@@ -18,7 +18,7 @@ def get_group():
 
 
 @bp.put("/groups")
-@login_required
+@owner_required
 def update_group():
     data = request.get_json(force=True) or {}
     group = current_group()
@@ -31,7 +31,7 @@ def update_group():
 
 
 @bp.post("/groups/invitations")
-@login_required
+@owner_required
 def create_invitation():
     data = request.get_json(force=True) or {}
     group = current_group()

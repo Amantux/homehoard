@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.1.0
+
+- **Multi-user behind Home Assistant.** Each HA user now gets their own HomeHoard
+  identity (auto-provisioned from the ingress sign-in), all sharing one
+  household — so items, bins, and locations are shared but identity is
+  per-person. The **first** user is the **owner** and can change household config
+  (API keys, household name/currency, invitations); everyone else is a **member**
+  with full inventory use. Trust boundary enforced: the identity headers are
+  honored only from the Home Assistant Supervisor proxy — a forged header from a
+  directly published port is ignored. Standalone installs are unchanged.
+
 ## 1.0.0
 - **First stable release.**
 - **Nested locations / multi-site support** — sites (homes, storage lockers,

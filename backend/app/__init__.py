@@ -123,6 +123,7 @@ def _migrate(app):
             "checked_out_at": "DATETIME",
             "checkout_due": "DATETIME",
         },
+        "users": {"ha_user_id": "VARCHAR(255)"},
     }
     for table, columns in wanted.items():
         if not inspector.has_table(table):
@@ -132,6 +133,21 @@ def _migrate(app):
             for name, ddl in columns.items():
                 if name not in existing:
                     conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
+    # Backfill roles: promote the earliest user of any household with no owner, so
+    # an existing admin isn't locked out of the now-owner-gated surfaces. Idempotent.
+    if inspector.has_table("users"):
+        with db.engine.begin() as conn:
+            conn.execute(text("""
+                UPDATE users SET is_owner = 1
+                WHERE id IN (
+                    SELECT (SELECT u2.id FROM users u2 WHERE u2.group_id = g.id
+                            ORDER BY u2.created_at ASC, u2.id ASC LIMIT 1)
+                    FROM groups g
+                    WHERE NOT EXISTS (SELECT 1 FROM users o
+                                      WHERE o.group_id = g.id AND o.is_owner = 1)
+                )
+            """))
+
     # Backfill code for pre-existing generated tags so resolution stays uniform.
     with db.engine.begin() as conn:
         conn.execute(

@@ -13,6 +13,8 @@ class User(IDMixin, TimestampMixin, db.Model):
     password_hash: Mapped[str] = mapped_column(String(255))
     is_superuser: Mapped[bool] = mapped_column(Boolean, default=False)
     is_owner: Mapped[bool] = mapped_column(Boolean, default=False)
+    # HA user behind ingress (from X-Remote-User-Id); NULL for local/JWT users.
+    ha_user_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     activated_on: Mapped[str] = mapped_column(String(64), nullable=True)
 
     group_id: Mapped[str] = mapped_column(String(36), ForeignKey("groups.id"))
