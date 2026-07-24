@@ -349,6 +349,8 @@ async function addMaint() {
               <label class="field fill"><span>Manufacturer</span><input v-model="item.manufacturer" /></label>
               <label class="field fill"><span>Model #</span><input v-model="item.modelNumber" /></label>
               <label class="field fill"><span>Serial #</span><input v-model="item.serialNumber" /></label>
+            </div>
+            <div class="row">
               <label class="field fill"><span>Barcode</span>
                 <input v-model="item.barcode" maxlength="64" placeholder="UPC / EAN" /></label>
             </div>
