@@ -21,8 +21,14 @@ def create_app(config_object=Config):
     app = Flask(__name__, static_folder=None)
     app.config.from_object(config_object)
     app.config["SQLALCHEMY_DATABASE_URI"] = config_object.sqlalchemy_uri()
+    # pool_pre_ping recycles connections a remote Postgres dropped (idle timeout,
+    # restart). Harmless for SQLite. Enables the optional Postgres backend.
+    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"pool_pre_ping": True}
     app.config["attachments_dir"] = config_object.attachments_dir
     app.config["MAX_CONTENT_LENGTH"] = config_object.MAX_UPLOAD_BYTES
+    _db_uri = app.config["SQLALCHEMY_DATABASE_URI"]
+    _LOGGER.info("HomeHoard storage backend: %s",
+                 "sqlite" if _db_uri.startswith("sqlite") else _db_uri.split("://", 1)[0])
 
     # Fail closed: never sign real tokens with a shipped default or a weak
     # (too-short) secret when authentication is enabled.
@@ -55,9 +61,7 @@ def create_app(config_object=Config):
 
     from . import models  # noqa: F401  (register models)
 
-    with app.app_context():
-        db.create_all()
-        _migrate(app)
+    _init_schema(app)
 
     _register_blueprints(app)
     _register_spa(app)
@@ -100,11 +104,59 @@ def _register_security_headers(app):
         return resp
 
 
-def _migrate(app):
-    """Additive schema migrations for existing SQLite databases.
+def _init_schema(app):
+    """Bring the schema to head via Alembic under an exclusive file lock so
+    concurrent gunicorn workers don't race on a fresh DB. SQLite and Postgres."""
+    import fcntl
 
-    ``db.create_all`` never alters existing tables, so add any columns that
-    were introduced after a database was first created.
+    os.makedirs(app.config["DATA_DIR"], exist_ok=True)
+    lock_path = os.path.join(app.config["DATA_DIR"], ".schema-init.lock")
+    with open(lock_path, "w") as lock:
+        try:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        except OSError:
+            pass  # locking unsupported (rare FS) — Alembic is still safe to run.
+        with app.app_context():
+            _run_migrations(app)
+
+
+def _run_migrations(app):
+    """Run Alembic migrations to head. Three cases, all handled:
+      * Fresh DB → upgrade runs the baseline (create_all) + any deltas.
+      * Existing PRE-Alembic install (tables, no alembic_version) → fill gaps
+        (missing tables via create_all, legacy SQLite fixes via _migrate), then
+        stamp baseline so later deltas apply.
+      * Already on Alembic → apply pending revisions.
+    """
+    from alembic import command
+    from alembic.config import Config as AlembicConfig
+    from alembic.runtime.migration import MigrationContext
+    from sqlalchemy import inspect
+
+    backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    cfg = AlembicConfig(os.path.join(backend_dir, "alembic.ini"))
+    cfg.set_main_option("script_location", os.path.join(backend_dir, "migrations"))
+    # Pass the URL via attributes, NOT set_main_option: Alembic's ConfigParser would
+    # try to %-interpolate a URL-encoded password (e.g. `%40` for '@') and crash.
+    cfg.attributes["url"] = app.config["SQLALCHEMY_DATABASE_URI"]
+
+    with db.engine.connect() as conn:
+        current = MigrationContext.configure(conn).get_current_revision()
+    if current is None and inspect(db.engine).has_table("users"):
+        db.create_all()      # any missing tables
+        _migrate(app)        # legacy SQLite column adds / rebuilds / backfills
+        command.stamp(cfg, "0001_baseline")
+    command.upgrade(cfg, "head")
+
+
+def _migrate(app):
+    """Legacy additive SQLite migrations, used to bring a pre-Alembic database up
+    to the baseline before it is stamped (see _run_migrations). Fresh databases
+    get every column from the metadata-driven baseline; Postgres is created fresh,
+    so this no-ops there (SQLite-guarded below).
+
+    ``db.create_all`` never alters existing tables, so add any columns that were
+    introduced after a database was first created, plus one-time data backfills.
     """
     from sqlalchemy import text, inspect
 

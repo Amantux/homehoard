@@ -421,7 +421,7 @@ runs the whole stack.
 | Variable | Default | Description |
 |---|---|---|
 | `HBOX_DATA_DIR` | `./data` | SQLite DB + attachments location |
-| `HBOX_DATABASE_URL` | _(sqlite in DATA_DIR)_ | Override the SQLAlchemy URL |
+| `HBOX_DATABASE_URL` | _(sqlite in DATA_DIR)_ | External database. Blank = built-in SQLite. Postgres: `postgresql+psycopg://user:pass@host:5432/db` (`postgres://`/`postgresql://` are accepted and normalized). Schema is created + migrated automatically (Alembic). See `docker-compose.yml` for an opt-in Postgres service. |
 | `HBOX_SECRET_KEY` | `change-me-in-production` | JWT signing key (use ≥ 32 chars) |
 | `HBOX_DISABLE_AUTH` | `false` | Skip auth; bind all requests to a default local user/group |
 | `HBOX_ALLOW_REGISTRATION` | `true` | Allow public self-registration |

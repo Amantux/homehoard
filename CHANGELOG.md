@@ -6,6 +6,24 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Added
+- **Optional PostgreSQL backend.** Set `HBOX_DATABASE_URL` to a
+  `postgresql+psycopg://…` URL to use an external Postgres instead of the built-in
+  SQLite (still the default). `postgres://` / `postgresql://` URLs are accepted and
+  normalized to the bundled psycopg 3 driver. `docker-compose.yml` ships an opt-in
+  Postgres service.
+
+### Changed
+- **Schema is now managed by Alembic** (`backend/migrations/`) on both SQLite and
+  Postgres, replacing the bespoke `create_all` + `_migrate` startup path. Existing
+  SQLite databases are brought up to the baseline and adopted automatically on
+  first start — no manual migration. Connection pooling uses `pool_pre_ping` so a
+  dropped remote-Postgres connection is recycled transparently.
+
+---
+
 ## [1.0.0] – 2026-07-19
 
 First stable release.

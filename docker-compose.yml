@@ -27,6 +27,14 @@ services:
       HBOX_PROXY_HOPS: "0"
       # Optional: restrict CORS to your frontend origin(s); leave unset for same-origin.
       # HBOX_CORS_ORIGINS: "https://inventory.example.com"
+      # --- Storage backend ---
+      # Default (unset) = embedded SQLite in the /data volume — zero-config, the
+      # right choice for most. To use the optional `postgres` service below,
+      # uncomment this AND the service + depends_on + volume at the bottom:
+      # HBOX_DATABASE_URL: "postgresql+psycopg://homehoard:homehoard@postgres:5432/homehoard"
+    # depends_on:
+    #   postgres:
+    #     condition: service_healthy
       # --- MCP server (Home Assistant / LLM tool endpoint) ---
       # Run the MCP server? (default true). Set false to disable it entirely.
       HBOX_MCP_ENABLED: "${HBOX_MCP_ENABLED:-true}"
@@ -37,5 +45,24 @@ services:
       - homehoard-data:/data
     restart: unless-stopped
 
+  # Optional external Postgres. Uncomment this service, the `depends_on` and
+  # `HBOX_DATABASE_URL` above, and the `postgres-data` volume below. HomeHoard
+  # creates and migrates its schema automatically on first start.
+  # postgres:
+  #   image: postgres:16-alpine
+  #   environment:
+  #     POSTGRES_USER: homehoard
+  #     POSTGRES_PASSWORD: homehoard
+  #     POSTGRES_DB: homehoard
+  #   volumes:
+  #     - postgres-data:/var/lib/postgresql/data
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U homehoard"]
+  #     interval: 5s
+  #     timeout: 5s
+  #     retries: 10
+  #   restart: unless-stopped
+
 volumes:
   homehoard-data:
+  # postgres-data:

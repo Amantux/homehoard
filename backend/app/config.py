@@ -59,10 +59,35 @@ class Config:
     MAX_UPLOAD_BYTES = int(os.environ.get("HBOX_MAX_UPLOAD_MB", "50")) * 1024 * 1024
     JSON_SORT_KEYS = False
 
+    @staticmethod
+    def _normalize_db_url(url: str) -> str:
+        """Pin the psycopg (v3) driver for Postgres URLs. `postgres://` (Heroku
+        style) and bare `postgresql://` both resolve to psycopg2 in SQLAlchemy,
+        which we don't ship — rewrite them to `postgresql+psycopg://`."""
+        if url.startswith("postgres://"):
+            url = "postgresql://" + url[len("postgres://"):]
+        if url.startswith("postgresql://"):
+            url = "postgresql+psycopg://" + url[len("postgresql://"):]
+        return url
+
     @classmethod
     def sqlalchemy_uri(cls) -> str:
-        if cls.DATABASE_URL:
-            return cls.DATABASE_URL
+        raw = (cls.DATABASE_URL or "").strip()
+        if raw:  # a blank / whitespace-only value falls through to SQLite
+            url = cls._normalize_db_url(raw)
+            scheme = url.split(":", 1)[0]
+            if not (scheme.startswith("sqlite") or scheme.startswith("postgresql")):
+                raise RuntimeError(
+                    f"HBOX_DATABASE_URL scheme {scheme!r} is unsupported. Only SQLite "
+                    "(default) and Postgres (postgresql+psycopg://user:pass@host/db) "
+                    "are supported."
+                )
+            if scheme.startswith("postgresql+") and scheme != "postgresql+psycopg":
+                raise RuntimeError(
+                    f"HBOX_DATABASE_URL driver {scheme!r} isn't bundled — use "
+                    "postgresql+psycopg:// (the sync psycopg 3 driver HomeHoard ships)."
+                )
+            return url
         os.makedirs(cls.DATA_DIR, exist_ok=True)
         return f"sqlite:///{os.path.join(cls.DATA_DIR, 'homehoard.db')}"
 
