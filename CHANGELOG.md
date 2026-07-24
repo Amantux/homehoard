@@ -9,6 +9,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **AI item descriptions (Ollama web search).** Look an item up online and store a
+  short, factual **searchable description** so search finds it by what it actually
+  is (e.g. a model number → the product). Per-item **✨ Describe** on the item page,
+  or **Tools → describe items missing a description** in bulk. Set an Ollama search
+  key (add-on option `ollama_search_key` / `HBOX_OLLAMA_SEARCH_KEY`). The generated
+  text is folded into item search. First real Alembic delta migration (`0002`).
 - **Inventory report (valuation & insurance).** A new **Report** page (and Tools
   link) summarising documented value (purchase price × quantity), insured vs.
   uninsured totals, warranty status, and value broken down by location and label,

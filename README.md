@@ -423,6 +423,9 @@ runs the whole stack.
 | `HBOX_DATA_DIR` | `./data` | SQLite DB + attachments location |
 | `HBOX_DATABASE_URL` | _(sqlite in DATA_DIR)_ | External database. Blank = built-in SQLite. Postgres: `postgresql+psycopg://user:pass@host:5432/db` (`postgres://`/`postgresql://` are accepted and normalized). Schema is created + migrated automatically (Alembic). See `docker-compose.yml` for an opt-in Postgres service. |
 | `HBOX_MIGRATE_FROM_SQLITE` | `false` | One-shot: with `HBOX_DATABASE_URL` set to an **empty** Postgres, set `true` and restart once to copy existing SQLite data into it. No-op once the target has data; SQLite source is never modified. Or use **Tools → Migrate to PostgreSQL** in the UI. |
+| `HBOX_OLLAMA_SEARCH_KEY` | _(none)_ | An [Ollama](https://ollama.com) API key enabling **AI item descriptions**: look an item up online and store a short searchable description (✨ Describe on an item, or Tools → describe all). Blank = feature off. |
+| `HBOX_OLLAMA_URL` | `http://localhost:11434` | Ollama server used to phrase the description from search results (any local Ollama). Optional — falls back to a raw snippet if unreachable. |
+| `HBOX_OLLAMA_MODEL` | `llama3.1` | Model for that phrasing step. |
 | `HBOX_SECRET_KEY` | `change-me-in-production` | JWT signing key (use ≥ 32 chars) |
 | `HBOX_DISABLE_AUTH` | `false` | Skip auth; bind all requests to a default local user/group |
 | `HBOX_ALLOW_REGISTRATION` | `true` | Allow public self-registration |

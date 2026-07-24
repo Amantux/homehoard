@@ -5,8 +5,12 @@ This is the riskiest code in the migration switch, so it gets direct coverage:
 a future edit that breaks the stamp revision id, env.py URL passing, or the
 create_all→stamp→upgrade ordering must fail here, not in production.
 """
+import os
+
 import pytest
+from alembic.config import Config as AlembicConfig
 from alembic.runtime.migration import MigrationContext
+from alembic.script import ScriptDirectory
 from sqlalchemy import inspect, text
 
 from app import _run_migrations
@@ -20,10 +24,17 @@ def _revision():
         return MigrationContext.configure(conn).get_current_revision()
 
 
+def _head():
+    backend = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    cfg = AlembicConfig(os.path.join(backend, "alembic.ini"))
+    cfg.set_main_option("script_location", os.path.join(backend, "migrations"))
+    return ScriptDirectory.from_config(cfg).get_current_head()
+
+
 def test_fresh_db_is_at_head(app):
     with app.app_context():
         assert inspect(db.engine).has_table("alembic_version")
-        assert _revision() == "0001_baseline"
+        assert _revision() == _head()
 
 
 def test_pre_alembic_db_is_adopted_and_data_survives(app):
@@ -43,7 +54,7 @@ def test_pre_alembic_db_is_adopted_and_data_survives(app):
         # Adoption: fill gaps → stamp baseline → upgrade to head, data intact.
         _run_migrations(app)
 
-        assert _revision() == "0001_baseline"
+        assert _revision() == _head()  # reaches head (baseline + deltas)
         assert db.session.query(User).filter_by(email="a@x.com").count() == 1
 
 

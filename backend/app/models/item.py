@@ -14,6 +14,8 @@ class Item(IDMixin, TimestampMixin, db.Model):
     name: Mapped[str] = mapped_column(String(255), index=True)
     description: Mapped[str] = mapped_column(Text, default="")
     notes: Mapped[str] = mapped_column(Text, default="")
+    # AI-generated (Ollama web search) searchable description; included in search.
+    search_text: Mapped[str] = mapped_column(Text, default="")
     # quantity is a float to match homebox (supports fractional/bulk quantities)
     quantity: Mapped[float] = mapped_column(Float, default=1)
     insured: Mapped[bool] = mapped_column(Boolean, default=False)

@@ -22,6 +22,14 @@ class Config:
     # exists, copy the SQLite data into Postgres on startup before serving.
     MIGRATE_FROM_SQLITE = _bool("HBOX_MIGRATE_FROM_SQLITE", False)
 
+    # --- AI item enrichment (Ollama web search) --------------------------
+    # Look items up online to generate a short searchable description. The search
+    # key is the hosted Ollama API key (ollama.com); the model/url synthesize the
+    # result (any local Ollama). Blank key = the feature is simply off.
+    OLLAMA_SEARCH_KEY = os.environ.get("HBOX_OLLAMA_SEARCH_KEY", "")
+    OLLAMA_URL = os.environ.get("HBOX_OLLAMA_URL", "http://localhost:11434")
+    OLLAMA_MODEL = os.environ.get("HBOX_OLLAMA_MODEL", "llama3.1")
+
     # --- Security --------------------------------------------------------
     SECRET_KEY = os.environ.get("HBOX_SECRET_KEY", "change-me-in-production")
     JWT_EXPIRES = timedelta(hours=int(os.environ.get("HBOX_JWT_HOURS", "72")))

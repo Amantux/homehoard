@@ -61,6 +61,15 @@ async function runAction(path, label) {
   ui.toast(`${label}: ${res.completed} updated`)
 }
 
+const enriching = ref(false)
+async function enrichMissing() {
+  enriching.value = true
+  try {
+    const r = await api.post('/items/describe-missing', {})
+    ui.toast(r.described ? `Described ${r.described} item(s).` : 'Nothing to describe.')
+  } catch (e) { ui.error(e.message || 'Enrichment failed.') } finally { enriching.value = false }
+}
+
 const actions = [
   { p: 'ensure-asset-ids', l: 'Ensure asset IDs', d: 'Assign missing asset IDs' },
   { p: 'ensure-import-refs', l: 'Ensure import refs', d: 'Backfill import references' },
@@ -82,6 +91,15 @@ const actions = [
       </label>
       <button class="secondary" style="flex:1;justify-content:center" @click="doExport">⬇️ Export CSV</button>
     </div>
+  </div>
+
+  <div class="card">
+    <h2>AI descriptions</h2>
+    <p class="muted">Look items up online (Ollama web search) and store a short searchable description,
+      so search finds them by what they actually are. Needs an Ollama search key set in the add-on options
+      (or <code>HBOX_OLLAMA_SEARCH_KEY</code>). Per-item, use ✨ Describe on the item page.</p>
+    <button class="secondary" :disabled="enriching" @click="enrichMissing">
+      {{ enriching ? 'Describing…' : '✨ Describe items missing a description' }}</button>
   </div>
 
   <div class="card">

@@ -119,6 +119,22 @@ async function remove() {
   router.push('/items')
 }
 
+// Look this item up online (Ollama web search) → a short searchable description.
+const describing = ref(false)
+const described = ref(null)   // { description, sources }
+async function describe() {
+  describing.value = true; described.value = null
+  try {
+    const r = await api.post(`/items/${id}/describe`, {})
+    // Only trust http(s) source links (guard against javascript:/data: URLs).
+    const sources = (r.sources || []).filter((s) => /^https?:\/\//i.test(s))
+    described.value = { description: r.description, sources }
+    ui.toast('Searchable description added')
+  } catch (e) {
+    ui.error(e.message || 'Could not describe this item.')
+  } finally { describing.value = false }
+}
+
 // One click checks the item out right away; details are an optional next step.
 async function checkOut() {
   item.value = await api.post(`/items/${id}/checkout`, {})
@@ -185,8 +201,18 @@ async function addMaint() {
       </template>
       <template v-else>
         <button class="danger secondary" @click="remove">Delete</button>
+        <button class="secondary" :disabled="describing" @click="describe"
+          title="Look this item up online and store a searchable description">
+          {{ describing ? 'Searching…' : '✨ Describe' }}</button>
         <button @click="editing = true">Edit</button>
       </template>
+    </div>
+
+    <div v-if="described" class="card" style="margin-bottom:12px">
+      <p style="margin:0 0 4px">{{ described.description }}</p>
+      <p v-if="described.sources.length" class="muted" style="font-size:0.8rem;margin:0">
+        Sources: <a v-for="(s,i) in described.sources" :key="s" :href="s" target="_blank"
+          rel="noopener noreferrer" style="margin-right:8px">[{{ i+1 }}]</a></p>
     </div>
 
     <div class="tabs">

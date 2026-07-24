@@ -30,7 +30,11 @@ options:
   disable_auth: true
   allow_registration: false
   enable_mcp: true
+  ollama_search_key: ""
 schema:
   disable_auth: bool
   allow_registration: bool
   enable_mcp: bool
+  # Optional: an Ollama API key (ollama.com) to look items up online and generate
+  # a short searchable description. Blank = the feature is off.
+  ollama_search_key: password?

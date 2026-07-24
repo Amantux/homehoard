@@ -68,6 +68,7 @@ def _search_items(gid, q, limit):
             db.or_(
                 Item.name.ilike(like),
                 Item.description.ilike(like),
+                Item.search_text.ilike(like),
                 Item.manufacturer.ilike(like),
                 Item.model_number.ilike(like),
                 Item.serial_number.ilike(like),
