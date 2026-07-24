@@ -158,6 +158,17 @@ def test_duplicate_barcode_resolves_deterministically_oldest_first(app, auth_cli
     assert r["targetId"] != newer_id
 
 
+def test_update_item_assigns_barcode(app, auth_client):
+    """Editing an item to add a barcode persists it and makes the item scannable."""
+    item_id = auth_client.post("/api/v1/items", json={"name": "Drill"}).get_json()["id"]
+
+    auth_client.put(f"/api/v1/items/{item_id}", json={"name": "Drill",
+                                                      "barcode": "012345678905"})
+
+    r = auth_client.get("/api/v1/barcode/012345678905").get_json()
+    assert r["status"] == "item" and r["targetId"] == item_id
+
+
 def test_item_search_matches_barcode(app, auth_client):
     gid = _gid(app)
     with app.app_context():

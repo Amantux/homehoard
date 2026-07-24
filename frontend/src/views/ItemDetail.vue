@@ -64,6 +64,7 @@ async function save() {
     name: i.name, description: i.description, notes: i.notes,
     quantity: Number(i.quantity) || 1, insured: i.insured, archived: i.archived,
     serialNumber: i.serialNumber, modelNumber: i.modelNumber, manufacturer: i.manufacturer,
+    barcode: i.barcode || '',
     purchaseFrom: i.purchaseFrom, purchasePrice: Number(i.purchasePrice) || 0,
     purchaseDate: i.purchaseDate || null, warrantyExpires: i.warrantyExpires || null,
     lifetimeWarranty: i.lifetimeWarranty, warrantyDetails: i.warrantyDetails,
@@ -282,6 +283,7 @@ async function addMaint() {
               <dt>Manufacturer</dt><dd>{{ item.manufacturer || '—' }}</dd>
               <dt>Model #</dt><dd>{{ item.modelNumber || '—' }}</dd>
               <dt>Serial #</dt><dd>{{ item.serialNumber || '—' }}</dd>
+              <dt>Barcode</dt><dd>{{ item.barcode || '—' }}</dd>
               <dt>Purchase price</dt><dd>{{ money(item.purchasePrice) }}</dd>
               <dt>Purchased from</dt><dd>{{ item.purchaseFrom || '—' }}</dd>
               <dt>Purchase date</dt><dd>{{ shortDate(item.purchaseDate) }}</dd>
@@ -347,6 +349,8 @@ async function addMaint() {
               <label class="field fill"><span>Manufacturer</span><input v-model="item.manufacturer" /></label>
               <label class="field fill"><span>Model #</span><input v-model="item.modelNumber" /></label>
               <label class="field fill"><span>Serial #</span><input v-model="item.serialNumber" /></label>
+              <label class="field fill"><span>Barcode</span>
+                <input v-model="item.barcode" maxlength="64" placeholder="UPC / EAN" /></label>
             </div>
             <div class="row">
               <label class="field fill"><span>Purchased from</span><input v-model="item.purchaseFrom" /></label>
