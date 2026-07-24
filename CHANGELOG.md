@@ -9,6 +9,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Inventory report (valuation & insurance).** A new **Report** page (and Tools
+  link) summarising documented value (purchase price × quantity), insured vs.
+  uninsured totals, warranty status, and value broken down by location and label,
+  with a full item table and a photo appendix. Print to PDF (clean print layout)
+  or export CSV for your insurer. Endpoints: `GET /api/v1/reports/inventory` and
+  `/reports/inventory.csv` (group-scoped).
 - **Optional PostgreSQL backend.** Set `HBOX_DATABASE_URL` to a
   `postgresql+psycopg://…` URL to use an external Postgres instead of the built-in
   SQLite (still the default). `postgres://` / `postgresql://` URLs are accepted and

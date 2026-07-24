@@ -347,3 +347,11 @@ tbody tr.row-selected td { background: var(--accent-soft); }
   /* Create "type" chips: let them share the row and shrink instead of overflowing. */
   .modal .type-picker button { flex: 1 1 40%; justify-content: center; }
 }
+
+/* Print: strip the app chrome so a report prints clean (used by /report). */
+@media print {
+  .sidebar, .topbar, .no-print { display: none !important; }
+  .app-shell { display: block !important; }
+  .main { margin: 0 !important; }
+  .card { break-inside: avoid; }
+}

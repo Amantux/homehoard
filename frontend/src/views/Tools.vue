@@ -84,6 +84,13 @@ const actions = [
     </div>
   </div>
 
+  <div class="card">
+    <h2>Inventory report</h2>
+    <p class="muted">A valuation &amp; insurance summary of everything you own — totals by location and label,
+      warranty status, and a photo appendix. Print to PDF or export CSV for your insurer.</p>
+    <router-link to="/report"><button class="secondary">📄 Open inventory report</button></router-link>
+  </div>
+
   <div class="card" v-if="dbBackend === 'sqlite'">
     <h2>Migrate to PostgreSQL</h2>
     <p class="muted">HomeHoard runs on its built-in SQLite (recommended for most). To move to an external

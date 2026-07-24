@@ -296,6 +296,7 @@ def _register_blueprints(app):
     from .api.lookup import bp as lookup_bp
     from .api.checkout import bp as checkout_bp
     from .api.tokens import bp as tokens_bp
+    from .api.reports import bp as reports_bp
 
     prefix = "/api/v1"
     for bp in (
@@ -315,6 +316,7 @@ def _register_blueprints(app):
         lookup_bp,
         checkout_bp,
         tokens_bp,
+        reports_bp,
     ):
         app.register_blueprint(bp, url_prefix=prefix)
 

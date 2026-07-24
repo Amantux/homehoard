@@ -11,6 +11,7 @@ import LocationDetail from './views/LocationDetail.vue'
 import Labels from './views/Labels.vue'
 import Maintenance from './views/Maintenance.vue'
 import Tools from './views/Tools.vue'
+import Report from './views/Report.vue'
 import HomeAssistant from './views/HomeAssistant.vue'
 import Scan from './views/Scan.vue'
 import ScanLaunch from './views/ScanLaunch.vue'
@@ -27,6 +28,7 @@ const routes = [
   { path: '/labels', component: Labels },
   { path: '/maintenance', component: Maintenance },
   { path: '/tools', component: Tools },
+  { path: '/report', component: Report },
   { path: '/home-assistant', component: HomeAssistant },
   { path: '/scan', component: ScanLaunch },
   { path: '/t/:token', component: Scan, meta: { public: false } },
