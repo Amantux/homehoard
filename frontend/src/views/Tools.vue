@@ -1,10 +1,30 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { api, getToken, apiUrl } from '../api'
 import { useUI } from '../stores/ui'
 
 const ui = useUI()
 const busy = ref(false)
+
+// Migrate to PostgreSQL: copy the whole SQLite DB into an empty Postgres.
+const dbBackend = ref('sqlite')
+const pgUrl = ref('')
+const pgBusy = ref(false)
+const pgResult = ref(null)
+onMounted(async () => {
+  try { dbBackend.value = (await api.get('/status')).dbBackend || 'sqlite' } catch (e) { /* leave default */ }
+})
+async function migratePg() {
+  if (!pgUrl.value.trim()) return
+  if (!confirm('Copy all data into this PostgreSQL database? It must be empty. Your current SQLite data is left untouched.')) return
+  pgBusy.value = true; pgResult.value = null
+  try {
+    pgResult.value = await api.post('/migrate/postgres', { targetUrl: pgUrl.value.trim() })
+    ui.toast(`Copied ${pgResult.value.total} rows`)
+  } catch (err) {
+    ui.error('Migration failed: ' + (err.message || 'error'))
+  } finally { pgBusy.value = false }
+}
 
 async function doImport(e) {
   const file = e.target.files[0]
@@ -62,6 +82,21 @@ const actions = [
       </label>
       <button class="secondary" style="flex:1;justify-content:center" @click="doExport">⬇️ Export CSV</button>
     </div>
+  </div>
+
+  <div class="card" v-if="dbBackend === 'sqlite'">
+    <h2>Migrate to PostgreSQL</h2>
+    <p class="muted">HomeHoard runs on its built-in SQLite (recommended for most). To move to an external
+      PostgreSQL, enter an <strong>empty</strong> Postgres database — HomeHoard copies everything across,
+      leaving your SQLite data untouched. Then set <code>HBOX_DATABASE_URL</code> to the same URL and restart.</p>
+    <label style="display:block;max-width:520px;margin-bottom:10px">
+      <span class="muted" style="font-size:0.85rem">Target PostgreSQL URL</span>
+      <input v-model="pgUrl" placeholder="postgresql+psycopg://user:pass@host:5432/dbname"
+        style="width:100%;margin-top:4px" />
+    </label>
+    <button class="secondary" :disabled="pgBusy || !pgUrl.trim()" @click="migratePg">
+      {{ pgBusy ? 'Migrating…' : 'Migrate data' }}</button>
+    <p v-if="pgResult" class="muted" style="margin-top:10px">✓ Copied {{ pgResult.total }} rows. {{ pgResult.next }}</p>
   </div>
 
   <div class="card">

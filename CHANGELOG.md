@@ -14,6 +14,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   SQLite (still the default). `postgres://` / `postgresql://` URLs are accepted and
   normalized to the bundled psycopg 3 driver. `docker-compose.yml` ships an opt-in
   Postgres service.
+- **SQLite → PostgreSQL data migration.** Move your existing data across, two ways:
+  **Tools → Migrate to PostgreSQL** in the UI (paste an empty Postgres URL), or set
+  `HBOX_MIGRATE_FROM_SQLITE=true` and restart once. A faithful, id-preserving,
+  all-tables copy into an **empty** target (it refuses a non-empty one); the SQLite
+  source is never modified.
 
 ### Changed
 - **Schema is now managed by Alembic** (`backend/migrations/`) on both SQLite and

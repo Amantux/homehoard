@@ -18,6 +18,9 @@ class Config:
     # --- Storage ---------------------------------------------------------
     DATA_DIR = os.environ.get("HBOX_DATA_DIR", os.path.abspath("./data"))
     DATABASE_URL = os.environ.get("HBOX_DATABASE_URL")
+    # One-shot: when DATABASE_URL points at an EMPTY Postgres and a local SQLite DB
+    # exists, copy the SQLite data into Postgres on startup before serving.
+    MIGRATE_FROM_SQLITE = _bool("HBOX_MIGRATE_FROM_SQLITE", False)
 
     # --- Security --------------------------------------------------------
     SECRET_KEY = os.environ.get("HBOX_SECRET_KEY", "change-me-in-production")

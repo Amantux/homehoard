@@ -117,7 +117,43 @@ def _init_schema(app):
         except OSError:
             pass  # locking unsupported (rare FS) — Alembic is still safe to run.
         with app.app_context():
+            _maybe_boot_migrate(app)
             _run_migrations(app)
+
+
+def _maybe_boot_migrate(app):
+    """HA add-on convenience: when HBOX_MIGRATE_FROM_SQLITE is on and the app is
+    configured for an external (Postgres) DB, copy the local SQLite database into
+    the EMPTY target before serving, then normal startup stamps it to baseline.
+
+    Skips a non-empty target (already migrated). If the copy FAILS, it raises to
+    abort startup rather than let the app adopt-and-serve the empty target while
+    real data is stranded in SQLite — the operator sees the failure, the SQLite
+    source is untouched, and a fixed retry (or reverting HBOX_DATABASE_URL) recovers."""
+    if not app.config.get("MIGRATE_FROM_SQLITE"):
+        return
+    target = app.config["SQLALCHEMY_DATABASE_URI"]
+    if target.startswith("sqlite"):
+        return  # not configured for an external DB — nothing to migrate to
+    src_file = os.path.join(app.config["DATA_DIR"], "homehoard.db")
+    if not os.path.exists(src_file):
+        _LOGGER.info("migrate_from_sqlite: no local %s to migrate — skipping", src_file)
+        return
+    from .services.db_copy import TargetNotEmpty, copy_database
+    try:
+        report = copy_database(f"sqlite:///{src_file}", target)
+        _LOGGER.warning("migrate_from_sqlite: copied %d rows from SQLite into the "
+                        "external database", report["total"])
+    except TargetNotEmpty:
+        _LOGGER.info("migrate_from_sqlite: target already has data — skipping (done)")
+    except Exception as exc:
+        # Do NOT serve an empty database with data stranded in SQLite. Fail the
+        # boot loudly; the SQLite source is intact — fix the target (or unset
+        # HBOX_MIGRATE_FROM_SQLITE / revert HBOX_DATABASE_URL) and restart.
+        raise RuntimeError(
+            "migrate_from_sqlite failed and the target isn't populated; refusing to "
+            f"start on an empty database (your SQLite data is intact): {exc}"
+        ) from exc
 
 
 def _run_migrations(app):

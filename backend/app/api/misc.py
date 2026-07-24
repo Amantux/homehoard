@@ -9,7 +9,7 @@ from sqlalchemy import text
 
 from ..extensions import db, limiter
 from ..models import Item
-from ..auth import login_required, current_group
+from ..auth import login_required, owner_required, current_group
 from ..services.csv_io import export_items, import_items
 
 bp = Blueprint("misc", __name__)
@@ -30,12 +30,15 @@ CURRENCIES = [
 @bp.get("/status")
 def status():
     """Liveness: the process is up and serving. Cheap, no dependency access."""
+    uri = current_app.config["SQLALCHEMY_DATABASE_URI"]
     return jsonify(
         {
             "health": True,
             "versions": ["v1"],
             "title": "HomeHoard",
             "message": "HomeHoard — homebox port running on Flask",
+            # Storage backend in use — drives the "Migrate to PostgreSQL" action.
+            "dbBackend": "sqlite" if uri.startswith("sqlite") else "postgresql",
         }
     )
 
@@ -226,3 +229,31 @@ def get_by_asset(asset_id):
     return jsonify(
         {"items": [item_summary(i) for i in items], "total": len(items)}
     )
+
+
+@bp.post("/migrate/postgres")
+@owner_required
+def migrate_postgres():
+    """Copy the whole SQLite database into an EMPTY PostgreSQL target, then the
+    operator sets HBOX_DATABASE_URL + restarts to run on it. Owner-only; never
+    touches the SQLite source."""
+    from ..services.db_copy import (DbCopyError, TargetNotEmpty,
+                                    migrate_sqlite_to_postgres)
+
+    source = current_app.config["SQLALCHEMY_DATABASE_URI"]
+    if not source.startswith("sqlite"):
+        return jsonify({"error": "HomeHoard is already running on an external database."}), 400
+    target = ((request.get_json(silent=True) or {}).get("targetUrl") or "").strip()
+    if not target:
+        return jsonify({"error": "targetUrl is required"}), 400
+    try:
+        report = migrate_sqlite_to_postgres(source, target)
+    except TargetNotEmpty as e:
+        return jsonify({"error": str(e)}), 409
+    except DbCopyError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:  # noqa: BLE001 — surface connection/other failures to the user
+        return jsonify({"error": f"Migration failed: {e}"}), 400
+    report["next"] = ("Data copied. Set HBOX_DATABASE_URL to this Postgres URL and "
+                      "restart HomeHoard to run on it.")
+    return jsonify(report)

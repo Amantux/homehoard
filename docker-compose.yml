@@ -32,6 +32,9 @@ services:
       # right choice for most. To use the optional `postgres` service below,
       # uncomment this AND the service + depends_on + volume at the bottom:
       # HBOX_DATABASE_URL: "postgresql+psycopg://homehoard:homehoard@postgres:5432/homehoard"
+      # To copy existing SQLite data into that empty Postgres on first boot, also
+      # set HBOX_MIGRATE_FROM_SQLITE=true (or use Tools → Migrate to PostgreSQL).
+      # HBOX_MIGRATE_FROM_SQLITE: "true"
     # depends_on:
     #   postgres:
     #     condition: service_healthy
