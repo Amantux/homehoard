@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- **Understand scanned barcodes (1D + 2D).** Items now carry a product barcode,
+  and scanning distinguishes 1D product codes (UPC/EAN/Code128…) from 2D codes
+  (QR/DataMatrix…). Scanning a code you've saved on an item jumps straight to it.
+  With the new `barcode_lookup` option on, scanning an unknown product identifies
+  it online (product DB → Open Food Facts → Ollama web-search) and prefills the
+  new item's name — all still optional and off by default; scans resolve your own
+  tags and items offline either way. New `barcode_lookup` / `barcode_db_key`
+  add-on options.
+
 ## 1.0.10
 
 - **The same item in multiple places.** An item can now be stocked across several

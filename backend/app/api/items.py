@@ -1,7 +1,7 @@
 import re
 from datetime import datetime
 
-from flask import Blueprint, request, jsonify, abort
+from flask import Blueprint, request, jsonify, abort, current_app
 from sqlalchemy.orm import selectinload
 
 from ..extensions import db, limiter
@@ -70,6 +70,7 @@ def _apply(item: Item, data: dict):
         "serialNumber": "serial_number",
         "modelNumber": "model_number",
         "manufacturer": "manufacturer",
+        "barcode": "barcode",
         "purchasePrice": "purchase_price",
         "purchaseFrom": "purchase_from",
         "soldPrice": "sold_price",
@@ -81,6 +82,9 @@ def _apply(item: Item, data: dict):
     for key, attr in simple.items():
         if key in data and data[key] is not None:
             setattr(item, attr, data[key])
+    # barcode is String(64); a pasted 2D/QR value would overflow it on Postgres.
+    if item.barcode and len(item.barcode) > 64:
+        item.barcode = item.barcode[:64]
 
     for key, attr in {
         "purchaseDate": "purchase_date",
@@ -149,7 +153,7 @@ def list_items():
     if search:
         like = f"%{search}%"
         q = q.filter(db.or_(Item.name.ilike(like), Item.description.ilike(like),
-                            Item.search_text.ilike(like)))
+                            Item.search_text.ilike(like), Item.barcode.ilike(like)))
 
     location_ids = args.getlist("locations")
     if location_ids:
@@ -211,6 +215,7 @@ def create_item():
         name=data.get("name", ""),
         description=data.get("description", ""),
         quantity=data.get("quantity") or 1,
+        barcode=(data.get("barcode") or "")[:64],
         group_id=current_group().id,
         location_id=location_id,
         bin_id=bin_id,
@@ -490,3 +495,21 @@ def describe_missing():
             db.session.commit()  # per item — partial progress survives a timeout
             done += 1
     return jsonify({"described": done, "scanned": len(items), "remaining": missing.count()})
+
+
+@bp.get("/items/identify/<code>")
+@limiter.limit("30/minute")
+@login_required
+def identify_item(code):
+    """Identify an unknown product barcode online (product DB → Open Food Facts →
+    Ollama web-search) so the UI can prefill a new item. Returns a suggestion
+    {name, brand, barcode, source} or not_found; 409 when barcode lookup is off."""
+    from ..services.barcode import identify_barcode
+
+    if not current_app.config.get("BARCODE_LOOKUP"):
+        return jsonify({"status": "disabled",
+                        "error": "Barcode lookup is off (set HBOX_BARCODE_LOOKUP)."}), 409
+    hit = identify_barcode(code)
+    if not hit:
+        return jsonify({"status": "not_found", "code": code})
+    return jsonify({"status": "suggestion", "code": code, "suggestion": hit})

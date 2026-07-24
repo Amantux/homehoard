@@ -31,6 +31,8 @@ options:
   allow_registration: false
   enable_mcp: true
   ollama_search_key: ""
+  barcode_lookup: false
+  barcode_db_key: ""
 schema:
   disable_auth: bool
   allow_registration: bool
@@ -38,3 +40,10 @@ schema:
   # Optional: an Ollama API key (ollama.com) to look items up online and generate
   # a short searchable description. Blank = the feature is off.
   ollama_search_key: password?
+  # Identify an unknown scanned product barcode (UPC/EAN) online — product DB →
+  # Open Food Facts → Ollama web-search — to prefill a new item's name/brand.
+  # Off = scans still resolve your own tags/items, just no online product lookup.
+  barcode_lookup: bool
+  # Optional API key for the product-barcode DB. The default lookup endpoint is
+  # keyless; set this only if you've pointed the lookup at a keyed provider.
+  barcode_db_key: password?

@@ -30,6 +30,14 @@ class Config:
     OLLAMA_URL = os.environ.get("HBOX_OLLAMA_URL", "http://localhost:11434")
     OLLAMA_MODEL = os.environ.get("HBOX_OLLAMA_MODEL", "llama3.1")
 
+    # --- Barcode identification (scan a UPC/EAN → identify the product) ---
+    # Off by default (network). A product barcode DB (UPCitemdb trial by default —
+    # no key) with an Open Food Facts + Ollama web-search fallback.
+    BARCODE_LOOKUP = _bool("HBOX_BARCODE_LOOKUP", False)
+    BARCODE_DB_URL = os.environ.get(
+        "HBOX_BARCODE_DB_URL", "https://api.upcitemdb.com/prod/trial/lookup")
+    BARCODE_DB_KEY = os.environ.get("HBOX_BARCODE_DB_KEY", "")
+
     # --- Security --------------------------------------------------------
     SECRET_KEY = os.environ.get("HBOX_SECRET_KEY", "change-me-in-production")
     JWT_EXPIRES = timedelta(hours=int(os.environ.get("HBOX_JWT_HOURS", "72")))

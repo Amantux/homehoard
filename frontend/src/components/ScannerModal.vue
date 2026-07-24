@@ -75,7 +75,7 @@ function close() {
 
 // Every detected code funnels through here. Continuous: the camera keeps
 // running; we debounce the same code so one barcode isn't processed 30×/s.
-async function onCode(text) {
+async function onCode(text, format) {
   const code = tokenFromText(text)
   if (!code || navigating) return
   const now = Date.now()
@@ -85,7 +85,7 @@ async function onCode(text) {
   if (busy) return
   busy = true
   try {
-    await handle(code)
+    await handle(code, format)
   } catch (e) {
     flash(false, e.message || 'Something went wrong')
   } finally {
@@ -93,7 +93,12 @@ async function onCode(text) {
   }
 }
 
-async function handle(code) {
+// 1D symbologies carry a product barcode (UPC/EAN/…); 2D codes (QR/DataMatrix)
+// carry an arbitrary token (a URL, someone's own QR) — never a product barcode.
+const ONE_D = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39',
+  'code_93', 'codabar', 'itf']
+
+async function handle(code, format) {
   // Look-up mode is a single jump to whatever the code points at.
   if (mode.value === 'open') {
     navigating = true
@@ -103,9 +108,12 @@ async function handle(code) {
   }
 
   const res = await api.get('/barcode/' + encodeURIComponent(code))
+  // Either a registered QR/asset tag pointing at an item, OR an item that already
+  // carries this product barcode (status: 'item').
+  const isItem = (res.status === 'registered' && res.kind === 'item') || res.status === 'item'
 
   if (mode.value === 'checkout' || mode.value === 'checkin') {
-    if (res.status !== 'registered' || res.kind !== 'item') {
+    if (!isItem) {
       flash(false, res.kind ? `That's a ${res.kind}, not an item` : "Not in inventory yet")
       return
     }
@@ -124,19 +132,26 @@ async function handle(code) {
     flash(false, 'Scan a bin/location first, or pick one above')
     return
   }
-  if (res.status === 'registered' && res.kind === 'item') {
+  if (isItem) {
     await placeExisting(res.targetId)
     added.value.unshift({ id: res.targetId, name: res.target.name })
     flash(true, `➡️ Moved ${res.target.name} into ${targetName.value}`)
     return
   }
-  // Unknown code → create a new item, place it, and remember the barcode.
-  const name = nextName.value.trim() || `Item ${code.slice(-5)}`
-  const created = await createInTarget(name)
+  // Unknown code → create the item, place it, and remember the code. A 1D product
+  // barcode (format unknown, e.g. typed/ZXing → treat short codes as 1D) goes on
+  // the item and drives online identification; a 2D token is kept as an external
+  // QR tag (Item.barcode is only 64 chars — a QR URL would overflow it).
+  const is1D = format ? ONE_D.includes(format) : code.length <= 64
+  const suggestion = is1D ? await identifyProduct(code) : null
+  const name = nextName.value.trim() || suggestion?.name || `Item ${code.slice(-5)}`
+  const created = await createInTarget(name, is1D ? code : '')
   nextName.value = ''
-  api.post('/qr-tags', {
-    kind: 'item', targetId: created.id, source: 'external', code, codeFormat: 'barcode',
-  }).catch(() => { /* barcode already linked elsewhere — item still created */ })
+  if (!is1D) {
+    api.post('/qr-tags', {
+      kind: 'item', targetId: created.id, source: 'external', code, codeFormat: 'qr',
+    }).catch(() => { /* code already linked elsewhere — item still created */ })
+  }
   added.value.unshift({ id: created.id, name: created.name })
   flash(true, `✓ Added ${created.name}`)
 }
@@ -146,11 +161,20 @@ function setTarget(kind, id, name) {
   targetId.value = id
   targetName.value = name
 }
-async function createInTarget(name) {
+async function createInTarget(name, barcode) {
   const payload = { name }
+  if (barcode) payload.barcode = barcode
   if (targetKind.value === 'bin') payload.binId = targetId.value
   else payload.locationId = targetId.value
   return api.post('/items', payload)
+}
+// Best-effort product identification for an unknown 1D code. Off/no-match → null;
+// never blocks the create flow (a rejected/disabled endpoint just means no prefill).
+async function identifyProduct(code) {
+  try {
+    const r = await api.get('/items/identify/' + encodeURIComponent(code))
+    return r.status === 'suggestion' ? r.suggestion : null
+  } catch { return null }
 }
 async function placeExisting(itemId) {
   if (targetKind.value === 'bin') return api.put(`/bins/${targetId.value}/items/${itemId}`)
@@ -199,7 +223,7 @@ async function loopNative() {
   if (!detector || !video.value) return
   try {
     const codes = await detector.detect(video.value)
-    if (codes.length) onCode(codes[0].rawValue)
+    if (codes.length) onCode(codes[0].rawValue, codes[0].format)
   } catch (e) { /* frame not ready */ }
   raf = requestAnimationFrame(loopNative)
 }

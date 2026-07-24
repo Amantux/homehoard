@@ -23,6 +23,9 @@ server** so Assist can answer *"where is my drill?"*.
 | `disable_auth` | `true` | Skip in-app auth (Ingress already authenticates you). Set `false` for username/password login. |
 | `allow_registration` | `false` | Allow creating new accounts (only relevant when auth is enabled). |
 | `enable_mcp` | `true` | Run the MCP server (SSE on port `7766`) for the Home Assistant MCP Client. |
+| `ollama_search_key` | `""` | Optional [Ollama](https://ollama.com) API key to look items up online and generate a short searchable description. Blank = off. |
+| `barcode_lookup` | `false` | Identify an unknown scanned product barcode (UPC/EAN) online — product DB → Open Food Facts → Ollama web-search — to prefill a new item's name/brand. Off = scans still resolve your own QR tags and items, just no online product lookup. |
+| `barcode_db_key` | `""` | Optional API key for the product-barcode DB. The default lookup endpoint is keyless — set this only if you've pointed the lookup at a keyed provider. |
 
 Data (SQLite database + attachments) is stored under `/share/homehoard`.
 
@@ -32,8 +35,10 @@ Data (SQLite database + attachments) is stored under `/share/homehoard`.
   path (e.g. *Drill → Tool Shelf · Garage*).
 - **Check in / out** — mark items *here* or *out* ("yes it's there, no it's
   not"), note who has them and a due date.
-- **QR codes & your own barcodes** — print HomeHoard QR labels or register your
-  existing QR/UPC/EAN codes; scanning is inventory-only (no outbound calls).
+- **QR codes & product barcodes** — print HomeHoard QR labels or register your
+  existing QR/UPC/EAN codes. Scanning (1D UPC/EAN and 2D QR/DataMatrix) resolves
+  your own tags and items offline; with `barcode_lookup` on, an unknown product
+  code is identified online to prefill a new item.
 - **Bins** with photos; items inherit and follow their bin's location.
 
 ![Find where something is](https://raw.githubusercontent.com/Amantux/homehoard/main/docs/screenshots/search.png)

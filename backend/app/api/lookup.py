@@ -36,7 +36,9 @@ def item_where(item) -> str:
 @bp.get("/barcode/<code>")
 @login_required
 def barcode_lookup(code):
-    """Is this scanned code in inventory? If so, return what it is / what's in it."""
+    """Is this scanned code in inventory? A registered QR/asset tag resolves to its
+    target; a product barcode already on an item returns that item. Inventory-only
+    (no network) — external product identification is /items/identify/<code>."""
     gid = current_group().id
     tag = (
         db.session.query(QrTag)
@@ -45,6 +47,14 @@ def barcode_lookup(code):
         .first()
     )
     if not tag or tag.target is None:
+        # An item already carrying this product barcode? (Duplicates are allowed —
+        # two identical items share a UPC — so resolve deterministically: oldest first.)
+        item = (db.session.query(Item)
+                .filter_by(group_id=gid, barcode=code)
+                .order_by(Item.created_at.asc(), Item.id.asc()).first())
+        if item:
+            return jsonify({"status": "item", "targetId": item.id,
+                            "target": item_summary(item)})
         return jsonify({"status": "not_found", "code": code})
 
     # For a bin or location, "what's in it" comes back with the full contents.
@@ -72,6 +82,7 @@ def _search_items(gid, q, limit):
                 Item.manufacturer.ilike(like),
                 Item.model_number.ilike(like),
                 Item.serial_number.ilike(like),
+                Item.barcode.ilike(like),
                 Item.notes.ilike(like),
                 Item.labels.any(Label.name.ilike(like)),
             )

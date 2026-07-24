@@ -10,7 +10,9 @@ if [ -f "$OPTIONS" ]; then
   HBOX_ALLOW_REGISTRATION="$(python3 -c "import json;print(str(json.load(open('$OPTIONS')).get('allow_registration', False)).lower())")"
   HBOX_MCP_ENABLED="$(python3 -c "import json;print(str(json.load(open('$OPTIONS')).get('enable_mcp', True)).lower())")"
   HBOX_OLLAMA_SEARCH_KEY="$(python3 -c "import json;v=json.load(open('$OPTIONS')).get('ollama_search_key');print('' if v is None else v)")"
-  export HBOX_DISABLE_AUTH HBOX_ALLOW_REGISTRATION HBOX_MCP_ENABLED HBOX_OLLAMA_SEARCH_KEY
+  HBOX_BARCODE_LOOKUP="$(python3 -c "import json;print(str(json.load(open('$OPTIONS')).get('barcode_lookup', False)).lower())")"
+  HBOX_BARCODE_DB_KEY="$(python3 -c "import json;v=json.load(open('$OPTIONS')).get('barcode_db_key');print('' if v is None else v)")"
+  export HBOX_DISABLE_AUTH HBOX_ALLOW_REGISTRATION HBOX_MCP_ENABLED HBOX_OLLAMA_SEARCH_KEY HBOX_BARCODE_LOOKUP HBOX_BARCODE_DB_KEY
 fi
 
 # Sensible defaults.

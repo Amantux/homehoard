@@ -31,6 +31,8 @@ class Item(IDMixin, TimestampMixin, db.Model):
     serial_number: Mapped[str] = mapped_column(String(255), default="")
     model_number: Mapped[str] = mapped_column(String(255), default="")
     manufacturer: Mapped[str] = mapped_column(String(255), default="")
+    # Product barcode (UPC/EAN) — links a scan to this item; included in search.
+    barcode: Mapped[str] = mapped_column(String(64), default="", index=True)
 
     # Purchase
     purchase_price: Mapped[float] = mapped_column(Float, default=0.0)

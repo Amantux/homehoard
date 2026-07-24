@@ -174,6 +174,7 @@ def item_out(i):
             "serialNumber": i.serial_number,
             "modelNumber": i.model_number,
             "manufacturer": i.manufacturer,
+            "barcode": i.barcode,
             "purchaseFrom": i.purchase_from,
             "purchaseDate": iso(i.purchase_date),
             "syncChildLocations": i.sync_child_locations,
