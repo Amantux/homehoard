@@ -231,6 +231,9 @@ def update_item(
 ) -> str:
     """Edit an existing item's details. Only the arguments you pass are changed.
 
+    Note: `quantity` here only applies to a single-location item; for an item
+    stored in multiple places the quantity is managed per placement (use
+    add_item_placement / move_item), so a `quantity` sent here is ignored.
     Cannot create or delete items — those stay in the HomeHoard app.
     """
     item = _resolve_item(name_or_id)
@@ -337,6 +340,49 @@ def inventory_statistics() -> dict:
         "warrantiesExpiring30d": s.get("warrantiesExpiring", {}).get("days30"),
         "maintenanceOverdue": s.get("maintenance", {}).get("overdue"),
     }
+
+
+@mcp.tool()
+def inventory_value() -> dict:
+    """What everything is worth — total value, insured vs. uninsured, and value
+    broken down by location and by label (for an insurance / valuation question)."""
+    r = _get("/reports/inventory")
+    s = r.get("summary", {})
+    return {"currency": r.get("currency"), "totalValue": s.get("totalValue"),
+            "insuredValue": s.get("insuredValue"), "uninsuredValue": s.get("uninsuredValue"),
+            "itemCount": s.get("totalItems"), "byLocation": r.get("byLocation", []),
+            "byLabel": r.get("byLabel", []), "warranty": s.get("warranty", {})}
+
+
+@mcp.tool()
+def warranties_expiring() -> list:
+    """Items whose warranty is expiring soon, with the expiry date."""
+    return _get("/ha/summary").get("warrantiesExpiring", {}).get("items", [])
+
+
+@mcp.tool()
+def maintenance_due() -> list:
+    """Scheduled maintenance that's due or overdue, per item."""
+    return _get("/ha/summary").get("maintenance", {}).get("entries", [])
+
+
+@mcp.tool()
+def describe_item(name_or_id: str) -> str:
+    """Look an item up online (web search) and store a short searchable description,
+    so future searches find it by what it actually is (e.g. a model number → the
+    product). Requires a configured Ollama search key."""
+    item = _resolve_item(name_or_id)
+    if not item:
+        return f"No item matching '{name_or_id}'."
+    try:
+        r = _post(f"/items/{item['id']}/describe")
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 409:
+            return "Web search isn't configured (set an Ollama search key)."
+        if e.response.status_code == 422:
+            return f"Couldn't find a description for '{item['name']}' online."
+        raise
+    return r.get("description") or f"Described {item['name']}."
 
 
 def _require_token(asgi_app, token: str):

@@ -9,6 +9,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **MCP tools sharpened (HA voice / agents).** New tools: `inventory_value`
+  (what it's worth / insured vs. uninsured / by room & label), `warranties_expiring`,
+  `maintenance_due`, and `describe_item` (AI web-search enrich). Clarified that
+  `update_item`'s `quantity` only applies to single-location items.
 - **AI item descriptions (Ollama web search).** Look an item up online and store a
   short, factual **searchable description** so search finds it by what it actually
   is (e.g. a model number → the product). Per-item **✨ Describe** on the item page,

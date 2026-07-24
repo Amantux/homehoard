@@ -19,6 +19,10 @@ def test_mcp_tools_registered():
         "set_checkout_details",
         "inventory_statistics",
         "suggest_placement",
+        "inventory_value",
+        "warranties_expiring",
+        "maintenance_due",
+        "describe_item",
     ):
         assert expected in tools
     # Adding and deleting items are intentionally NOT exposed to Home Assistant.
