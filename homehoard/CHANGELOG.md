@@ -9,7 +9,9 @@
   it online (product DB → Open Food Facts → Ollama web-search) and prefills the
   new item's name — all still optional and off by default; scans resolve your own
   tags and items offline either way. New `barcode_lookup` / `barcode_db_key`
-  add-on options.
+  add-on options. You can also type or paste a barcode straight onto an item from
+  its detail page, and the barcode now round-trips through CSV import/export
+  (new `HB.barcode` column).
 
 ## 1.0.10
 

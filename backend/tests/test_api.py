@@ -111,6 +111,24 @@ def test_csv_roundtrip(auth_client):
     assert "Wrench" in export and "HB.name" in export
 
 
+def test_csv_roundtrips_barcode(auth_client):
+    csv = "HB.name,HB.barcode\nDrill,012345678905\n"
+    r = auth_client.post(
+        "/api/v1/items/import",
+        data={"csv": (io.BytesIO(csv.encode()), "x.csv")},
+        content_type="multipart/form-data",
+    )
+    assert r.status_code == 201
+
+    # imported onto the item... (barcode lives on the item detail, not the summary)
+    item_id = auth_client.get("/api/v1/items").get_json()["items"][0]["id"]
+    item = auth_client.get(f"/api/v1/items/{item_id}").get_json()
+    assert item["barcode"] == "012345678905"
+    # ...and it survives an export round-trip.
+    export = auth_client.get("/api/v1/items/export").data.decode()
+    assert "HB.barcode" in export and "012345678905" in export
+
+
 def test_statistics(auth_client):
     auth_client.post("/api/v1/items", json={"name": "A"})
     auth_client.put(
