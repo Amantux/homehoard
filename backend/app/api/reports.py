@@ -12,6 +12,7 @@ import io
 from datetime import datetime, timedelta
 
 from flask import Blueprint, Response, jsonify
+from sqlalchemy.orm import selectinload
 
 from ..auth import current_group, login_required
 from ..extensions import db
@@ -41,7 +42,14 @@ def _warranty_status(i, now) -> str:
 
 
 def _items(gid):
-    return db.session.query(Item).filter_by(group_id=gid, archived=False).all()
+    # Eager-load what _row() touches (location, labels, attachments) so the whole-
+    # inventory report is a handful of queries, not N+1 across every item.
+    return (db.session.query(Item)
+            .filter_by(group_id=gid, archived=False)
+            .options(selectinload(Item.location),
+                     selectinload(Item.labels),
+                     selectinload(Item.attachments))
+            .all())
 
 
 def _row(i, now):

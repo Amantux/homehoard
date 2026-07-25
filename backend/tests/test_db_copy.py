@@ -170,3 +170,18 @@ def test_boot_migrate_raises_on_failure(app, tmp_path, monkeypatch):
         app.config["DATA_DIR"] = str(tmp_path)
         with pytest.raises(RuntimeError, match="refusing to start"):
             _maybe_boot_migrate(app)
+
+
+def test_coerce_non_null_fills_added_columns(app):
+    """A column added by a later migration is NULL on old source rows; the copy must
+    fill it (not insert NULL) so a NOT NULL target column doesn't reject the row."""
+    from app.services.db_copy import _coerce_non_null
+
+    with app.app_context():
+        items = db.metadata.tables["items"]
+        rows = [{"id": "x", "name": "Drill", "group_id": "g",
+                 "barcode": None, "search_text": None}]
+        _coerce_non_null(items, rows)
+
+    assert rows[0]["barcode"] == ""       # scalar default "" applied, not NULL
+    assert rows[0]["search_text"] == ""

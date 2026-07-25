@@ -58,6 +58,18 @@ def _next_asset_id(group_id) -> int:
     return (top[0] if top and top[0] else 0) + 1
 
 
+def _require_owned(model, obj_id, gid):
+    """Return obj_id only if it names a row in this group; else 404. Guards against
+    binding an item to another household's location / bin / parent item (IDOR): the
+    FK alone would accept a cross-group id and item_out would then leak its name."""
+    if not obj_id:
+        return None
+    row = db.session.get(model, obj_id)
+    if row is None or row.group_id != gid:
+        abort(404)
+    return obj_id
+
+
 def _apply(item: Item, data: dict):
     simple = {
         "name": "name",
@@ -94,18 +106,18 @@ def _apply(item: Item, data: dict):
         if key in data:
             setattr(item, attr, _parse_dt(data[key]))
 
+    gid = item.group_id
     if "locationId" in data:
-        item.location_id = data["locationId"] or None
+        item.location_id = _require_owned(Location, data["locationId"], gid)
     if "binId" in data:
-        item.bin_id = data["binId"] or None
+        item.bin_id = _require_owned(Bin, data["binId"], gid)
     # An item lives in a bin OR directly in a location. When it's in a bin, its
     # location is inherited from (and kept in sync with) that bin.
     if item.bin_id:
-        b = db.session.get(Bin, item.bin_id)
-        if b and b.group_id == item.group_id:
-            item.location_id = b.location_id
+        b = db.session.get(Bin, item.bin_id)  # already ownership-checked above
+        item.location_id = b.location_id
     if "parentId" in data:
-        item.parent_id = data["parentId"] or None
+        item.parent_id = _require_owned(Item, data["parentId"], gid)
 
     if "labelIds" in data:
         labels = (
@@ -187,7 +199,19 @@ def list_items():
         args.get("orderBy") in ("createdAt", "updatedAt")
         and "order" not in args
     )
-    q = q.order_by(order_col.desc() if descending else order_col.asc())
+    # Item.id (unique) as a tie-breaker: order_col alone (e.g. non-unique name) makes
+    # paginated OFFSET/LIMIT results non-deterministic — rows can repeat or vanish
+    # across pages when sort keys collide.
+    q = q.order_by(order_col.desc() if descending else order_col.asc(), Item.id.asc())
+    # Eager-load everything item_summary touches, so the list is a constant number of
+    # queries instead of N+1 across attachments/holdings/labels/location/bin per row.
+    q = q.options(
+        selectinload(Item.attachments),
+        selectinload(Item.holdings),
+        selectinload(Item.labels),
+        selectinload(Item.location),
+        selectinload(Item.bin).selectinload(Bin.location),
+    )
     if per_page > 0:
         q = q.offset((page - 1) * per_page).limit(per_page)
     items = q.all()
@@ -205,12 +229,12 @@ def list_items():
 @login_required
 def create_item():
     data = request.get_json(force=True) or {}
-    bin_id = data.get("binId") or None
-    location_id = data.get("locationId") or None
+    gid = current_group().id
+    bin_id = _require_owned(Bin, data.get("binId"), gid)
+    location_id = _require_owned(Location, data.get("locationId"), gid)
     if bin_id:
-        b = db.session.get(Bin, bin_id)
-        if b and b.group_id == current_group().id:
-            location_id = b.location_id  # inherit the bin's location
+        b = db.session.get(Bin, bin_id)  # owned (checked above)
+        location_id = b.location_id  # inherit the bin's location
     item = Item(
         name=data.get("name", ""),
         description=data.get("description", ""),

@@ -158,3 +158,30 @@ def test_login_is_rate_limited(tmp_path):
     assert 429 in statuses  # the limiter kicks in within the window
     with app.app_context():
         db.drop_all()
+
+
+def _reg(app, client, email):
+    """Register + log in a brand-new user (each gets their OWN group)."""
+    app.config["ALLOW_REGISTRATION"] = True
+    client.post("/api/v1/users/register",
+                json={"email": email, "password": "password", "name": email})
+    tok = client.post("/api/v1/users/login",
+                      json={"username": email, "password": "password"}).get_json()["token"]
+    client.environ_base["HTTP_AUTHORIZATION"] = tok
+
+
+def test_item_rejects_cross_group_location(app):
+    """Binding an item to another household's location is refused (IDOR): the FK
+    alone would accept a foreign id and item_out would then leak its name."""
+    a, b = app.test_client(), app.test_client()
+    _reg(app, a, "a@a.com")
+    _reg(app, b, "b@b.com")
+    a_loc = a.post("/api/v1/locations", json={"name": "A's Garage"}).get_json()["id"]
+
+    # B cannot create an item into A's location...
+    assert b.post("/api/v1/items",
+                  json={"name": "Sneaky", "locationId": a_loc}).status_code == 404
+    # ...nor bind its own item to it on update.
+    b_item = b.post("/api/v1/items", json={"name": "Mine"}).get_json()["id"]
+    assert b.put(f"/api/v1/items/{b_item}",
+                 json={"name": "Mine", "locationId": a_loc}).status_code == 404

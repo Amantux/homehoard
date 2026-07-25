@@ -15,7 +15,9 @@ from mcp.server.fastmcp import FastMCP
 
 API = os.environ.get("HBOX_MCP_API", "http://127.0.0.1:7745/api/v1")
 TOKEN = os.environ.get("HBOX_MCP_API_TOKEN")  # only needed if app auth is enabled
-_HEADERS = {"Authorization": TOKEN} if TOKEN else {}
+# The app's auth requires the "Bearer " scheme (auth.py rejects a bare token), so
+# MCP→app calls fail auth without it whenever disable_auth is off.
+_HEADERS = {"Authorization": f"Bearer {TOKEN}"} if TOKEN else {}
 _HTTP = httpx.Client(base_url=API, headers=_HEADERS, timeout=10)
 
 # The MCP SDK ships DNS-rebinding protection that, by default, rejects any

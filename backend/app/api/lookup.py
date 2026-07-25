@@ -4,6 +4,7 @@ No outbound network calls: a scanned code is only ever checked against your own
 inventory.
 """
 from flask import Blueprint, request, jsonify
+from sqlalchemy.orm import selectinload
 
 from ..extensions import db
 from ..models import Item, Bin, Location, QrTag, Label
@@ -96,7 +97,11 @@ def _search_items(gid, q, limit):
             "quantity": i.quantity,
             "imageId": next((a.document_id for a in i.attachments if a.primary), None),
         }
-        for i in query.order_by(Item.name.asc()).limit(limit).all()
+        for i in query.options(
+            selectinload(Item.attachments),
+            selectinload(Item.location),
+            selectinload(Item.bin).selectinload(Bin.location),
+        ).order_by(Item.name.asc()).limit(limit).all()
     ]
 
 

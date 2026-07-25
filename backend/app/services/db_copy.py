@@ -67,6 +67,35 @@ def _order_for_self_fk(table, rows):
     return ordered
 
 
+def _non_null_fallback(column):
+    """A non-NULL value for a NOT NULL column whose source value is NULL — e.g. rows
+    predating an added column (barcode, search_text) hold NULL in SQLite while the
+    target schema built from the models declares the column NOT NULL."""
+    default = column.default
+    if default is not None and getattr(default, "is_scalar", False):
+        return default.arg
+    try:
+        pytype = column.type.python_type
+    except (NotImplementedError, AttributeError):
+        return ""
+    if pytype is bool:
+        return False
+    if pytype in (int, float):
+        return 0
+    return ""
+
+
+def _coerce_non_null(table, rows):
+    """In place: fill NULLs in NOT NULL columns so the copy into a stricter target
+    schema doesn't fail with a NotNullViolation. Only touches columns that are both
+    NOT NULL and actually NULL in the source (PKs/FKs always carry a value)."""
+    cols = [c for c in table.columns if not c.nullable]
+    for row in rows:
+        for c in cols:
+            if row.get(c.name) is None:
+                row[c.name] = _non_null_fallback(c)
+
+
 def copy_database(source_url: str, target_url: str) -> dict:
     """Copy every table from ``source_url`` into ``target_url`` (which must be
     EMPTY). Returns ``{"ok": True, "tables": {name: count}, "total": n}``.
@@ -107,6 +136,11 @@ def copy_database(source_url: str, target_url: str) -> dict:
                         for t in tables}
         except Exception as exc:  # noqa: BLE001
             raise SourceUnreadable(str(exc)) from exc
+
+        # A column added by a later migration is NULL on pre-existing source rows,
+        # but the target schema (from the models) declares it NOT NULL — fill those.
+        for t in tables:
+            _coerce_non_null(t, data[t.name])
 
         # Insert AND verify inside one transaction, so a per-row FK/type rejection
         # or a count mismatch rolls the whole copy back — all-or-nothing.
