@@ -55,6 +55,9 @@ def _bool(value):
     return str(value).strip().lower() in {"1", "true", "yes"}
 
 
+_FORMULA_LEAD = ("=", "+", "-", "@", "\t", "\r")
+
+
 def _csv_safe(value):
     """Neutralize spreadsheet formula injection (CWE-1236): a cell starting with
     = + - @ (or a control char) is prefixed with a single quote so Excel/Sheets
@@ -62,9 +65,21 @@ def _csv_safe(value):
     if value is None:
         return ""
     s = str(value)
-    if s and s[0] in ("=", "+", "-", "@", "\t", "\r"):
+    if s and s[0] in _FORMULA_LEAD:
         return "'" + s
     return s
+
+
+def _csv_unescape(value):
+    """Reverse _csv_safe on import so an export→import round-trip is lossless: strip
+    the single leading quote we added before a formula-trigger char. Without this,
+    ``-40C Probe`` re-imports as ``'-40C Probe`` and a negative number like
+    ``-5.00`` re-imports as ``'-5.00`` (which then crashes float()/int()). A value
+    a user literally typed as ``'=…`` is indistinguishable from our escaping — an
+    accepted, rare ambiguity inherent to CSV-injection escaping."""
+    if value and len(value) >= 2 and value[0] == "'" and value[1] in _FORMULA_LEAD:
+        return value[1:]
+    return value
 
 
 def export_items(group_id) -> str:
@@ -152,7 +167,10 @@ def import_items(group_id, text: str) -> int:
 
     loc_cache, label_cache = {}, {}
     count = 0
-    for row in reader:
+    for raw_row in reader:
+        # Reverse the export-side formula-injection escaping cell-by-cell so the
+        # round-trip is lossless (and negatives don't crash numeric parsing).
+        row = {k: _csv_unescape(v) for k, v in raw_row.items()}
         name = (row.get("HB.name") or "").strip()
         if not name:
             continue

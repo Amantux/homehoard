@@ -111,6 +111,23 @@ def test_csv_roundtrip(auth_client):
     assert "Wrench" in export and "HB.name" in export
 
 
+def test_csv_import_unescapes_formula_guard(auth_client):
+    # A CSV shaped like our own export: a leading ' guards formula-injection cells
+    # (name starting with '-', a negative price). Import must reverse the escaping.
+    csv = "HB.name,HB.quantity,HB.purchase_price\n'-40C Probe,2,'-5.00\n"
+
+    r = auth_client.post(
+        "/api/v1/items/import",
+        data={"csv": (io.BytesIO(csv.encode()), "x.csv")},
+        content_type="multipart/form-data",
+    )
+    assert r.status_code == 201  # '-5.00 did not crash float() parsing
+
+    item = auth_client.get("/api/v1/items").get_json()["items"][0]
+    assert item["name"] == "-40C Probe"  # leading quote stripped, lossless
+    assert item["purchasePrice"] == -5.0
+
+
 def test_csv_roundtrips_barcode(auth_client):
     csv = "HB.name,HB.barcode\nDrill,012345678905\n"
     r = auth_client.post(
