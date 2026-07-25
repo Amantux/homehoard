@@ -67,6 +67,27 @@ def test_product_db_parses(app, monkeypatch):
         assert r["source"] == "productdb"
 
 
+def test_clean_title_extracts_product_segment():
+    # An aggregator/lookup page yields no product segment...
+    assert barcode._clean_title("UPC 012345678905 | Barcode Lookup", "012345678905") is None
+    # ...a real product title yields the product part, dropping the retailer tail.
+    assert (barcode._clean_title("Great Value Whole Milk 1 Gal | Walmart", "0")
+            == "Great Value Whole Milk 1 Gal")
+
+
+def test_web_search_prefers_clean_segment(app, monkeypatch):
+    with app.app_context():
+        from app.services import enrich
+        monkeypatch.setattr(enrich, "enabled", lambda: True)
+        monkeypatch.setattr(enrich, "_cfg", lambda: {"key": "k"})
+        monkeypatch.setattr(enrich, "web_search", lambda q, key: [
+            {"title": "UPC 012345678905 | Barcode Lookup"},   # junk → skipped
+            {"title": "Organic Whole Milk 1qt | Amazon"},     # real product
+        ])
+        hit = barcode._from_web_search("012345678905")
+    assert hit["name"] == "Organic Whole Milk 1qt" and hit["source"] == "websearch"
+
+
 # --- scan resolve + identify endpoints --------------------------------------
 
 def test_barcode_resolve_returns_item_by_barcode(app, auth_client):

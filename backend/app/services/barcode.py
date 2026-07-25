@@ -6,6 +6,7 @@ web-search fallback. Best-effort, bounded, never raises; off unless
 HBOX_BARCODE_LOOKUP is set. Returns ``{name, brand, barcode, source}`` or None.
 """
 import logging
+import re
 
 from flask import current_app
 
@@ -58,15 +59,36 @@ def _from_off(code):
             "barcode": code, "source": "openfoodfacts"}
 
 
+# Words that mark a search-result title as an aggregator/listing page, not a product.
+_TITLE_JUNK = re.compile(
+    r"\b(upc|ean|gtin|barcode|bar code|lookup|database|scanner|price|prices|"
+    r"buy|shop|amazon|ebay|walmart|target)\b", re.I)
+
+
+def _clean_title(title, code):
+    """Turn a search-result page title into a plausible product name: drop the
+    barcode digits, split on separators, and pick the first segment that looks like
+    a product (not an aggregator page). None if no such segment exists."""
+    t = (title or "").replace(code, " ")
+    for part in re.split(r"\s*[|–—:·]\s*|\s+-\s+", t):
+        part = part.strip()
+        if len(part) >= 3 and not part.isdigit() and not _TITLE_JUNK.search(part):
+            return part[:80]
+    return None
+
+
 def _from_web_search(code):
     from . import enrich
 
     if not enrich.enabled():
         return None
-    results = enrich.web_search(f"{code} UPC barcode product", key=enrich._cfg()["key"])
-    if not results:
-        return None
-    name = (results[0].get("title") or "").strip()[:80]
+    results = enrich.web_search(f"{code} UPC barcode product", key=enrich._cfg()["key"]) or []
+    # Prefer a clean product-looking segment from the first few results; only if none
+    # exists fall back to the raw first title (better than nothing).
+    name = next((c for c in (_clean_title(r.get("title"), code) for r in results[:4]) if c),
+                None)
+    if not name and results:
+        name = (results[0].get("title") or "").strip()[:80]
     if not name:
         return None
     return {"name": name, "brand": "", "barcode": code, "source": "websearch"}
