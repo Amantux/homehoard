@@ -71,18 +71,24 @@ def _non_null_fallback(column):
     """A non-NULL value for a NOT NULL column whose source value is NULL — e.g. rows
     predating an added column (barcode, search_text) hold NULL in SQLite while the
     target schema built from the models declares the column NOT NULL."""
+    import decimal
+
     default = column.default
     if default is not None and getattr(default, "is_scalar", False):
         return default.arg
     try:
         pytype = column.type.python_type
     except (NotImplementedError, AttributeError):
-        return ""
+        return None
     if pytype is bool:
         return False
-    if pytype in (int, float):
+    if pytype is str:
+        return ""
+    if pytype in (int, float, decimal.Decimal):
         return 0
-    return ""
+    # Unknown type (e.g. datetime): don't inject a wrong-typed "" — leave NULL so a
+    # genuinely-required value fails loudly rather than corrupting silently.
+    return None
 
 
 def _coerce_non_null(table, rows):

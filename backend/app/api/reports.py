@@ -18,6 +18,7 @@ from ..auth import current_group, login_required
 from ..extensions import db
 from ..models import Item
 from ..schemas.serializers import iso
+from ..services.csv_io import _csv_safe
 
 bp = Blueprint("reports", __name__)
 
@@ -125,8 +126,10 @@ def inventory_report_csv():
                 "Purchase date", "Purchase price", "Quantity", "Line value",
                 "Insured", "Warranty"])
     for r in sorted(rows, key=lambda r: r["lineValue"], reverse=True):
-        w.writerow([r["name"], r["location"], "; ".join(r["labels"]),
-                    r["serialNumber"], r["purchaseFrom"], r["purchaseDate"] or "",
+        # Neutralize spreadsheet formula injection on the free-text cells (CWE-1236).
+        w.writerow([_csv_safe(r["name"]), _csv_safe(r["location"]),
+                    _csv_safe("; ".join(r["labels"])), _csv_safe(r["serialNumber"]),
+                    _csv_safe(r["purchaseFrom"]), r["purchaseDate"] or "",
                     r["purchasePrice"], r["quantity"], r["lineValue"],
                     "yes" if r["insured"] else "no", r["warrantyStatus"]])
     return Response(buf.getvalue(), mimetype="text/csv",

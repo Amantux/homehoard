@@ -101,6 +101,7 @@ def _search_items(gid, q, limit):
             selectinload(Item.attachments),
             selectinload(Item.location),
             selectinload(Item.bin).selectinload(Bin.location),
+            selectinload(Item.bin).selectinload(Bin.attachments),
         ).order_by(Item.name.asc()).limit(limit).all()
     ]
 

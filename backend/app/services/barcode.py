@@ -59,10 +59,11 @@ def _from_off(code):
             "barcode": code, "source": "openfoodfacts"}
 
 
-# Words that mark a search-result title as an aggregator/listing page, not a product.
+# Words that mark a title as a barcode-aggregator/listing page, not a product name.
+# Kept deliberately narrow: retailer/brand words (walmart, target, …) are NOT here,
+# since they appear in legitimate product titles ("Great Value … | Walmart").
 _TITLE_JUNK = re.compile(
-    r"\b(upc|ean|gtin|barcode|bar code|lookup|database|scanner|price|prices|"
-    r"buy|shop|amazon|ebay|walmart|target)\b", re.I)
+    r"\b(upc|ean|gtin|barcode|bar code|lookup|database|scanner)\b", re.I)
 
 
 def _clean_title(title, code):

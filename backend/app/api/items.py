@@ -115,7 +115,8 @@ def _apply(item: Item, data: dict):
     # location is inherited from (and kept in sync with) that bin.
     if item.bin_id:
         b = db.session.get(Bin, item.bin_id)  # already ownership-checked above
-        item.location_id = b.location_id
+        if b:  # defensive: a dangling bin_id (no FK enforcement on SQLite) → skip
+            item.location_id = b.location_id
     if "parentId" in data:
         item.parent_id = _require_owned(Item, data["parentId"], gid)
 
@@ -211,6 +212,7 @@ def list_items():
         selectinload(Item.labels),
         selectinload(Item.location),
         selectinload(Item.bin).selectinload(Bin.location),
+        selectinload(Item.bin).selectinload(Bin.attachments),
     )
     if per_page > 0:
         q = q.offset((page - 1) * per_page).limit(per_page)
