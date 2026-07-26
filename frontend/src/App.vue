@@ -56,6 +56,7 @@ const nav = [
         <a href="#" class="nav-link" @click.prevent="showScanner = true"><span class="ico">📷</span> Scan QR</a>
         <router-link to="/home-assistant" class="nav-link"><span class="ico">🔌</span> Home Assistant</router-link>
         <router-link to="/tools" class="nav-link"><span class="ico">🛠️</span> Tools</router-link>
+        <router-link to="/database" class="nav-link"><span class="ico">🗄️</span> Database</router-link>
         <router-link to="/report" class="nav-link"><span class="ico">📄</span> Report</router-link>
         <div class="spacer"></div>
         <div class="nav-link" style="cursor:default">

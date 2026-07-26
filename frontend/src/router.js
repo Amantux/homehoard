@@ -11,6 +11,7 @@ import LocationDetail from './views/LocationDetail.vue'
 import Labels from './views/Labels.vue'
 import Maintenance from './views/Maintenance.vue'
 import Tools from './views/Tools.vue'
+import Database from './views/Database.vue'
 import Report from './views/Report.vue'
 import HomeAssistant from './views/HomeAssistant.vue'
 import Scan from './views/Scan.vue'
@@ -28,6 +29,7 @@ const routes = [
   { path: '/labels', component: Labels },
   { path: '/maintenance', component: Maintenance },
   { path: '/tools', component: Tools },
+  { path: '/database', component: Database },
   { path: '/report', component: Report },
   { path: '/home-assistant', component: HomeAssistant },
   { path: '/scan', component: ScanLaunch },
