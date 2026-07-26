@@ -1,6 +1,7 @@
 from datetime import datetime
 
-from sqlalchemy import String, Text, Boolean, Float, Integer, DateTime, ForeignKey
+from sqlalchemy import (String, Text, Boolean, Float, Integer, DateTime, ForeignKey,
+                        Index, text)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..extensions import db
@@ -10,6 +11,12 @@ from .label import item_labels
 
 class Item(IDMixin, TimestampMixin, db.Model):
     __tablename__ = "items"
+    # The per-group asset id must be unique — a bare max()+1 allocation races. Partial
+    # so the many imported items left at the 0 sentinel (unassigned) aren't collapsed.
+    __table_args__ = (
+        Index("uq_items_group_asset", "group_id", "asset_id", unique=True,
+              sqlite_where=text("asset_id > 0"), postgresql_where=text("asset_id > 0")),
+    )
 
     name: Mapped[str] = mapped_column(String(255), index=True)
     description: Mapped[str] = mapped_column(Text, default="")

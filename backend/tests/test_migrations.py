@@ -78,3 +78,31 @@ def test_url_validation_and_normalization(tmp_path):
         DATABASE_URL = "mysql://u@h/db"
     with pytest.raises(RuntimeError, match="unsupported"):
         Mysql.sqlalchemy_uri()
+
+
+def test_dedupe_asset_ids_renumbers_duplicates():
+    """The 0004 backfill gives duplicate per-group asset ids distinct values, keeping
+    the oldest row's id and moving later duplicates to the group's next free id."""
+    import importlib.util
+    import os
+    from sqlalchemy import create_engine, text
+
+    here = os.path.dirname(os.path.dirname(__file__))
+    path = os.path.join(here, "migrations", "versions", "0004_uq_items_group_asset.py")
+    spec = importlib.util.spec_from_file_location("m0004", path)
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+
+    eng = create_engine("sqlite:///:memory:")
+    with eng.begin() as c:
+        c.execute(text("CREATE TABLE items(id TEXT PRIMARY KEY, group_id TEXT, "
+                       "asset_id INT, created_at TEXT)"))
+        for i, (g, a) in enumerate([("g1", 1), ("g1", 2), ("g1", 2), ("g2", 5)]):
+            c.execute(text("INSERT INTO items VALUES(:i,:g,:a,:t)"),
+                      {"i": f"id{i}", "g": g, "a": a, "t": f"2020-01-0{i + 1}"})
+        m._dedupe_asset_ids(c)
+        rows = c.execute(text("SELECT group_id, asset_id FROM items")).fetchall()
+
+    g1 = sorted(a for g, a in rows if g == "g1")
+    assert g1 == [1, 2, 3]          # the two dup 2s became 2 and 3
+    assert [a for g, a in rows if g == "g2"] == [5]   # other group untouched

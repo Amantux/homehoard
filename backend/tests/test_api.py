@@ -179,3 +179,18 @@ def test_asset_lookup(auth_client):
     auth_client.post("/api/v1/items", json={"name": "AssetItem"})
     r = auth_client.get("/api/v1/assets/000-001")
     assert r.get_json()["total"] == 1
+
+
+def test_create_item_retries_on_asset_id_collision(auth_client, monkeypatch):
+    """When two creates race to the same per-group asset id, the unique index rejects
+    the loser and create_item retries onto a free id instead of 500-ing."""
+    first = auth_client.post("/api/v1/items", json={"name": "A"}).get_json()
+
+    # Force the allocator to hand out the taken id once, then a free one.
+    from app.api import items as items_api
+    seq = iter([first["assetId"] and 1, 2])  # 1 is A's id (taken) → collision → retry
+    monkeypatch.setattr(items_api, "_next_asset_id", lambda gid: next(seq))
+
+    second = auth_client.post("/api/v1/items", json={"name": "B"})
+    assert second.status_code == 201
+    assert second.get_json()["assetId"] != first["assetId"]

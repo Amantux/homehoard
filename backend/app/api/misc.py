@@ -6,6 +6,7 @@ import time
 
 from flask import Blueprint, request, jsonify, Response, send_file, current_app
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
 from ..extensions import db, limiter
 from ..models import Item
@@ -158,7 +159,13 @@ def ensure_asset_ids():
             i.asset_id = next_id
             used.add(next_id)
             completed += 1
-    db.session.commit()
+    try:
+        db.session.commit()
+    except IntegrityError:
+        # A concurrent create grabbed one of these ids first (the partial unique
+        # index caught it). Roll back and report a retryable conflict rather than 500.
+        db.session.rollback()
+        return jsonify({"error": "asset ids changed concurrently, please retry"}), 409
     return jsonify({"completed": completed})
 
 

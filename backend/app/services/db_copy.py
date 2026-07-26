@@ -91,6 +91,30 @@ def _non_null_fallback(column):
     return None
 
 
+def _dedupe_item_asset_ids(rows):
+    """Renumber duplicate (group_id, asset_id>0) item rows in place — later duplicates
+    move to the group's next free id — so a copy into a target carrying the partial
+    UNIQUE(group_id, asset_id) index can't fail. Mirrors migration 0004's repair."""
+    from collections import defaultdict
+
+    group_max = defaultdict(int)
+    for r in rows:
+        aid = r.get("asset_id") or 0
+        if aid > group_max[r.get("group_id")]:
+            group_max[r.get("group_id")] = aid
+    seen = set()
+    for r in rows:
+        aid = r.get("asset_id") or 0
+        if aid <= 0:
+            continue  # the 0 "unassigned" sentinel isn't covered by the partial index
+        key = (r.get("group_id"), aid)
+        if key in seen:
+            group_max[r.get("group_id")] += 1
+            r["asset_id"] = group_max[r.get("group_id")]
+        else:
+            seen.add(key)
+
+
 def _coerce_non_null(table, rows):
     """In place: fill NULLs in NOT NULL columns so the copy into a stricter target
     schema doesn't fail with a NotNullViolation. Only touches columns that are both
@@ -147,6 +171,10 @@ def copy_database(source_url: str, target_url: str) -> dict:
         # but the target schema (from the models) declares it NOT NULL — fill those.
         for t in tables:
             _coerce_non_null(t, data[t.name])
+        # The target schema carries the partial UNIQUE(group_id, asset_id) index, but a
+        # legacy source may hold duplicate asset_ids from past races (the same thing
+        # migration 0004 repairs). De-dup the rows in memory or the copy would fail.
+        _dedupe_item_asset_ids(data.get("items", []))
 
         # Insert AND verify inside one transaction, so a per-row FK/type rejection
         # or a count mismatch rolls the whole copy back — all-or-nothing.

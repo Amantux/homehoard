@@ -43,3 +43,14 @@ def test_product_db_lookup_real_returns_named_product(app):
     assert hit["name"], "product DB entry had no title — response shape may have changed"
     assert hit["source"] == "productdb"
     assert hit["barcode"] == IPHONE_UPC
+
+
+def test_web_search_real(app):
+    """Exercise the real Ollama web-search path — only when a key is configured."""
+    from app.services import enrich
+    with app.app_context():
+        if not enrich.enabled():
+            pytest.skip("no OLLAMA_SEARCH_KEY configured")
+        results = enrich.web_search("3017620422003 nutella product",
+                                    key=enrich._cfg()["key"])
+    assert results, "web_search returned nothing — key/quota/shape issue"

@@ -83,13 +83,22 @@ def _from_web_search(code):
 
     if not enrich.enabled():
         return None
-    results = enrich.web_search(f"{code} UPC barcode product", key=enrich._cfg()["key"]) or []
-    # Prefer a clean product-looking segment from the first few results; only if none
-    # exists fall back to the raw first title (better than nothing).
-    name = next((c for c in (_clean_title(r.get("title"), code) for r in results[:4]) if c),
+    cfg = enrich._cfg()
+    results = enrich.web_search(f"{code} UPC barcode product", key=cfg["key"]) or []
+    if not results:
+        return None
+    # Best: let the model name the product from ranked results + snippets.
+    hit = enrich.extract_product(results, cfg)
+    if hit and hit.get("name"):
+        return {"name": hit["name"], "brand": hit.get("brand", ""),
+                "barcode": code, "source": "websearch"}
+    # Fallback (no model / model failed): a clean product segment from a ranked title,
+    # else the raw first title (better than nothing).
+    ranked = enrich.rank_results(results)
+    name = next((c for c in (_clean_title(r.get("title"), code) for r in ranked[:4]) if c),
                 None)
-    if not name and results:
-        name = (results[0].get("title") or "").strip()[:80]
+    if not name:
+        name = (ranked[0].get("title") or "").strip()[:80]
     if not name:
         return None
     return {"name": name, "brand": "", "barcode": code, "source": "websearch"}

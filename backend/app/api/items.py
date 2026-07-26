@@ -2,6 +2,7 @@ import re
 from datetime import datetime
 
 from flask import Blueprint, request, jsonify, abort, current_app
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
 from ..extensions import db, limiter
@@ -242,20 +243,31 @@ def create_item():
         description=data.get("description", ""),
         quantity=data.get("quantity") or 1,
         barcode=(data.get("barcode") or "")[:64],
-        group_id=current_group().id,
+        group_id=gid,
         location_id=location_id,
         bin_id=bin_id,
-        asset_id=_next_asset_id(current_group().id),
     )
+    # Allocate the per-group asset id with retry: a bare max()+1 races two concurrent
+    # creates to the same value, and the partial unique index rejects the loser. add()
+    # happens INSIDE the savepoint so a conflict rolls back cleanly, then we re-read
+    # the max and try again.
+    for _ in range(8):
+        item.asset_id = _next_asset_id(gid)
+        try:
+            with db.session.begin_nested():
+                db.session.add(item)
+                db.session.flush()
+            break
+        except IntegrityError:
+            continue
+    else:
+        abort(409, description="could not allocate an asset id — please retry")
     if data.get("labelIds"):
         item.labels = (
             db.session.query(Label)
-            .filter(Label.id.in_(data["labelIds"]),
-                    Label.group_id == current_group().id)
+            .filter(Label.id.in_(data["labelIds"]), Label.group_id == gid)
             .all()
         )
-    db.session.add(item)
-    db.session.flush()
     ensure_holding(item)  # start with one placement mirroring this location/bin
     db.session.commit()
     return jsonify(item_out(item)), 201

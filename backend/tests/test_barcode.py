@@ -84,8 +84,32 @@ def test_web_search_prefers_clean_segment(app, monkeypatch):
             {"title": "UPC 012345678905 | Barcode Lookup"},   # junk → skipped
             {"title": "Organic Whole Milk 1qt | Amazon"},     # real product
         ])
+        monkeypatch.setattr(enrich, "extract_product", lambda results, cfg: None)  # no LLM
         hit = barcode._from_web_search("012345678905")
     assert hit["name"] == "Organic Whole Milk 1qt" and hit["source"] == "websearch"
+
+
+def test_web_search_uses_llm_extraction(app, monkeypatch):
+    with app.app_context():
+        from app.services import enrich
+        monkeypatch.setattr(enrich, "enabled", lambda: True)
+        monkeypatch.setattr(enrich, "_cfg",
+                            lambda: {"key": "k", "url": "http://x", "model": "m"})
+        monkeypatch.setattr(enrich, "web_search",
+                            lambda q, key: [{"title": "UPC | Barcode Lookup",
+                                             "content": "", "url": "http://upcitemdb.com/x"}])
+        monkeypatch.setattr(enrich, "extract_product",
+                            lambda results, cfg: {"name": "Organic Milk", "brand": "GV"})
+        hit = barcode._from_web_search("012345678905")
+    assert hit == {"name": "Organic Milk", "brand": "GV",
+                   "barcode": "012345678905", "source": "websearch"}
+
+
+def test_rank_results_sinks_aggregators():
+    from app.services import enrich
+    ranked = enrich.rank_results([{"url": "http://barcodelookup.com/a"},
+                                  {"url": "http://walmart.com/b"}])
+    assert "walmart" in ranked[0]["url"]  # real retailer ranked ahead of the aggregator
 
 
 # --- scan resolve + identify endpoints --------------------------------------

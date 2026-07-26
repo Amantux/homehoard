@@ -5,7 +5,7 @@ available in this suite); the Postgres-specific type handling rides on the typed
 metadata + the all-tables Postgres-DDL compile check elsewhere.
 """
 import pytest
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine, func, select, text
 
 from app import _maybe_boot_migrate
 from app.auth import create_token
@@ -185,3 +185,47 @@ def test_coerce_non_null_fills_added_columns(app):
 
     assert rows[0]["barcode"] == ""       # scalar default "" applied, not NULL
     assert rows[0]["search_text"] == ""
+
+
+def test_dedupe_item_asset_ids_renumbers_in_memory():
+    """The copy must renumber legacy duplicate asset_ids before inserting into a
+    target that now carries the partial unique index (else the whole copy fails)."""
+    from app.services.db_copy import _dedupe_item_asset_ids
+
+    rows = [{"group_id": "g", "asset_id": 1}, {"group_id": "g", "asset_id": 2},
+            {"group_id": "g", "asset_id": 2}, {"group_id": "g2", "asset_id": 2},
+            {"group_id": "g", "asset_id": 0}]
+    _dedupe_item_asset_ids(rows)
+
+    g = sorted(r["asset_id"] for r in rows if r["group_id"] == "g" and r["asset_id"] > 0)
+    assert g == [1, 2, 3]                                   # the dup 2 moved to 3
+    assert [r["asset_id"] for r in rows if r["group_id"] == "g2"] == [2]   # other group kept
+    assert any(r["asset_id"] == 0 for r in rows)            # 0 sentinel untouched
+
+
+def test_copy_handles_legacy_duplicate_asset_ids(app, tmp_path):
+    """End-to-end: a legacy source with duplicate asset_ids must copy successfully
+    (the target carries the partial unique index) — the blocker fix de-dups in flight."""
+    with app.app_context():
+        g = Group(name="H", currency="usd")
+        db.session.add(g)
+        db.session.flush()
+        db.session.add(User(name="A", email="a@x.com", password_hash="x",
+                            is_superuser=False, is_owner=True, group_id=g.id))
+        db.session.add_all([Item(name="A", group_id=g.id, asset_id=1),
+                            Item(name="B", group_id=g.id, asset_id=2)])
+        db.session.commit()
+        # Simulate a pre-0004 DB: drop the guard, then force a duplicate asset_id.
+        db.session.execute(text("DROP INDEX IF EXISTS uq_items_group_asset"))
+        db.session.execute(text("UPDATE items SET asset_id = 1"))
+        db.session.commit()
+
+    target = f"sqlite:///{tmp_path}/target.db"
+    report = copy_database(app.config["SQLALCHEMY_DATABASE_URI"], target)  # must not raise
+
+    assert report["ok"]
+    eng = create_engine(target)
+    with eng.connect() as c:
+        aids = sorted(r[0] for r in c.execute(text("SELECT asset_id FROM items")))
+    assert aids == [1, 2]  # the duplicate was renumbered to a distinct id
+    eng.dispose()

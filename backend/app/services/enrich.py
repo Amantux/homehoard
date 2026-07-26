@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+from urllib.parse import urlparse
 
 import httpx
 from flask import current_app
@@ -20,6 +21,9 @@ from flask import current_app
 _LOGGER = logging.getLogger("homehoard.enrich")
 _SEARCH_URL = "https://ollama.com/api/web_search"
 _TIMEOUT = 20.0
+# Barcode-aggregator/listing hosts — real product pages should rank ahead of these.
+_AGGREGATOR_HOSTS = ("barcodelookup", "upcitemdb", "barcodespider", "go-upc",
+                     "upcdatabase", "ean-search", "buycott", "barcode-list")
 
 
 def _cfg():
@@ -77,6 +81,42 @@ def _synthesize(fields, results, cfg):
     top = results[0] if results else {}
     return {"description": (top.get("content") or top.get("title") or "").strip()[:300],
             "keywords": []}
+
+
+def rank_results(results):
+    """Prefer retailer/manufacturer pages over barcode-aggregator listings (which
+    have junk titles). Stable sort → aggregators sink, original order preserved."""
+    def is_aggregator(r):
+        host = (urlparse(r.get("url") or "").hostname or "").lower()
+        return any(a in host for a in _AGGREGATOR_HOSTS)
+    return sorted(results, key=is_aggregator)
+
+
+def extract_product(results, cfg):
+    """Identify the product from web-search results using the local Ollama model
+    (the same /api/generate call describe() uses). Returns {name, brand} or None.
+    Ranks results first and feeds titles + snippets, so it beats scraping a title."""
+    ranked = rank_results(results)
+    snippets = "\n\n".join(f"{r.get('title', '')}\n{r.get('content', '')}"[:600]
+                           for r in ranked[:3])
+    if not snippets.strip() or not (cfg.get("model") and cfg.get("url")):
+        return None
+    prompt = ('From the web results below, identify the single retail product. Respond '
+              'ONLY as JSON: {"name": "<product name>", "brand": "<brand or empty>"}. '
+              'If the results are only barcode-lookup pages with no real product, return '
+              f'an empty name.\n\n{snippets}')
+    try:
+        r = httpx.post(f"{cfg['url']}/api/generate",
+                       json={"model": cfg["model"], "prompt": prompt,
+                             "stream": False, "format": "json"}, timeout=_TIMEOUT)
+        r.raise_for_status()
+        data = json.loads((r.json() or {}).get("response") or "{}")
+        name = (data.get("name") or "").strip()[:80]
+        if name:
+            return {"name": name, "brand": (data.get("brand") or "").strip()[:80]}
+    except Exception as exc:  # noqa: BLE001 - best-effort; caller falls back
+        _LOGGER.info("product extraction failed: %s", exc)
+    return None
 
 
 def describe(fields) -> dict | None:
