@@ -153,7 +153,10 @@ async function handle(code, format) {
     }).catch(() => { /* code already linked elsewhere — item still created */ })
   }
   added.value.unshift({ id: created.id, name: created.name })
-  flash(true, `✓ Added ${created.name}`)
+  // A web-search-derived name is a lower-confidence guess — nudge the user to check.
+  flash(true, suggestion?.source === 'websearch'
+    ? `✓ Added ${created.name} — web guess, verify the name`
+    : `✓ Added ${created.name}`)
 }
 
 function setTarget(kind, id, name) {
