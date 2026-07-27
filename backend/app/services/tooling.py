@@ -117,9 +117,15 @@ def run_categorize(job) -> dict:
     examples = icl_examples(gid, "categorize")
     threshold = _threshold()
 
+    # Skip items already awaiting review — an unlabeled item with a pending
+    # suggestion must not be re-scanned into a duplicate proposal each run.
+    pending = (db.session.query(AiSuggestion.item_id)
+               .filter(AiSuggestion.group_id == gid, AiSuggestion.kind == "categorize",
+                       AiSuggestion.status == "pending", AiSuggestion.item_id.isnot(None)))
     items = (db.session.query(Item)
              .filter(Item.group_id == gid, Item.archived.is_(False))
-             .filter(~Item.labels.any())  # only items with no labels yet
+             .filter(~Item.labels.any())        # only items with no labels yet
+             .filter(~Item.id.in_(pending))
              .order_by(Item.created_at.asc()).limit(_CATEGORIZE_MAX).all())
     bump(job, done=0, total=len(items))
     applied = queued = 0

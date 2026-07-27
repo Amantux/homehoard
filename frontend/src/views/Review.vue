@@ -20,14 +20,22 @@ async function load() {
     ui.error(e.message || 'Could not load suggestions.')
   } finally { loading.value = false }
 }
+const acting = ref([])
+const isActing = (id) => acting.value.includes(id)
 function drop(s, list) { list.value = list.value.filter(x => x.id !== s.id) }
 async function accept(s, list) {
+  if (isActing(s.id)) return
+  acting.value = [...acting.value, s.id]
   try { const r = await api.post(`/suggestions/${s.id}/accept`); drop(s, list); ui.toast(`Applied “${r.label}”.`) }
   catch (e) { ui.error(e.message || 'Could not apply.') }
+  finally { acting.value = acting.value.filter(x => x !== s.id) }
 }
 async function reject(s, list) {
+  if (isActing(s.id)) return
+  acting.value = [...acting.value, s.id]
   try { await api.post(`/suggestions/${s.id}/reject`); drop(s, list) }
   catch (e) { ui.error(e.message || 'Could not reject.') }
+  finally { acting.value = acting.value.filter(x => x !== s.id) }
 }
 onMounted(load)
 </script>
@@ -53,8 +61,8 @@ onMounted(load)
           <span class="muted" style="font-size:.8rem"> · {{ Math.round((s.confidence || 0) * 100) }}%<span v-if="s.rationale"> · {{ s.rationale }}</span></span>
         </div>
         <div class="row" style="gap:6px">
-          <button class="secondary sm" @click="accept(s, categorize)">Accept</button>
-          <button class="secondary sm" @click="reject(s, categorize)">Reject</button>
+          <button class="secondary sm" :disabled="isActing(s.id)" @click="accept(s, categorize)">Accept</button>
+          <button class="secondary sm" :disabled="isActing(s.id)" @click="reject(s, categorize)">Reject</button>
         </div>
       </div>
     </div>
@@ -67,8 +75,8 @@ onMounted(load)
         <div class="row" style="justify-content:space-between;align-items:center">
           <strong>{{ s.label }} <span class="muted" style="font-weight:400;font-size:.85rem">· {{ (s.members || []).length }} items</span></strong>
           <div class="row" style="gap:6px">
-            <button class="secondary sm" @click="accept(s, clusters)">Accept &amp; label</button>
-            <button class="secondary sm" @click="reject(s, clusters)">Reject</button>
+            <button class="secondary sm" :disabled="isActing(s.id)" @click="accept(s, clusters)">Accept &amp; label</button>
+            <button class="secondary sm" :disabled="isActing(s.id)" @click="reject(s, clusters)">Reject</button>
           </div>
         </div>
         <div class="muted" style="font-size:.85rem">{{ (s.members || []).map(m => m.name).join(', ') }}</div>
