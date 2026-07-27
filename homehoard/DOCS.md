@@ -43,6 +43,30 @@ Data (SQLite database + attachments) is stored under `/share/homehoard`.
 
 ![Find where something is](https://raw.githubusercontent.com/Amantux/homehoard/main/docs/screenshots/search.png)
 
+## AI features
+
+Wire up any LLM or local SLM once in **Tools → AI provider**, then it powers
+everything below. Choose **Ollama** (self-hosted), **OpenAI-compatible** — point the
+base URL at a local model server such as LM Studio, vLLM, llama.cpp, or Ollama's
+`/v1` — or **Anthropic Claude**. Everything runs against *your* provider; nothing is
+sent anywhere else.
+
+- **Assistant (chat)** — ask where things are, what's in a location, or to tag an
+  item. It answers by looking up your own inventory.
+- **AI descriptions** — *Tools → AI descriptions* looks items up online and stores a
+  short searchable description, so search finds them by what they actually are. Runs
+  in the background with a progress bar (needs an ollama.com web-search key).
+- **AI organize** — *Tools → AI organize*:
+  - **Auto-categorize** proposes a label per unlabeled item. Confident matches to an
+    existing label apply automatically; anything less certain waits for you.
+  - **Propose groupings** suggests named collections ("Camping gear", "Kids winter
+    clothes").
+  - Review pending suggestions in **Review** (accept/reject). Your choices are fed
+    back as examples, so later runs match your preferences. Optionally add a *note*
+    or pick a specific *model* per run.
+
+Provider config is instance-wide and editable only by the founding household's owner.
+
 ## Home Assistant integration
 
 Install the **HomeHoard** HACS integration for one **HomeHoard** device with:
