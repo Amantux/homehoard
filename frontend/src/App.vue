@@ -39,6 +39,7 @@ const nav = [
   { to: '/locations', icon: '📍', label: 'Locations' },
   { to: '/labels', icon: '🏷️', label: 'Labels' },
   { to: '/maintenance', icon: '🔧', label: 'Maintenance' },
+  { to: '/chat', icon: '💬', label: 'Assistant' },
 ]
 </script>
 

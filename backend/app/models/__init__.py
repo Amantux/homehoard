@@ -12,9 +12,12 @@ from .maintenance import MaintenanceEntry  # noqa: F401
 from .checkout import CheckoutEntry  # noqa: F401
 from .notifier import Notifier  # noqa: F401
 from .app_setting import AppSetting  # noqa: F401
+from .chat import ChatSession, ChatMessage  # noqa: F401
 
 __all__ = [
     "AppSetting",
+    "ChatSession",
+    "ChatMessage",
     "Group",
     "GroupInvitation",
     "User",

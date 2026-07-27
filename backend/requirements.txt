@@ -25,5 +25,7 @@ httpx>=0.27.0
 # AI providers (lazy-imported by services/ai; only loaded when that provider is
 # selected). Ollama/OpenAI-compatible SLMs use httpx / the openai SDK; Claude uses
 # the anthropic SDK. A pure-Ollama install never imports these.
-anthropic>=0.40.0
-openai>=1.50.0
+# Floors chosen for httpx>=0.28 compatibility: older openai/anthropic pass the
+# removed `proxies` kwarg to httpx and crash on client construction.
+anthropic>=0.42.0
+openai>=1.55.3

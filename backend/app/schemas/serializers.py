@@ -1,4 +1,5 @@
 """Serialization helpers producing homebox-compatible camelCase JSON."""
+import json
 from datetime import datetime, date
 
 
@@ -8,6 +9,31 @@ def iso(dt):
     if isinstance(dt, (datetime, date)):
         return dt.isoformat()
     return dt
+
+
+def chat_message_out(m):
+    return {
+        "id": m.id,
+        "role": m.role,
+        "content": m.content,
+        "toolTrace": json.loads(m.tool_trace) if m.tool_trace else [],
+        "createdAt": iso(m.created_at),
+    }
+
+
+def chat_session_summary(s):
+    return {
+        "id": s.id,
+        "title": s.title,
+        "createdAt": iso(s.created_at),
+        "updatedAt": iso(s.updated_at),
+    }
+
+
+def chat_session_out(s):
+    data = chat_session_summary(s)
+    data["messages"] = [chat_message_out(m) for m in s.messages]
+    return data
 
 
 def group_out(g):

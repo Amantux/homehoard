@@ -27,6 +27,9 @@ class Group(IDMixin, TimestampMixin, db.Model):
     invitations = relationship(
         "GroupInvitation", back_populates="group", cascade="all, delete-orphan"
     )
+    chat_sessions = relationship(
+        "ChatSession", back_populates="group", cascade="all, delete-orphan"
+    )
 
 
 class GroupInvitation(IDMixin, TimestampMixin, db.Model):
