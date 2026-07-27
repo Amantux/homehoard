@@ -29,6 +29,10 @@ class Config:
     # local SLMs via a base URL), or "claude" (hosted Anthropic). Blank = off.
     AI_PROVIDER = os.environ.get("HBOX_AI_PROVIDER", "")
     AI_TIMEOUT_SECONDS = int(os.environ.get("HBOX_AI_TIMEOUT_SECONDS", "60"))
+    # Auto-categorization: a proposed label at/above this model-reported confidence
+    # (and matching an existing label) is applied automatically; below it, or a new
+    # label, goes to the review queue. 0..1.
+    AI_CONFIDENCE_THRESHOLD = float(os.environ.get("HBOX_AI_CONFIDENCE_THRESHOLD", "0.8"))
     ANTHROPIC_API_KEY = os.environ.get("HBOX_ANTHROPIC_API_KEY", "")
     CLAUDE_MODEL = os.environ.get("HBOX_CLAUDE_MODEL", "claude-opus-4-8")
     OPENAI_API_KEY = os.environ.get("HBOX_OPENAI_API_KEY", "")

@@ -302,6 +302,7 @@ def _register_blueprints(app):
     from .api.reports import bp as reports_bp
     from .api.chat import bp as chat_bp
     from .api.jobs import bp as jobs_bp
+    from .api.suggestions import bp as suggestions_bp
 
     prefix = "/api/v1"
     for bp in (
@@ -324,6 +325,7 @@ def _register_blueprints(app):
         reports_bp,
         chat_bp,
         jobs_bp,
+        suggestions_bp,
     ):
         app.register_blueprint(bp, url_prefix=prefix)
 

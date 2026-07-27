@@ -181,3 +181,18 @@ def _enrich_job(job: Job) -> dict:
             described += 1
         bump(job, done=i)  # commits the description + progress + heartbeat together
     return {"described": described, "scanned": len(items), "remaining": missing_q().count()}
+
+
+@register("categorize")
+def _categorize_job(job: Job) -> dict:
+    """Assign a label to each unlabeled item — high-confidence matches auto-apply,
+    the rest go to the review queue (see services/tooling)."""
+    from .tooling import run_categorize
+    return run_categorize(job)
+
+
+@register("cluster")
+def _cluster_job(job: Job) -> dict:
+    """Propose named groupings over the collection for review (services/tooling)."""
+    from .tooling import run_cluster
+    return run_cluster(job)

@@ -2,6 +2,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { api } from '../api'
 import { useUI } from '../stores/ui'
+import { useJobRunner } from '../composables/useJobRunner'
 
 const ui = useUI()
 
@@ -150,6 +151,26 @@ async function resumeEnrich() {
 onMounted(resumeEnrich)
 onUnmounted(() => clearTimeout(enrichTimer))
 
+// AI organize: auto-categorize (label) items + propose clusters. Both are jobs.
+const {
+  job: catJob, starting: catStarting, active: catActive,
+  start: startCategorize, resume: resumeCategorize, stop: stopCategorize,
+} = useJobRunner('categorize', {
+  onDone: (j) => j.status === 'error'
+    ? ui.error(j.error || 'Categorize failed.')
+    : ui.toast(`Categorize: ${j.result?.applied ?? 0} applied, ${j.result?.queued ?? 0} to review.`),
+})
+const {
+  starting: cluStarting, active: cluActive,
+  start: startCluster, resume: resumeCluster, stop: stopCluster,
+} = useJobRunner('cluster', {
+  onDone: (j) => j.status === 'error'
+    ? ui.error(j.error || 'Clustering failed.')
+    : ui.toast(`Found ${j.result?.proposed ?? 0} grouping(s) to review.`),
+})
+onMounted(() => { resumeCategorize(); resumeCluster() })
+onUnmounted(() => { stopCategorize(); stopCluster() })
+
 const actions = [
   { p: 'ensure-asset-ids', l: 'Ensure asset IDs', d: 'Assign missing asset IDs' },
   { p: 'ensure-import-refs', l: 'Ensure import refs', d: 'Backfill import references' },
@@ -244,6 +265,22 @@ const actions = [
       <div class="muted" style="font-size:0.85rem;margin-bottom:6px">
         Describing… {{ enrichJob.done }}<span v-if="enrichJob.total">/{{ enrichJob.total }}</span> items</div>
       <progress :value="enrichJob.done" :max="enrichJob.total || 1" style="width:100%"></progress>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>AI organize</h2>
+    <p class="muted">Use your AI provider to auto-label items and propose groupings.
+      Confident labels are applied automatically; the rest wait for your review, and
+      your accept/reject choices teach later runs.</p>
+    <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">
+      <button class="secondary" :disabled="catStarting || catActive" @click="startCategorize()">
+        {{ catActive ? `Categorizing… ${catJob.done}/${catJob.total || '…'}` : '🏷️ Auto-categorize items' }}
+      </button>
+      <button class="secondary" :disabled="cluStarting || cluActive" @click="startCluster()">
+        {{ cluActive ? 'Finding groupings…' : '🗂️ Propose groupings' }}
+      </button>
+      <router-link to="/review" class="muted" style="font-size:.9rem">Review suggestions →</router-link>
     </div>
   </div>
 

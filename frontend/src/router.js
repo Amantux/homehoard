@@ -12,6 +12,7 @@ import Labels from './views/Labels.vue'
 import Maintenance from './views/Maintenance.vue'
 import Tools from './views/Tools.vue'
 import Chat from './views/Chat.vue'
+import Review from './views/Review.vue'
 import Database from './views/Database.vue'
 import Report from './views/Report.vue'
 import HomeAssistant from './views/HomeAssistant.vue'
@@ -30,6 +31,7 @@ const routes = [
   { path: '/labels', component: Labels },
   { path: '/maintenance', component: Maintenance },
   { path: '/chat', component: Chat },
+  { path: '/review', component: Review },
   { path: '/tools', component: Tools },
   { path: '/database', component: Database },
   { path: '/report', component: Report },

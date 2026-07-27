@@ -14,12 +14,14 @@ from .notifier import Notifier  # noqa: F401
 from .app_setting import AppSetting  # noqa: F401
 from .chat import ChatSession, ChatMessage  # noqa: F401
 from .job import Job  # noqa: F401
+from .ai_suggestion import AiSuggestion  # noqa: F401
 
 __all__ = [
     "AppSetting",
     "ChatSession",
     "ChatMessage",
     "Job",
+    "AiSuggestion",
     "Group",
     "GroupInvitation",
     "User",
