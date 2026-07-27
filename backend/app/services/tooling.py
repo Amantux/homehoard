@@ -12,6 +12,7 @@ import json
 import logging
 
 from flask import current_app
+from sqlalchemy.orm import selectinload
 
 from ..extensions import db
 from ..models import AiSuggestion, Item, Label, utcnow
@@ -123,6 +124,7 @@ def run_categorize(job) -> dict:
                .filter(AiSuggestion.group_id == gid, AiSuggestion.kind == "categorize",
                        AiSuggestion.status == "pending", AiSuggestion.item_id.isnot(None)))
     items = (db.session.query(Item)
+             .options(selectinload(Item.labels))  # avoid per-item lazy-load in the loop
              .filter(Item.group_id == gid, Item.archived.is_(False))
              .filter(~Item.labels.any())        # only items with no labels yet
              .filter(~Item.id.in_(pending))

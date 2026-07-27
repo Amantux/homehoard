@@ -223,6 +223,22 @@ def test_categorize_malformed_confidence_completes(auth_client, app, monkeypatch
         assert db.session.query(AiSuggestion).filter_by(status="pending").count() == 1
 
 
+def test_categorize_applies_model_override(auth_client, app, monkeypatch):
+    gid = _gid(app)
+    captured = {}
+    with app.app_context():
+        db.session.add(Item(name="X", group_id=gid))
+        db.session.commit()
+
+        def fake_provider_for(p, m=None):
+            captured["model"] = m
+            return _FakeProvider({"label": "T", "confidence": 0.1})
+        monkeypatch.setattr("app.services.ai.registry.provider_for", fake_provider_for)
+        jobs.enqueue("categorize", gid, {"model": "llama3.2"})
+        jobs.run_job(jobs.claim_one())
+        assert captured["model"] == "llama3.2"
+
+
 def test_suggestion_cross_group_404(auth_client, app):
     with app.app_context():
         other = Group(name="Other", currency="usd")

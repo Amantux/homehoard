@@ -168,6 +168,13 @@ const {
     ? ui.error(j.error || 'Clustering failed.')
     : ui.toast(`Found ${j.result?.proposed ?? 0} grouping(s) to review.`),
 })
+const organizeForm = ref({ note: '', model: '' })
+function organizeBody() {
+  const b = {}
+  if (organizeForm.value.note.trim()) b.note = organizeForm.value.note.trim()
+  if (organizeForm.value.model.trim()) b.model = organizeForm.value.model.trim()
+  return b
+}
 onMounted(() => { resumeCategorize(); resumeCluster() })
 onUnmounted(() => { stopCategorize(); stopCluster() })
 
@@ -273,11 +280,21 @@ const actions = [
     <p class="muted">Use your AI provider to auto-label items and propose groupings.
       Confident labels are applied automatically; the rest wait for your review, and
       your accept/reject choices teach later runs.</p>
+    <div style="display:flex;gap:8px;max-width:520px;margin-bottom:10px">
+      <label style="flex:2">
+        <span class="muted" style="font-size:0.85rem">Note (optional guidance)</span>
+        <input v-model="organizeForm.note" placeholder="e.g. group by room" style="width:100%;margin-top:4px" />
+      </label>
+      <label style="flex:1">
+        <span class="muted" style="font-size:0.85rem">Model (optional)</span>
+        <input v-model="organizeForm.model" placeholder="override model" style="width:100%;margin-top:4px" />
+      </label>
+    </div>
     <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">
-      <button class="secondary" :disabled="catStarting || catActive" @click="startCategorize()">
+      <button class="secondary" :disabled="catStarting || catActive" @click="startCategorize(organizeBody())">
         {{ catActive ? `Categorizing… ${catJob.done}/${catJob.total || '…'}` : '🏷️ Auto-categorize items' }}
       </button>
-      <button class="secondary" :disabled="cluStarting || cluActive" @click="startCluster()">
+      <button class="secondary" :disabled="cluStarting || cluActive" @click="startCluster(organizeBody())">
         {{ cluActive ? 'Finding groupings…' : '🗂️ Propose groupings' }}
       </button>
       <router-link to="/review" class="muted" style="font-size:.9rem">Review suggestions →</router-link>
