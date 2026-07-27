@@ -83,12 +83,11 @@ def _from_web_search(code):
 
     if not enrich.enabled():
         return None
-    cfg = enrich._cfg()
-    results = enrich.web_search(f"{code} UPC barcode product", key=cfg["key"]) or []
+    results = enrich.web_search(f"{code} UPC barcode product") or []
     if not results:
         return None
     # Best: let the model name the product from ranked results + snippets.
-    hit = enrich.extract_product(results, cfg)
+    hit = enrich.extract_product(results)
     if hit and hit.get("name"):
         return {"name": hit["name"], "brand": hit.get("brand", ""),
                 "barcode": code, "source": "websearch"}

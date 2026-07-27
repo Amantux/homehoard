@@ -22,10 +22,23 @@ class Config:
     # exists, copy the SQLite data into Postgres on startup before serving.
     MIGRATE_FROM_SQLITE = _bool("HBOX_MIGRATE_FROM_SQLITE", False)
 
+    # --- AI provider (chat + tooling) ------------------------------------
+    # HomeHoard talks to LLMs through a provider-agnostic layer (services/ai).
+    # Pick the backend here or in Tools → AI provider (the UI override wins).
+    # "ollama" (local/self-hosted), "openai" (any OpenAI-compatible server, incl.
+    # local SLMs via a base URL), or "claude" (hosted Anthropic). Blank = off.
+    AI_PROVIDER = os.environ.get("HBOX_AI_PROVIDER", "")
+    AI_TIMEOUT_SECONDS = int(os.environ.get("HBOX_AI_TIMEOUT_SECONDS", "60"))
+    ANTHROPIC_API_KEY = os.environ.get("HBOX_ANTHROPIC_API_KEY", "")
+    CLAUDE_MODEL = os.environ.get("HBOX_CLAUDE_MODEL", "claude-opus-4-8")
+    OPENAI_API_KEY = os.environ.get("HBOX_OPENAI_API_KEY", "")
+    OPENAI_MODEL = os.environ.get("HBOX_OPENAI_MODEL", "gpt-4o-mini")
+    OPENAI_BASE_URL = os.environ.get("HBOX_OPENAI_BASE_URL", "")
+
     # --- AI item enrichment (Ollama web search) --------------------------
     # Look items up online to generate a short searchable description. The search
-    # key is the hosted Ollama API key (ollama.com); the model/url synthesize the
-    # result (any local Ollama). Blank key = the feature is simply off.
+    # key is the hosted Ollama API key (ollama.com); the configured AI provider
+    # synthesizes the result. Blank key = enrichment is simply off.
     OLLAMA_SEARCH_KEY = os.environ.get("HBOX_OLLAMA_SEARCH_KEY", "")
     OLLAMA_URL = os.environ.get("HBOX_OLLAMA_URL", "http://localhost:11434")
     OLLAMA_MODEL = os.environ.get("HBOX_OLLAMA_MODEL", "llama3.1")

@@ -22,3 +22,8 @@ gunicorn>=23.0.0
 mcp>=1.9.0
 uvicorn>=0.29.0
 httpx>=0.27.0
+# AI providers (lazy-imported by services/ai; only loaded when that provider is
+# selected). Ollama/OpenAI-compatible SLMs use httpx / the openai SDK; Claude uses
+# the anthropic SDK. A pure-Ollama install never imports these.
+anthropic>=0.40.0
+openai>=1.50.0

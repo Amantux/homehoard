@@ -108,44 +108,82 @@ def _instance_admin_or_403():
 @bp.get("/settings/ai")
 @owner_required
 def get_ai_settings():
-    """The effective Ollama AI config (URL/model + whether a search key is set), and
-    which values are UI overrides vs the add-on config. Instance-admin only."""
+    """Redacted view of the effective AI-provider config: active provider, its
+    base URL / model, whether a key + the web-search key are set, and the provider
+    list. No secret values. Instance-admin only."""
     denied = _instance_admin_or_403()
     if denied:
         return denied
-    from ..services.settings_store import get_overrides, AI_KEYS
-    from ..services import enrich
+    from ..services.ai import provider_config
+    from ..services.ai.registry import list_providers
 
-    ov = get_overrides()
-    cfg = enrich._cfg()
-    return jsonify({
-        "url": cfg["url"], "model": cfg["model"], "hasSearchKey": bool(cfg["key"]),
-        "overridden": {k: (k in ov) for k in AI_KEYS},
-    })
+    return jsonify({**provider_config.settings_view(), "providers": list_providers()})
 
 
 @bp.put("/settings/ai")
 @owner_required
 def put_ai_settings():
-    """Set UI overrides for the Ollama AI config (URL/model/search key). A blank key
-    is left unchanged (doesn't clobber a saved one). Instance-admin only."""
+    """Set the AI-provider overrides (provider / base URL / model / API key) plus the
+    Ollama web-search key. A blank API key is left unchanged (doesn't clobber a saved
+    one). The base URL is SSRF-guarded. Instance-admin only."""
     denied = _instance_admin_or_403()
     if denied:
         return denied
-    from ..services.settings_store import set_values
-    from ..services import enrich
+    from ..services.ai import provider_config
+    from ..services.ai.url_guard import llm_url_ok
 
     data = request.get_json(force=True) or {}
-    pairs = {}
-    if "ollamaUrl" in data:
-        pairs["ollama_url"] = str(data.get("ollamaUrl") or "")
-    if "ollamaModel" in data:
-        pairs["ollama_model"] = str(data.get("ollamaModel") or "")
-    if data.get("ollamaSearchKey"):  # only overwrite the key when a value is supplied
-        pairs["ollama_search_key"] = str(data["ollamaSearchKey"])
-    set_values(pairs)
-    cfg = enrich._cfg()
-    return jsonify({"url": cfg["url"], "model": cfg["model"], "hasSearchKey": bool(cfg["key"])})
+    provider = data.get("provider")
+    if provider is not None and str(provider) not in provider_config.VALID_PROVIDERS:
+        return jsonify({"error": f"unknown provider '{provider}'"}), 422
+    base_url = data.get("baseUrl")
+    if base_url:
+        ok, err = llm_url_ok(str(base_url))
+        if not ok:
+            return jsonify({"error": err}), 422
+    provider_config.set_overrides(
+        provider=str(provider) if provider is not None else None,
+        base_url=str(base_url) if base_url is not None else None,
+        model=str(data["model"]) if "model" in data else None,
+        api_key=str(data["apiKey"]) if data.get("apiKey") else None,
+        search_key=str(data["ollamaSearchKey"]) if data.get("ollamaSearchKey") else None,
+        clear_api_key=bool(data.get("clearApiKey")),
+    )
+    from ..services.ai.registry import list_providers
+    return jsonify({**provider_config.settings_view(), "providers": list_providers()})
+
+
+@bp.get("/settings/ai/providers")
+@owner_required
+def get_ai_providers():
+    """The provider list with availability + which is active. Instance-admin only."""
+    denied = _instance_admin_or_403()
+    if denied:
+        return denied
+    from ..services.ai.registry import list_providers
+    return jsonify({"providers": list_providers()})
+
+
+@bp.post("/settings/ai/models")
+@owner_required
+def probe_ai_models():
+    """Live model list for the picker, using the values currently in the form
+    (provider/base URL/key) — falls back to the saved/env config. Instance-admin only."""
+    denied = _instance_admin_or_403()
+    if denied:
+        return denied
+    from ..services.ai import provider_config
+    from ..services.ai.url_guard import llm_url_ok
+
+    data = request.get_json(silent=True) or {}
+    base_url = data.get("baseUrl")
+    if base_url:
+        ok, err = llm_url_ok(str(base_url))
+        if not ok:
+            return jsonify({"error": err}), 422
+    eff = provider_config.probe_config(
+        provider=data.get("provider"), base_url=base_url, api_key=data.get("apiKey"))
+    return jsonify({"models": provider_config.list_models(eff)})
 
 
 @bp.get("/qrcode")

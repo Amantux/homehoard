@@ -1,10 +1,20 @@
 """Instance-global settings overrides (UI-editable), layered over the add-on/env
-config. Currently the Ollama AI settings that enrichment + the barcode web-search
-use — a stored value wins over the add-on config; blank falls back to it."""
+config. Holds the AI-provider settings that chat + tooling use — a stored value
+wins over the add-on config; blank falls back to it. Per-provider namespaced so a
+secret for one vendor never reaches another's endpoint (see services/ai/provider_config).
+"""
 from ..extensions import db
 from ..models import AppSetting
 
-AI_KEYS = ("ollama_url", "ollama_model", "ollama_search_key")
+AI_KEYS = (
+    "ai_provider",
+    # Ollama (original names kept for back-compat with the first-shipped card)
+    "ollama_url", "ollama_model", "ollama_api_key", "ollama_search_key",
+    # OpenAI-compatible
+    "openai_base_url", "openai_model", "openai_api_key",
+    # Anthropic Claude
+    "claude_model", "claude_api_key",
+)
 
 
 def get_overrides() -> dict:

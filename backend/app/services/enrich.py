@@ -1,22 +1,25 @@
-"""AI-enriched, searchable item descriptions via Ollama's hosted web search.
+"""AI-enriched, searchable item descriptions.
 
-Given an item's identifying fields, search the web and synthesize a short factual
-description + keywords so search finds the item by what it actually is. Bounded
-and best-effort — it never raises to the caller (returns None when search is off
-or finds nothing).
+Given an item's identifying fields, search the web (Ollama's hosted web search)
+and synthesize a short factual description + keywords with the configured AI
+provider (Ollama / OpenAI-compatible / Claude) so search finds the item by what it
+actually is. Bounded and best-effort — it never raises to the caller (returns None
+when search is off or finds nothing).
 
-Ollama web search: POST https://ollama.com/api/web_search with
-`Authorization: Bearer <OLLAMA_API_KEY>` and {"query","max_results"} ->
-{"results":[{"title","url","content"}]}.
+Web search is Ollama-cloud-specific (POST https://ollama.com/api/web_search with
+``Authorization: Bearer <OLLAMA_SEARCH_KEY>`` -> {"results":[{title,url,content}]}),
+keyed independently of the generation provider. Synthesis routes through
+``services.ai.get_provider`` so it honors whatever LLM/SLM is wired up.
 """
 from __future__ import annotations
 
-import json
 import logging
 from urllib.parse import urlparse
 
 import httpx
-from flask import current_app
+
+from .ai.provider_config import effective
+from .ai.registry import get_provider_or_none
 
 _LOGGER = logging.getLogger("homehoard.enrich")
 _SEARCH_URL = "https://ollama.com/api/web_search"
@@ -26,25 +29,21 @@ _AGGREGATOR_HOSTS = ("barcodelookup", "upcitemdb", "barcodespider", "go-upc",
                      "upcdatabase", "ean-search", "buycott", "barcode-list")
 
 
-def _cfg():
-    c = current_app.config
-    # UI-set overrides (app_settings) win over the add-on/env config; blank → fall back.
-    from .settings_store import get_overrides
-    ov = get_overrides()
-    return {
-        "key": (ov.get("ollama_search_key") or c.get("OLLAMA_SEARCH_KEY") or "").strip(),
-        "url": (ov.get("ollama_url") or c.get("OLLAMA_URL")
-                or "http://localhost:11434").rstrip("/"),
-        "model": (ov.get("ollama_model") or c.get("OLLAMA_MODEL") or "llama3.1").strip(),
-    }
+def search_key() -> str:
+    """The Ollama-cloud web-search key (independent of the generation provider)."""
+    return (effective().OLLAMA_SEARCH_KEY or "").strip()
 
 
 def enabled() -> bool:
-    return bool(_cfg()["key"])
+    """Enrichment needs the web-search key; without it there's nothing to search."""
+    return bool(search_key())
 
 
-def web_search(query, *, key, max_results=3):
+def web_search(query, *, key=None, max_results=3):
     """Ollama hosted web search. Returns a list of {title,url,content}, or []."""
+    key = key if key is not None else search_key()
+    if not key:
+        return []
     try:
         r = httpx.post(_SEARCH_URL, headers={"Authorization": f"Bearer {key}"},
                        json={"query": query, "max_results": max_results}, timeout=_TIMEOUT)
@@ -60,22 +59,22 @@ def _query(fields) -> str:
     return " ".join(str(p).strip() for p in parts if p).strip()
 
 
-def _synthesize(fields, results, cfg):
-    """Turn search results into {description, keywords}. Uses the local Ollama
-    model when reachable; otherwise falls back to a trimmed top-result snippet."""
-    snippets = "\n\n".join(f"{r.get('title', '')}\n{r.get('content', '')}"[:600]
-                           for r in results[:3])
+def _snippets(results) -> str:
+    return "\n\n".join(f"{r.get('title', '')}\n{r.get('content', '')}"[:600]
+                       for r in results[:3])
+
+
+def _synthesize(fields, results):
+    """Turn search results into {description, keywords}. Uses the configured AI
+    provider; falls back to a trimmed top-result snippet when none is available."""
     name = fields.get("name") or "this item"
-    if cfg["model"] and cfg["url"]:
+    provider = get_provider_or_none()
+    if provider is not None:
         prompt = (f"From the web results below, write a concise factual description of "
                   f"'{name}' (1-2 sentences) and 6-10 search keywords. Respond ONLY as "
-                  f'JSON: {{"description": "...", "keywords": ["..."]}}.\n\n{snippets}')
+                  f'JSON: {{"description": "...", "keywords": ["..."]}}.\n\n{_snippets(results)}')
         try:
-            r = httpx.post(f"{cfg['url']}/api/generate",
-                           json={"model": cfg["model"], "prompt": prompt,
-                                 "stream": False, "format": "json"}, timeout=_TIMEOUT)
-            r.raise_for_status()
-            data = json.loads((r.json() or {}).get("response") or "{}")
+            data = provider.complete_json(prompt)
             desc = (data.get("description") or "").strip()
             kws = [str(k).strip() for k in (data.get("keywords") or []) if k]
             if desc:
@@ -96,25 +95,21 @@ def rank_results(results):
     return sorted(results, key=is_aggregator)
 
 
-def extract_product(results, cfg):
-    """Identify the product from web-search results using the local Ollama model
-    (the same /api/generate call describe() uses). Returns {name, brand} or None.
-    Ranks results first and feeds titles + snippets, so it beats scraping a title."""
+def extract_product(results):
+    """Identify the product from web-search results using the configured AI
+    provider. Returns {name, brand} or None. Ranks results first and feeds titles +
+    snippets, so it beats scraping a title."""
     ranked = rank_results(results)
-    snippets = "\n\n".join(f"{r.get('title', '')}\n{r.get('content', '')}"[:600]
-                           for r in ranked[:3])
-    if not snippets.strip() or not (cfg.get("model") and cfg.get("url")):
+    snippets = _snippets(ranked)
+    provider = get_provider_or_none()
+    if not snippets.strip() or provider is None:
         return None
     prompt = ('From the web results below, identify the single retail product. Respond '
               'ONLY as JSON: {"name": "<product name>", "brand": "<brand or empty>"}. '
               'If the results are only barcode-lookup pages with no real product, return '
               f'an empty name.\n\n{snippets}')
     try:
-        r = httpx.post(f"{cfg['url']}/api/generate",
-                       json={"model": cfg["model"], "prompt": prompt,
-                             "stream": False, "format": "json"}, timeout=_TIMEOUT)
-        r.raise_for_status()
-        data = json.loads((r.json() or {}).get("response") or "{}")
+        data = provider.complete_json(prompt)
         name = (data.get("name") or "").strip()[:80]
         if name:
             return {"name": name, "brand": (data.get("brand") or "").strip()[:80]}
@@ -126,16 +121,15 @@ def extract_product(results, cfg):
 def describe(fields) -> dict | None:
     """Return {description, keywords, sources} for an item, or None when web search
     is not configured, there's nothing to search, or nothing was found."""
-    cfg = _cfg()
-    if not cfg["key"]:
+    if not enabled():
         return None
     query = _query(fields)
     if not query:
         return None
-    results = web_search(query, key=cfg["key"])
+    results = web_search(query)
     if not results:
         return None
-    out = _synthesize(fields, results, cfg)
+    out = _synthesize(fields, results)
     if not out.get("description"):
         return None
     out["sources"] = [r.get("url") for r in results[:3] if r.get("url")]
