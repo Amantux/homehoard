@@ -292,10 +292,10 @@ const actions = [
     </div>
     <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">
       <button class="secondary" :disabled="catStarting || catActive" @click="startCategorize(organizeBody())">
-        {{ catActive ? `Categorizing… ${catJob.done}/${catJob.total || '…'}` : '🏷️ Auto-categorize items' }}
+        {{ catActive ? `Categorizing… ${catJob.done}/${catJob.total || '…'}` : 'Auto-categorize items' }}
       </button>
       <button class="secondary" :disabled="cluStarting || cluActive" @click="startCluster(organizeBody())">
-        {{ cluActive ? 'Finding groupings…' : '🗂️ Propose groupings' }}
+        {{ cluActive ? 'Finding groupings…' : 'Propose groupings' }}
       </button>
       <router-link to="/review" class="muted" style="font-size:.9rem">Review suggestions →</router-link>
     </div>
