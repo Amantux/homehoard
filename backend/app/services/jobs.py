@@ -50,10 +50,11 @@ def _active_job(gid: str, kind: str) -> Job | None:
             .first())
 
 
-def enqueue(kind: str, gid: str) -> Job:
+def enqueue(kind: str, gid: str, params: dict | None = None) -> Job:
     """Create a pending job, or return the group's existing active job of this kind.
 
-    One active job per group+kind is enforced by a partial unique index, so two
+    ``params`` are per-run options (e.g. enrich {note, provider, model}) stored as
+    JSON. One active job per group+kind is enforced by a partial unique index, so two
     concurrent enqueues (double-click, two tabs) can't both create one — the loser's
     INSERT hits the constraint and we return the winner instead of racing two jobs.
     """
@@ -62,7 +63,8 @@ def enqueue(kind: str, gid: str) -> Job:
     existing = _active_job(gid, kind)
     if existing:
         return existing
-    job = Job(kind=kind, group_id=gid, status="pending")
+    job = Job(kind=kind, group_id=gid, status="pending",
+              params=json.dumps(params) if params else "")
     db.session.add(job)
     try:
         db.session.commit()
@@ -145,12 +147,24 @@ def _enrich_job(job: Job) -> dict:
     configured provider + Ollama web search. Commits per item so progress + partial
     results survive a worker kill."""
     from . import enrich
+    from .ai.base import ProviderError
+    from .ai.registry import provider_for
     from ..api.items import _apply_description, _describe_fields  # local: api↔services
     from ..models import Item
 
     if not enrich.enabled():
         raise JobError("Web search isn't configured (set an Ollama search key).")
     gid = job.group_id
+    opts = json.loads(job.params) if job.params else {}
+    note = str(opts.get("note") or "")
+    # A per-run provider/model override; None → the configured default. A model
+    # alone (no provider) overrides the model on the configured provider.
+    provider = None
+    if opts.get("provider") or opts.get("model"):
+        try:
+            provider = provider_for(opts.get("provider"), opts.get("model"))
+        except ProviderError as exc:
+            raise JobError(str(exc)) from exc
 
     def missing_q():
         return (db.session.query(Item)
@@ -161,7 +175,7 @@ def _enrich_job(job: Job) -> dict:
     bump(job, done=0, total=len(items))
     described = 0
     for i, item in enumerate(items, 1):
-        result = enrich.describe(_describe_fields(item))
+        result = enrich.describe(_describe_fields(item), provider=provider, note=note)
         if result:
             _apply_description(item, result)
             described += 1

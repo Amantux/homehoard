@@ -51,7 +51,7 @@ def test_enrich_job_describes_missing_items(auth_client, app, monkeypatch):
         db.session.commit()
         monkeypatch.setattr("app.services.enrich.enabled", lambda: True)
         monkeypatch.setattr("app.services.enrich.describe",
-                            lambda fields: {"description": "a power tool", "keywords": ["tool"]})
+                            lambda fields, **kw: {"description": "a power tool", "keywords": ["tool"]})
 
         job = jobs.enqueue("enrich", gid)
         claimed = jobs.claim_one()
@@ -138,6 +138,67 @@ def test_create_job_endpoint_and_progress(auth_client):
 
 def test_create_job_unknown_kind_404(auth_client):
     assert auth_client.post("/api/v1/jobs/bogus").status_code == 404
+
+
+def test_enqueue_stores_params(auth_client, app):
+    import json
+    gid = _gid(app)
+    with app.app_context():
+        job = jobs.enqueue("enrich", gid, {"note": "camping", "provider": "openai"})
+        assert json.loads(job.params) == {"note": "camping", "provider": "openai"}
+
+
+def test_enrich_job_passes_note_and_provider_override(auth_client, app, monkeypatch):
+    gid = _gid(app)
+    captured = {}
+    with app.app_context():
+        db.session.add(Item(name="Tent", group_id=gid))
+        db.session.commit()
+        monkeypatch.setattr("app.services.enrich.enabled", lambda: True)
+
+        def fake_describe(fields, *, provider=None, note=""):
+            captured["note"] = note
+            captured["provider"] = provider
+            return {"description": "a tent", "keywords": []}
+        monkeypatch.setattr("app.services.enrich.describe", fake_describe)
+        sentinel = object()
+        monkeypatch.setattr("app.services.ai.registry.provider_for",
+                            lambda p, m=None: sentinel)
+
+        jobs.enqueue("enrich", gid, {"note": "camping gear", "provider": "openai", "model": "gpt"})
+        jobs.run_job(jobs.claim_one())
+
+        assert captured["note"] == "camping gear" and captured["provider"] is sentinel
+
+
+def test_create_job_rejects_unknown_provider(auth_client):
+    assert auth_client.post("/api/v1/jobs/enrich",
+                            json={"provider": "bogus"}).status_code == 422
+
+
+def test_create_job_non_dict_body_does_not_500(auth_client):
+    # A well-formed but non-object JSON body must be ignored, not crash.
+    assert auth_client.post("/api/v1/jobs/enrich", json=[1, 2, 3]).status_code == 202
+
+
+def test_enrich_job_model_only_override_still_applies(auth_client, app, monkeypatch):
+    gid = _gid(app)
+    seen = {}
+    with app.app_context():
+        db.session.add(Item(name="Rope", group_id=gid))
+        db.session.commit()
+        monkeypatch.setattr("app.services.enrich.enabled", lambda: True)
+        monkeypatch.setattr("app.services.enrich.describe",
+                            lambda fields, **kw: {"description": "d", "keywords": []})
+
+        def fake_provider_for(p, m=None):
+            seen["provider"], seen["model"] = p, m
+            return object()
+        monkeypatch.setattr("app.services.ai.registry.provider_for", fake_provider_for)
+
+        jobs.enqueue("enrich", gid, {"model": "llama3.2"})  # model, no provider
+        jobs.run_job(jobs.claim_one())
+        assert seen == {"provider": None, "model": "llama3.2"}
 
 
 def test_job_get_cross_group_404(auth_client, app):

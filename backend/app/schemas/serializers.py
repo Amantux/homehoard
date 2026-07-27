@@ -20,6 +20,7 @@ def job_out(j):
         "done": j.done,
         "result": json.loads(j.result) if j.result else None,
         "error": j.error or None,
+        "params": json.loads(j.params) if j.params else {},
         "createdAt": iso(j.created_at),
         "updatedAt": iso(j.updated_at),
     }

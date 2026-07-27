@@ -64,15 +64,18 @@ def _snippets(results) -> str:
                        for r in results[:3])
 
 
-def _synthesize(fields, results):
-    """Turn search results into {description, keywords}. Uses the configured AI
-    provider; falls back to a trimmed top-result snippet when none is available."""
+def _synthesize(fields, results, provider=None, note=""):
+    """Turn search results into {description, keywords}. Uses the given AI provider
+    (or the configured one); falls back to a trimmed top-result snippet when none is
+    available. ``note`` is optional user guidance folded into the prompt."""
     name = fields.get("name") or "this item"
-    provider = get_provider_or_none()
+    provider = provider or get_provider_or_none()
     if provider is not None:
+        guidance = f"\n\nExtra guidance from the user: {note.strip()}" if note.strip() else ""
         prompt = (f"From the web results below, write a concise factual description of "
                   f"'{name}' (1-2 sentences) and 6-10 search keywords. Respond ONLY as "
-                  f'JSON: {{"description": "...", "keywords": ["..."]}}.\n\n{_snippets(results)}')
+                  f'JSON: {{"description": "...", "keywords": ["..."]}}.{guidance}'
+                  f"\n\n{_snippets(results)}")
         try:
             data = provider.complete_json(prompt)
             desc = (data.get("description") or "").strip()
@@ -118,9 +121,10 @@ def extract_product(results):
     return None
 
 
-def describe(fields) -> dict | None:
+def describe(fields, *, provider=None, note="") -> dict | None:
     """Return {description, keywords, sources} for an item, or None when web search
-    is not configured, there's nothing to search, or nothing was found."""
+    is not configured, there's nothing to search, or nothing was found. ``provider``
+    overrides the generation model for this call; ``note`` adds user guidance."""
     if not enabled():
         return None
     query = _query(fields)
@@ -129,7 +133,7 @@ def describe(fields) -> dict | None:
     results = web_search(query)
     if not results:
         return None
-    out = _synthesize(fields, results)
+    out = _synthesize(fields, results, provider=provider, note=note)
     if not out.get("description"):
         return None
     out["sources"] = [r.get("url") for r in results[:3] if r.get("url")]

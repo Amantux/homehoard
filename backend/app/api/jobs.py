@@ -24,11 +24,29 @@ def _get_job(job_id) -> Job:
 @bp.post("/jobs/<kind>")
 @owner_required
 def create_job(kind):
-    """Enqueue (or resume) a background job of this kind for the group."""
+    """Enqueue (or resume) a background job of this kind for the group.
+
+    Optional JSON body: ``note`` (extra guidance folded into the AI prompt),
+    ``provider`` + ``model`` (run this job on a specific configured provider/model
+    instead of the global default)."""
     if kind not in known_kinds():
         return jsonify({"error": f"unknown job kind '{kind}'"}), 404
+    from ..services.ai.provider_config import VALID_PROVIDERS
+
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):  # a non-object body (array/scalar) → no params
+        data = {}
+    params: dict = {}
+    if data.get("note"):
+        params["note"] = str(data["note"])[:1000]
+    if data.get("provider"):
+        if str(data["provider"]) not in VALID_PROVIDERS:
+            return jsonify({"error": f"unknown provider '{data['provider']}'"}), 422
+        params["provider"] = str(data["provider"])
+    if data.get("model"):
+        params["model"] = str(data["model"])[:100]
     try:
-        job = enqueue(kind, current_group().id)
+        job = enqueue(kind, current_group().id, params or None)
     except JobError as exc:
         return jsonify({"error": str(exc)}), 400
     return jsonify(job_out(job)), 202

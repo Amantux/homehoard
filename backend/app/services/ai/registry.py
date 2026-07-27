@@ -10,7 +10,7 @@ from .base import AIProvider, ProviderError
 from .claude import ClaudeProvider
 from .ollama import OllamaProvider
 from .openai import OpenAIProvider
-from .provider_config import effective
+from .provider_config import effective, effective_for
 
 _REGISTRY: dict[str, type[AIProvider]] = {
     "ollama": OllamaProvider,
@@ -52,6 +52,21 @@ def get_provider_or_none(config=None) -> AIProvider | None:
         return get_provider(config)
     except ProviderError:
         return None
+
+
+def provider_for(provider=None, model=None) -> AIProvider:
+    """Build a provider for a single run with an optional provider/model override
+    (falls back to the configured one). Raises ProviderError if unavailable."""
+    eff = effective_for(provider, model)
+    name = _configured_name(eff)
+    if not name:
+        raise ProviderError("No AI provider configured.")
+    if name not in _REGISTRY:
+        raise ProviderError(f"Unknown AI provider '{name}'.")
+    p = _REGISTRY[name](eff)
+    if not p.available():
+        raise ProviderError(f"AI provider '{name}' is not fully configured.")
+    return p
 
 
 def list_providers(config=None) -> list[dict]:

@@ -93,15 +93,24 @@ async function runAction(path, label) {
 // Enrichment now runs as a background job (async, survives navigation). We enqueue
 // and poll for progress; on mount we resume showing any job already running.
 const enrichJob = ref(null)
+const enrichForm = ref({ note: '', provider: '', model: '' })
+const enrichStarting = ref(false)
 let enrichTimer = null
 const enrichActive = computed(() =>
   enrichJob.value && ['pending', 'running'].includes(enrichJob.value.status))
 
 async function startEnrich() {
+  if (enrichStarting.value) return
+  enrichStarting.value = true
+  const body = {}
+  if (enrichForm.value.note.trim()) body.note = enrichForm.value.note.trim()
+  if (enrichForm.value.provider) body.provider = enrichForm.value.provider
+  if (enrichForm.value.model.trim()) body.model = enrichForm.value.model.trim()
   try {
-    enrichJob.value = await api.post('/jobs/enrich')
+    enrichJob.value = await api.post('/jobs/enrich', body)
     pollEnrich()
   } catch (e) { ui.error(e.message || 'Could not start enrichment.') }
+  finally { enrichStarting.value = false }
 }
 let enrichPollFails = 0
 async function pollEnrich() {
@@ -207,8 +216,30 @@ const actions = [
       so search finds them by what they actually are. Needs an Ollama search key set in the add-on options
       (or <code>HBOX_OLLAMA_SEARCH_KEY</code>). Runs in the background — you can leave this page.
       Per-item, use ✨ Describe on the item page.</p>
-    <button v-if="!enrichActive" class="secondary" @click="startEnrich">
-      ✨ Describe items missing a description</button>
+    <div v-if="!enrichActive">
+      <label style="display:block;max-width:520px;margin-bottom:8px">
+        <span class="muted" style="font-size:0.85rem">Note (optional guidance for the AI)</span>
+        <textarea v-model="enrichForm.note" rows="2"
+          placeholder="e.g. these are camping items — note brand and model" style="width:100%;margin-top:4px"></textarea>
+      </label>
+      <div style="display:flex;gap:8px;max-width:520px;margin-bottom:10px">
+        <label style="flex:1">
+          <span class="muted" style="font-size:0.85rem">Model to use</span>
+          <select v-model="enrichForm.provider" style="width:100%;margin-top:4px">
+            <option value="">Default provider</option>
+            <option value="ollama">Ollama</option>
+            <option value="openai">OpenAI-compatible</option>
+            <option value="claude">Anthropic Claude</option>
+          </select>
+        </label>
+        <label style="flex:1">
+          <span class="muted" style="font-size:0.85rem">Model name (optional)</span>
+          <input v-model="enrichForm.model" placeholder="override model" style="width:100%;margin-top:4px" />
+        </label>
+      </div>
+      <button class="secondary" :disabled="enrichStarting" @click="startEnrich">
+        {{ enrichStarting ? 'Starting…' : '✨ Describe items missing a description' }}</button>
+    </div>
     <div v-else style="max-width:520px">
       <div class="muted" style="font-size:0.85rem;margin-bottom:6px">
         Describing… {{ enrichJob.done }}<span v-if="enrichJob.total">/{{ enrichJob.total }}</span> items</div>

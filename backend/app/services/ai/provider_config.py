@@ -80,6 +80,22 @@ def effective(config=None) -> SimpleNamespace:
     return effective_settings(cfg, get_overrides())
 
 
+def effective_for(provider=None, model=None, config=None) -> SimpleNamespace:
+    """The effective config with a one-off provider/model override for a single run
+    (e.g. a background job). Every provider's saved credentials are already resolved
+    on the namespace, so switching the active provider still uses its stored key/URL;
+    ``model`` overrides only the chosen provider's model."""
+    eff = effective(config)
+    if provider:
+        eff.AI_PROVIDER = provider.strip().lower()
+    if model:
+        attr = {"ollama": "OLLAMA_MODEL", "openai": "OPENAI_MODEL",
+                "claude": "CLAUDE_MODEL"}.get(eff.AI_PROVIDER)
+        if attr:
+            setattr(eff, attr, model.strip())
+    return eff
+
+
 # --- writes ---------------------------------------------------------------
 def _pkey(provider: str, field: str) -> str:
     # Ollama keeps its original (un-prefixed style) names for back-compat.

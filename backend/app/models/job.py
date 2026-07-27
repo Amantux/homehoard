@@ -28,6 +28,8 @@ class Job(IDMixin, TimestampMixin, db.Model):
     done: Mapped[int] = mapped_column(Integer, default=0)
     result: Mapped[str] = mapped_column(Text, default="")   # JSON summary when done
     error: Mapped[str] = mapped_column(Text, default="")
+    # JSON options for the run (e.g. enrich {note, provider, model}).
+    params: Mapped[str] = mapped_column(Text, default="", server_default="")
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     group_id: Mapped[str] = mapped_column(
