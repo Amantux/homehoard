@@ -1,9 +1,33 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { api } from '../api'
 import { useUI } from '../stores/ui'
 
 const ui = useUI()
+
+// AI provider (Ollama) config — overrides the add-on options from the UI.
+const ai = ref({ url: '', model: '', hasSearchKey: false })
+const aiForm = ref({ ollamaUrl: '', ollamaModel: '', ollamaSearchKey: '' })
+const aiSaving = ref(false)
+// Only the instance admin (founding household owner) may read/edit shared AI infra;
+// others get 403, so hide the card rather than show an editable form that can't save.
+const canEditAi = ref(false)
+async function loadAi() {
+  try {
+    ai.value = await api.get('/settings/ai')
+    aiForm.value = { ollamaUrl: ai.value.url, ollamaModel: ai.value.model, ollamaSearchKey: '' }
+    canEditAi.value = true
+  } catch (e) { canEditAi.value = false }
+}
+async function saveAi() {
+  aiSaving.value = true
+  try {
+    ai.value = await api.put('/settings/ai', aiForm.value)
+    aiForm.value.ollamaSearchKey = ''
+    ui.toast('AI settings saved')
+  } catch (e) { ui.error(e.message || 'Save failed') } finally { aiSaving.value = false }
+}
+onMounted(loadAi)
 
 async function runAction(path, label) {
   const res = await api.post('/actions/' + path)
@@ -29,6 +53,29 @@ const actions = [
 
 <template>
   <div class="page-head"><h1>Tools</h1></div>
+
+  <div v-if="canEditAi" class="card">
+    <h2>AI provider</h2>
+    <p class="muted">The Ollama server used for AI descriptions and the barcode web-search
+      fallback. Set it here (overrides the add-on options) or in the add-on configuration.
+      The <strong>search key</strong> is your ollama.com API key for hosted web search.</p>
+    <label style="display:block;max-width:520px;margin-bottom:10px">
+      <span class="muted" style="font-size:0.85rem">Ollama URL</span>
+      <input v-model="aiForm.ollamaUrl" placeholder="http://localhost:11434" style="width:100%;margin-top:4px" />
+    </label>
+    <label style="display:block;max-width:520px;margin-bottom:10px">
+      <span class="muted" style="font-size:0.85rem">Model</span>
+      <input v-model="aiForm.ollamaModel" placeholder="llama3.1" style="width:100%;margin-top:4px" />
+    </label>
+    <label style="display:block;max-width:520px;margin-bottom:10px">
+      <span class="muted" style="font-size:0.85rem">Ollama search key {{ ai.hasSearchKey ? '— saved, leave blank to keep' : '' }}</span>
+      <input v-model="aiForm.ollamaSearchKey" type="password"
+        :placeholder="ai.hasSearchKey ? '•••••••••• saved' : 'ollama.com API key'" style="width:100%;margin-top:4px" />
+    </label>
+    <div class="row" style="justify-content:flex-end;max-width:520px">
+      <button :disabled="aiSaving" @click="saveAi">{{ aiSaving ? 'Saving…' : 'Save' }}</button>
+    </div>
+  </div>
 
   <div class="card">
     <h2>AI descriptions</h2>

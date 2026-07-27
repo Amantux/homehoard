@@ -4,12 +4,12 @@ import os
 import tempfile
 import time
 
-from flask import Blueprint, request, jsonify, Response, send_file, current_app
+from flask import Blueprint, request, jsonify, Response, send_file, current_app, g
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from ..extensions import db, limiter
-from ..models import Item
+from ..models import Group, Item
 from ..auth import login_required, owner_required, current_group
 from ..services.csv_io import export_items, import_items
 
@@ -83,6 +83,69 @@ def ready():
 @bp.get("/currency")
 def currency():
     return jsonify(CURRENCIES)
+
+
+def _instance_admin_or_403():
+    """The AI-provider config is instance-wide infrastructure — it overrides the HA
+    add-on options and drives outbound calls (Ollama URL, hosted-search key) shared by
+    every household. `owner_required` only proves ownership of the caller's OWN group,
+    so it would let any self-registered household's owner repoint that shared backend
+    (SSRF / cross-tenant leakage). Restrict to the founding household's owner — the
+    lowest-id group, which in the normal single-household add-on is simply the owner.
+    Returns a 403 response tuple when the caller isn't that admin, else None."""
+    # Group ids are random UUIDs, so "founding" is the earliest-created group
+    # (id as a stable tiebreaker), not the lexicographically-smallest id.
+    founding = (
+        db.session.query(Group.id)
+        .order_by(Group.created_at.asc(), Group.id.asc())
+        .first()
+    )
+    if founding is None or g.current_user.group_id != founding[0]:
+        return jsonify({"error": "instance admin privileges required"}), 403
+    return None
+
+
+@bp.get("/settings/ai")
+@owner_required
+def get_ai_settings():
+    """The effective Ollama AI config (URL/model + whether a search key is set), and
+    which values are UI overrides vs the add-on config. Instance-admin only."""
+    denied = _instance_admin_or_403()
+    if denied:
+        return denied
+    from ..services.settings_store import get_overrides, AI_KEYS
+    from ..services import enrich
+
+    ov = get_overrides()
+    cfg = enrich._cfg()
+    return jsonify({
+        "url": cfg["url"], "model": cfg["model"], "hasSearchKey": bool(cfg["key"]),
+        "overridden": {k: (k in ov) for k in AI_KEYS},
+    })
+
+
+@bp.put("/settings/ai")
+@owner_required
+def put_ai_settings():
+    """Set UI overrides for the Ollama AI config (URL/model/search key). A blank key
+    is left unchanged (doesn't clobber a saved one). Instance-admin only."""
+    denied = _instance_admin_or_403()
+    if denied:
+        return denied
+    from ..services.settings_store import set_values
+    from ..services import enrich
+
+    data = request.get_json(force=True) or {}
+    pairs = {}
+    if "ollamaUrl" in data:
+        pairs["ollama_url"] = str(data.get("ollamaUrl") or "")
+    if "ollamaModel" in data:
+        pairs["ollama_model"] = str(data.get("ollamaModel") or "")
+    if data.get("ollamaSearchKey"):  # only overwrite the key when a value is supplied
+        pairs["ollama_search_key"] = str(data["ollamaSearchKey"])
+    set_values(pairs)
+    cfg = enrich._cfg()
+    return jsonify({"url": cfg["url"], "model": cfg["model"], "hasSearchKey": bool(cfg["key"])})
 
 
 @bp.get("/qrcode")

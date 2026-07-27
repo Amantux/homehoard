@@ -28,10 +28,14 @@ _AGGREGATOR_HOSTS = ("barcodelookup", "upcitemdb", "barcodespider", "go-upc",
 
 def _cfg():
     c = current_app.config
+    # UI-set overrides (app_settings) win over the add-on/env config; blank → fall back.
+    from .settings_store import get_overrides
+    ov = get_overrides()
     return {
-        "key": (c.get("OLLAMA_SEARCH_KEY") or "").strip(),
-        "url": (c.get("OLLAMA_URL") or "http://localhost:11434").rstrip("/"),
-        "model": (c.get("OLLAMA_MODEL") or "llama3.1").strip(),
+        "key": (ov.get("ollama_search_key") or c.get("OLLAMA_SEARCH_KEY") or "").strip(),
+        "url": (ov.get("ollama_url") or c.get("OLLAMA_URL")
+                or "http://localhost:11434").rstrip("/"),
+        "model": (ov.get("ollama_model") or c.get("OLLAMA_MODEL") or "llama3.1").strip(),
     }
 
 
