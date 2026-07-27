@@ -70,6 +70,10 @@ class Config:
     # Allow public self-registration of new users/groups.
     ALLOW_REGISTRATION = _bool("HBOX_ALLOW_REGISTRATION", True)
 
+    # Background job worker (async AI tooling). On by default; disabled in tests,
+    # which drive the job functions directly.
+    WORKER_ENABLED = _bool("HBOX_WORKER_ENABLED", True)
+
     # Minimum password length enforced on register / change-password.
     MIN_PASSWORD_LENGTH = int(os.environ.get("HBOX_MIN_PASSWORD_LENGTH", "8"))
 

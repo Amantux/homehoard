@@ -13,11 +13,13 @@ from .checkout import CheckoutEntry  # noqa: F401
 from .notifier import Notifier  # noqa: F401
 from .app_setting import AppSetting  # noqa: F401
 from .chat import ChatSession, ChatMessage  # noqa: F401
+from .job import Job  # noqa: F401
 
 __all__ = [
     "AppSetting",
     "ChatSession",
     "ChatMessage",
+    "Job",
     "Group",
     "GroupInvitation",
     "User",

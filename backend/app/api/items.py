@@ -7,7 +7,7 @@ from sqlalchemy.orm import selectinload
 
 from ..extensions import db, limiter
 from ..models import Item, ItemField, Label, Location, Bin
-from ..auth import login_required, owner_required, current_group
+from ..auth import login_required, current_group
 from ..schemas.serializers import item_out, item_summary
 from ..services.holdings import ensure_holding, resync_item, primary_holding
 from .lookup import location_path_str
@@ -470,8 +470,6 @@ def _describe_fields(item):
 
 
 _SEARCH_TEXT_MAX = 600  # keep search_text bounded (LLM/web output is untrusted)
-_BATCH_FETCH = 10       # items pulled per batch call
-_BATCH_BUDGET_S = 60    # stay well under the gunicorn worker timeout (120s)
 
 
 def _apply_description(item, result):
@@ -502,37 +500,6 @@ def describe_item(item_id):
     return jsonify({"searchText": item.search_text, "description": result["description"],
                     "keywords": result.get("keywords", []),
                     "sources": result.get("sources", [])})
-
-
-@bp.post("/items/describe-missing")
-@limiter.limit("6/hour")
-@owner_required
-def describe_missing():
-    """Batch-enrich items with no search_text yet. Owner-only (bulk external, paid
-    calls). Commits per item so a worker-kill keeps completed work, and stops well
-    before the worker timeout; returns how many are still missing so the UI can
-    resume with another call."""
-    import time
-
-    from ..services import enrich
-
-    if not enrich.enabled():
-        return jsonify({"error": "Web search isn't configured."}), 409
-    missing = (db.session.query(Item)
-               .filter(Item.group_id == current_group().id, Item.archived.is_(False),
-                       db.or_(Item.search_text.is_(None), Item.search_text == "")))
-    items = missing.limit(_BATCH_FETCH).all()
-    deadline = time.monotonic() + _BATCH_BUDGET_S
-    done = 0
-    for item in items:
-        if time.monotonic() > deadline:
-            break
-        result = enrich.describe(_describe_fields(item))
-        if result:
-            _apply_description(item, result)
-            db.session.commit()  # per item — partial progress survives a timeout
-            done += 1
-    return jsonify({"described": done, "scanned": len(items), "remaining": missing.count()})
 
 
 @bp.get("/items/identify/<code>")

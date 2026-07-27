@@ -11,6 +11,20 @@ def iso(dt):
     return dt
 
 
+def job_out(j):
+    return {
+        "id": j.id,
+        "kind": j.kind,
+        "status": j.status,
+        "total": j.total,
+        "done": j.done,
+        "result": json.loads(j.result) if j.result else None,
+        "error": j.error or None,
+        "createdAt": iso(j.created_at),
+        "updatedAt": iso(j.updated_at),
+    }
+
+
 def chat_message_out(m):
     return {
         "id": m.id,

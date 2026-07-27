@@ -14,6 +14,7 @@ def app(tmp_path):
         SECRET_KEY = "test-secret-key-that-is-long-enough-32b"
         RATELIMIT_ENABLED = False
         PROXY_HOPS = 0
+        WORKER_ENABLED = False  # tests drive job functions directly, no poller thread
 
     app = create_app(TestConfig)
     yield app

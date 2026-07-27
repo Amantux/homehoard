@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { api } from '../api'
 import { useUI } from '../stores/ui'
 
@@ -90,14 +90,56 @@ async function runAction(path, label) {
   ui.toast(`${label}: ${res.completed} updated`)
 }
 
-const enriching = ref(false)
-async function enrichMissing() {
-  enriching.value = true
+// Enrichment now runs as a background job (async, survives navigation). We enqueue
+// and poll for progress; on mount we resume showing any job already running.
+const enrichJob = ref(null)
+let enrichTimer = null
+const enrichActive = computed(() =>
+  enrichJob.value && ['pending', 'running'].includes(enrichJob.value.status))
+
+async function startEnrich() {
   try {
-    const r = await api.post('/items/describe-missing', {})
-    ui.toast(r.described ? `Described ${r.described} item(s).` : 'Nothing to describe.')
-  } catch (e) { ui.error(e.message || 'Enrichment failed.') } finally { enriching.value = false }
+    enrichJob.value = await api.post('/jobs/enrich')
+    pollEnrich()
+  } catch (e) { ui.error(e.message || 'Could not start enrichment.') }
 }
+let enrichPollFails = 0
+async function pollEnrich() {
+  if (!enrichJob.value) return
+  const id = enrichJob.value.id
+  try {
+    enrichJob.value = await api.get(`/jobs/${id}`)
+    enrichPollFails = 0
+    if (enrichJob.value.status === 'done') {
+      const r = enrichJob.value.result || {}
+      ui.toast(`Described ${r.described ?? 0} item(s).` +
+        (r.remaining ? ` ${r.remaining} still missing — run again to continue.` : ''))
+      return
+    }
+    if (enrichJob.value.status === 'error') {
+      ui.error(enrichJob.value.error || 'Enrichment failed.')
+      return
+    }
+  } catch (e) {
+    // Give up after a few consecutive failures (job gone / server down) rather
+    // than spinning forever.
+    if (++enrichPollFails >= 5) {
+      enrichJob.value = null
+      ui.error('Lost track of the enrichment job.')
+      return
+    }
+  }
+  enrichTimer = setTimeout(pollEnrich, 1500)
+}
+async function resumeEnrich() {
+  try {
+    const r = await api.get('/jobs?kind=enrich')
+    const active = (r.items || []).find(j => ['pending', 'running'].includes(j.status))
+    if (active) { enrichJob.value = active; pollEnrich() }
+  } catch (e) { /* optional */ }
+}
+onMounted(resumeEnrich)
+onUnmounted(() => clearTimeout(enrichTimer))
 
 const actions = [
   { p: 'ensure-asset-ids', l: 'Ensure asset IDs', d: 'Assign missing asset IDs' },
@@ -163,9 +205,15 @@ const actions = [
     <h2>AI descriptions</h2>
     <p class="muted">Look items up online (Ollama web search) and store a short searchable description,
       so search finds them by what they actually are. Needs an Ollama search key set in the add-on options
-      (or <code>HBOX_OLLAMA_SEARCH_KEY</code>). Per-item, use ✨ Describe on the item page.</p>
-    <button class="secondary" :disabled="enriching" @click="enrichMissing">
-      {{ enriching ? 'Describing…' : '✨ Describe items missing a description' }}</button>
+      (or <code>HBOX_OLLAMA_SEARCH_KEY</code>). Runs in the background — you can leave this page.
+      Per-item, use ✨ Describe on the item page.</p>
+    <button v-if="!enrichActive" class="secondary" @click="startEnrich">
+      ✨ Describe items missing a description</button>
+    <div v-else style="max-width:520px">
+      <div class="muted" style="font-size:0.85rem;margin-bottom:6px">
+        Describing… {{ enrichJob.done }}<span v-if="enrichJob.total">/{{ enrichJob.total }}</span> items</div>
+      <progress :value="enrichJob.done" :max="enrichJob.total || 1" style="width:100%"></progress>
+    </div>
   </div>
 
   <div class="card">
