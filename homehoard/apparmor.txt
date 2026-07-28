@@ -1,0 +1,50 @@
+#include <tunables/global>
+
+# HomeHoard add-on AppArmor profile.
+#
+# Runtime: python:3.11-slim base (no s6-overlay; init: false). /app/docker-entrypoint.sh
+# reads /data/options.json as root, fixes /data ownership, then drops privileges with
+# gosu to run gunicorn (the web/API app) and, alongside it, the in-container MCP server.
+# Data lives in /data and the mapped /share.
+#
+# Strategy: allow the app's own file I/O (broad `file` rule) but let AppArmor's
+# default-deny confine everything else — every Linux capability, mount, module load,
+# ptrace and raw socket NOT granted below is denied. Paths can be tightened to explicit
+# allow-lists once validated under enforcement on a real Home Assistant install.
+profile homehoard flags=(attach_disconnected,mediate_deleted) {
+  #include <abstractions/base>
+
+  # The app reads/writes its own files: code in /app, the SQLite DB + attachments
+  # in /data, the mapped /share, /tmp, /proc, and the Python runtime/site-packages.
+  file,
+
+  # Signals: the gunicorn master ↔ its workers, and clean shutdown forwarding.
+  signal,
+
+  # Boot-time privilege handling: gosu (setuid/setgid) + chown -R on /data.
+  capability setuid,
+  capability setgid,
+  capability dac_override,
+  capability chown,
+  capability fowner,
+  capability fsetid,
+  capability kill,
+
+  # Execute the entrypoint, interpreters and helper binaries within THIS profile
+  # (ix = inherit), so gunicorn/python3/gosu stay confined by the same rules.
+  /app/** ix,
+  /bin/** ix,
+  /usr/bin/** ix,
+  /usr/local/bin/** ix,
+  /usr/sbin/** ix,
+
+  # Networking: serve the app + MCP over TCP, reach the AI provider / Ollama search /
+  # optional Postgres (TCP egress), resolve DNS (UDP + netlink), and local sockets.
+  network inet stream,
+  network inet6 stream,
+  network inet dgram,
+  network inet6 dgram,
+  network netlink raw,
+  network unix stream,
+  network unix dgram,
+}
