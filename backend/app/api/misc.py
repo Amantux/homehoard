@@ -80,6 +80,32 @@ def ready():
     return jsonify({"ready": ok, "checks": checks}), (200 if ok else 503)
 
 
+@bp.get("/diagnostics")
+@login_required
+def diagnostics():
+    """Coarse, non-sensitive runtime facts for a user-initiated bug report.
+
+    Login-gated so it doesn't reveal AI-configured state to anonymous callers, and
+    deliberately returns only publishable facts — never secrets (API keys, provider
+    base URLs, the DB URL) or any inventory content — because the report they seed
+    becomes a PUBLIC GitHub issue."""
+    uri = current_app.config["SQLALCHEMY_DATABASE_URI"]
+    try:
+        from ..services.ai import provider_config
+        provider = provider_config.effective().AI_PROVIDER or "none"
+    except Exception:  # noqa: BLE001 - diagnostics must never 500
+        provider = "unknown"
+    return jsonify(
+        {
+            "app": "HomeHoard",
+            "dbBackend": "sqlite" if uri.startswith("sqlite") else "postgresql",
+            "aiProvider": provider,
+            "mcpEnabled": os.environ.get("HBOX_MCP_ENABLED", "true").lower() == "true",
+            "authDisabled": bool(current_app.config.get("DISABLE_AUTH")),
+        }
+    )
+
+
 @bp.get("/currency")
 def currency():
     return jsonify(CURRENCIES)

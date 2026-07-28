@@ -24,6 +24,8 @@ export default [
         Blob: 'readonly',
         FormData: 'readonly',
         console: 'readonly',
+        // Injected at build time by vite.config.js (define).
+        __APP_VERSION__: 'readonly',
       },
     },
     rules: {

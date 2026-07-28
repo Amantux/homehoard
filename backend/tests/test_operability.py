@@ -46,6 +46,34 @@ def test_ready_returns_503_when_db_unavailable(client, monkeypatch):
     assert "db down" not in r.get_data(as_text=True)  # no internals leaked
 
 
+def test_diagnostics_requires_auth(client):
+    # Login-gated so an anonymous caller can't probe AI-configured state.
+    r = client.get("/api/v1/diagnostics")
+    assert r.status_code == 401
+
+
+def test_diagnostics_reports_coarse_facts(auth_client):
+    r = auth_client.get("/api/v1/diagnostics")
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["app"] == "HomeHoard"
+    assert body["dbBackend"] == "sqlite"
+    assert body["aiProvider"] in ("none", "ollama", "openai", "claude", "unknown")
+    assert isinstance(body["mcpEnabled"], bool)
+
+
+def test_diagnostics_leaks_no_secrets(auth_client, monkeypatch):
+    # Even with a provider + keys configured, the report payload must never carry
+    # a secret, base URL, or the DB URL — it seeds a PUBLIC GitHub issue.
+    monkeypatch.setenv("HBOX_OPENAI_API_KEY", "sk-supersecret-value")
+    monkeypatch.setenv("HBOX_OPENAI_BASE_URL", "http://192.168.9.9:1234/v1")
+    monkeypatch.setenv("HBOX_DATABASE_URL", "postgresql://u:p@db/x")
+    raw = auth_client.get("/api/v1/diagnostics").get_data(as_text=True)
+    assert "sk-supersecret-value" not in raw
+    assert "192.168.9.9" not in raw
+    assert "postgresql://" not in raw
+
+
 def test_sqlite_wal_and_foreign_keys_enabled(app):
     with app.app_context():
         mode = db.session.execute(text("PRAGMA journal_mode")).scalar()

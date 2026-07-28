@@ -7,6 +7,7 @@ import Toasts from './components/Toasts.vue'
 import QuickCreate from './components/QuickCreate.vue'
 import ScannerModal from './components/ScannerModal.vue'
 import SearchModal from './components/SearchModal.vue'
+import ReportBug from './components/ReportBug.vue'
 
 const route = useRoute()
 const auth = useAuth()
@@ -17,6 +18,7 @@ const showCreate = ref(false)
 const showScanner = ref(false)
 const showSearch = ref(false)
 const showUserMenu = ref(false)
+const showReport = ref(false)
 
 onMounted(() => {
   ui.applyTheme()
@@ -77,6 +79,8 @@ const nav = [
           <div class="grow"></div>
           <button @click="showCreate = true">＋ Create</button>
           <button class="secondary icon-btn" title="Scan QR" @click="showScanner = true">📷</button>
+          <button class="secondary icon-btn" title="Report a bug" aria-label="Report a bug"
+                  @click="showReport = true">🐞</button>
           <button class="secondary icon-btn" title="Toggle theme" @click="ui.toggleTheme()">🌓</button>
           <div v-if="!auth.authDisabled" class="dropdown">
             <button class="secondary icon-btn" @click="showUserMenu = !showUserMenu">👤</button>
@@ -96,6 +100,7 @@ const nav = [
                  @close="showCreate = false; ui.closeCreate()" />
     <ScannerModal v-if="showScanner" @close="showScanner = false" />
     <SearchModal v-if="showSearch" @close="showSearch = false" />
+    <ReportBug v-if="showReport" @close="showReport = false" />
     <Toasts />
   </template>
 
