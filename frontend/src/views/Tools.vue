@@ -73,6 +73,20 @@ async function saveJobAi() {
   } catch (e) { ui.error(e.message || 'Could not save') } finally { jobAiSaving.value = false }
 }
 onMounted(loadJobAi)
+
+// Model picker for the background-task preference: probe the chosen provider
+// (blank = the chat provider) for its models, so you can pick a small/local SLM
+// instead of typing its name. Uses that provider's saved config.
+const jobModels = ref({ enrich: [], organize: [] })
+const jobModelsLoading = ref({ enrich: false, organize: false })
+async function listJobModels(area) {
+  jobModelsLoading.value[area] = true
+  try {
+    const r = await api.post('/settings/ai/models', { provider: jobAi.value[area].provider })
+    jobModels.value[area] = r.models || []
+    if (!jobModels.value[area].length) ui.toast('No models reported — type the model name.')
+  } catch (e) { ui.error(e.message || 'Could not list models') } finally { jobModelsLoading.value[area] = false }
+}
 async function loadAiModels() {
   aiLoadingModels.value = true
   try {
@@ -307,7 +321,11 @@ const actions = [
           <option value="">Same as chat</option>
           <option v-for="p in ai.validProviders" :key="p" :value="p">{{ PROVIDER_LABELS[p] || p }}</option>
         </select>
-        <input v-model="jobAi[area.k].model" placeholder="model (optional)" style="flex:1" />
+        <input v-model="jobAi[area.k].model" :list="`jobmodels-${area.k}`"
+               placeholder="model (optional)" style="flex:1" />
+        <datalist :id="`jobmodels-${area.k}`"><option v-for="m in jobModels[area.k]" :key="m" :value="m" /></datalist>
+        <button type="button" class="secondary sm" :disabled="jobModelsLoading[area.k]"
+                @click="listJobModels(area.k)">{{ jobModelsLoading[area.k] ? '…' : 'List' }}</button>
       </div>
     </div>
     <div class="row" style="justify-content:flex-end;max-width:520px">
