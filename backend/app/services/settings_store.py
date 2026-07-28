@@ -10,6 +10,8 @@ AI_KEYS = (
     "ai_provider",
     # Ollama (original names kept for back-compat with the first-shipped card)
     "ollama_url", "ollama_model", "ollama_api_key", "ollama_search_key",
+    # Ollama Cloud (ollama.com) — its own model + key; host is pinned.
+    "ollama_cloud_model", "ollama_cloud_api_key",
     # OpenAI-compatible
     "openai_base_url", "openai_model", "openai_api_key",
     # Anthropic Claude

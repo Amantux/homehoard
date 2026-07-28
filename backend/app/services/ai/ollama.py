@@ -122,3 +122,22 @@ class OllamaProvider(AIProvider):
                 id=f"call_{i}", name=fn.get("name", ""),
                 arguments=fn.get("arguments", {}) or {}))
         yield {"type": "final", "result": out}
+
+
+class OllamaCloudProvider(OllamaProvider):
+    """Ollama's hosted cloud (https://ollama.com). Same wire protocol as a local
+    Ollama server (/api/chat, /api/tags, bearer auth) but pinned to the cloud host
+    and REQUIRING an API key. Host/model/key come from the OLLAMA_CLOUD_* attrs on
+    the effective config, so the cloud key is never shared with a local Ollama."""
+
+    name = "ollama_cloud"
+
+    def __init__(self, eff):
+        self.host = (getattr(eff, "OLLAMA_CLOUD_HOST", "") or "https://ollama.com").rstrip("/")
+        self.model = getattr(eff, "OLLAMA_CLOUD_MODEL", "") or ""
+        self.timeout = float(getattr(eff, "AI_TIMEOUT_SECONDS", 60) or 60)
+        self.api_key = getattr(eff, "OLLAMA_CLOUD_API_KEY", "") or ""
+
+    def available(self) -> bool:
+        # Unlike a plain local server, the cloud requires a key.
+        return bool(self.host and self.model and self.api_key)

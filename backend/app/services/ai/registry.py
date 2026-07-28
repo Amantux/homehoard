@@ -8,12 +8,13 @@ from __future__ import annotations
 
 from .base import AIProvider, ProviderError
 from .claude import ClaudeProvider
-from .ollama import OllamaProvider
+from .ollama import OllamaCloudProvider, OllamaProvider
 from .openai import OpenAIProvider
 from .provider_config import effective, effective_for
 
 _REGISTRY: dict[str, type[AIProvider]] = {
     "ollama": OllamaProvider,
+    "ollama_cloud": OllamaCloudProvider,
     "openai": OpenAIProvider,
     "claude": ClaudeProvider,
 }
@@ -34,7 +35,7 @@ def get_provider(config=None) -> AIProvider:
     if not name:
         raise ProviderError(
             "No AI provider configured. Choose one in Tools → AI provider, or set "
-            "HBOX_AI_PROVIDER (ollama, openai, or claude).")
+            "HBOX_AI_PROVIDER (ollama, ollama_cloud, openai, or claude).")
     if name not in _REGISTRY:
         raise ProviderError(f"Unknown AI provider '{name}'.")
     provider = _REGISTRY[name](eff)

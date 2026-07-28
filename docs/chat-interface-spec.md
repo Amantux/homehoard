@@ -127,7 +127,7 @@ Action = { "tool": string, "label"?: string, "result"?: object,
 The chat is provider-agnostic; connecting a model is configuration, not code.
 
 - **Provider id** ∈ `{ollama, openai, claude}` (Edibl also `anthropic`,
-  `homeassistant`; myMeal also `ollama_cloud`). Chosen by `<APP>_AI_PROVIDER` env /
+  `homeassistant`; HomeHoard + myMeal also `ollama_cloud`). Chosen by `<APP>_AI_PROVIDER` env /
   add-on option, or the in-app picker (the stored value wins).
 - **Local SLM** (LM Studio, vLLM, llama.cpp, Ollama `/v1`): use provider `openai`
   and set a **base URL** to the server's OpenAI-compatible endpoint.
@@ -229,7 +229,7 @@ the in-app chat.
 | Edibl | `/assistant/chat` | `/assistant/chat/stream` | in `/assistant/config` + PUT | `/assistant/undo` | per-group | `7767` |
 | myMeal | `/ai/chat` | `/ai/chat/stream` | `/settings/chat` (or `/ai/chat-pref`) | `/ai/chat/undo` | per-group | `7851` |
 
-All under the app's `/api/v1` base. Providers: HomeHoard `{ollama,openai,claude}`;
+All under the app's `/api/v1` base. Providers: HomeHoard `{ollama,ollama_cloud,openai,claude}`;
 Edibl `{ollama,openai,anthropic,homeassistant}`; myMeal
 `{claude,openai,ollama,ollama_cloud}`.
 

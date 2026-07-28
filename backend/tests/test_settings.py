@@ -24,7 +24,7 @@ def test_ai_settings_roundtrip_and_effective(auth_client, app):
 
     g = auth_client.get("/api/v1/settings/ai").get_json()
     assert g["provider"] == "ollama" and g["model"] == "qwen2.5"
-    assert set(g["validProviders"]) == {"ollama", "openai", "claude"}
+    assert set(g["validProviders"]) == {"ollama", "ollama_cloud", "openai", "claude"}
 
     with app.app_context():
         from app.services.ai.provider_config import effective

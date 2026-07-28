@@ -46,6 +46,10 @@ class Config:
     OLLAMA_SEARCH_KEY = os.environ.get("HBOX_OLLAMA_SEARCH_KEY", "")
     OLLAMA_URL = os.environ.get("HBOX_OLLAMA_URL", "http://localhost:11434")
     OLLAMA_MODEL = os.environ.get("HBOX_OLLAMA_MODEL", "llama3.1")
+    # Ollama Cloud (ollama.com) — a distinct provider; the host is pinned, so only
+    # its own key + model are configurable (kept separate from a local Ollama).
+    OLLAMA_CLOUD_API_KEY = os.environ.get("HBOX_OLLAMA_CLOUD_API_KEY", "")
+    OLLAMA_CLOUD_MODEL = os.environ.get("HBOX_OLLAMA_CLOUD_MODEL", "")
 
     # --- Barcode identification (scan a UPC/EAN → identify the product) ---
     # Off by default (network). A product barcode DB (UPCitemdb trial by default —

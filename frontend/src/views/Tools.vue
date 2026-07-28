@@ -12,6 +12,7 @@ const ui = useUI()
 // that can't save.
 const PROVIDER_LABELS = {
   ollama: 'Ollama (self-hosted)',
+  ollama_cloud: 'Ollama Cloud (ollama.com)',
   openai: 'OpenAI-compatible (incl. local SLMs)',
   claude: 'Anthropic Claude',
 }
@@ -22,8 +23,11 @@ const aiSaving = ref(false)
 const aiLoadingModels = ref(false)
 const canEditAi = ref(false)
 
-// Ollama + OpenAI point at a server (base URL); Claude is hosted (no base URL).
+// Ollama + OpenAI point at a server (base URL); Claude + Ollama Cloud are hosted
+// (no base URL — the cloud host is pinned to ollama.com).
 const needsBaseUrl = computed(() => ['ollama', 'openai'].includes(aiForm.value.provider))
+// Providers whose models we can enumerate from the server, incl. Ollama Cloud.
+const canListModels = computed(() => ['ollama', 'ollama_cloud', 'openai'].includes(aiForm.value.provider))
 
 async function loadAi() {
   try {
@@ -224,18 +228,23 @@ const actions = [
         :placeholder="aiForm.provider === 'ollama' ? 'http://localhost:11434' : 'http://localhost:1234/v1'"
         style="width:100%;margin-top:4px" />
     </label>
+    <p v-if="aiForm.provider === 'ollama_cloud'" class="muted" style="font-size:0.8rem;max-width:520px;margin:-2px 0 10px">
+      Ollama's hosted cloud — pinned to <code>ollama.com</code>. Paste your ollama.com API key below,
+      then <em>List models</em> to pick one.
+    </p>
     <label v-if="aiForm.provider" style="display:block;max-width:520px;margin-bottom:10px">
       <span class="muted" style="font-size:0.85rem">Model</span>
       <input v-model="aiForm.model" list="ai-model-list" placeholder="model name" style="width:100%;margin-top:4px" />
       <datalist id="ai-model-list"><option v-for="m in aiModels" :key="m" :value="m" /></datalist>
-      <button v-if="needsBaseUrl" class="secondary sm" style="margin-top:6px"
+      <button v-if="canListModels" class="secondary sm" style="margin-top:6px"
         :disabled="aiLoadingModels" @click="loadAiModels">
         {{ aiLoadingModels ? 'Listing…' : 'List models' }}</button>
     </label>
     <label v-if="aiForm.provider" style="display:block;max-width:520px;margin-bottom:10px">
       <span class="muted" style="font-size:0.85rem">API key</span>
       <input v-model="aiForm.apiKey" type="password"
-        :placeholder="aiForm.provider === 'ollama' ? 'optional for a local server' : 'provider API key'"
+        :placeholder="aiForm.provider === 'ollama' ? 'optional for a local server'
+          : (aiForm.provider === 'ollama_cloud' ? 'ollama.com API key (required)' : 'provider API key')"
         style="width:100%;margin-top:4px" />
       <span v-if="ai.apiKeySet" class="muted" style="font-size:0.78rem">A key is saved — leave blank to keep it.
         <a href="#" style="color:var(--danger)" @click.prevent="clearAiKey">Clear saved key</a></span>

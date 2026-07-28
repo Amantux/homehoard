@@ -18,9 +18,11 @@ from types import SimpleNamespace
 
 from ..settings_store import get_overrides, set_values
 
-VALID_PROVIDERS = ("", "ollama", "openai", "claude")
+VALID_PROVIDERS = ("", "ollama", "ollama_cloud", "openai", "claude")
 SECRET_KEYS = frozenset({"ollama_api_key", "openai_api_key", "claude_api_key",
-                         "ollama_search_key"})
+                         "ollama_search_key", "ollama_cloud_api_key"})
+# Ollama's hosted cloud runs at a fixed host; the user supplies only a key + model.
+OLLAMA_CLOUD_HOST = "https://ollama.com"
 
 
 def _base(config) -> dict:
@@ -38,6 +40,9 @@ def _base(config) -> dict:
         "ANTHROPIC_API_KEY": (g("ANTHROPIC_API_KEY") or ""),
         "AI_TIMEOUT_SECONDS": (g("AI_TIMEOUT_SECONDS") or 60),
         "OLLAMA_SEARCH_KEY": (g("OLLAMA_SEARCH_KEY") or ""),
+        # Ollama Cloud — its own model + key, never the local Ollama's.
+        "OLLAMA_CLOUD_MODEL": (g("OLLAMA_CLOUD_MODEL") or ""),
+        "OLLAMA_CLOUD_API_KEY": (g("OLLAMA_CLOUD_API_KEY") or ""),
     }
 
 
@@ -70,6 +75,11 @@ def effective_settings(config, overrides) -> SimpleNamespace:
     ns.CLAUDE_MODEL = pick("claude_model", base["CLAUDE_MODEL"])
     ns.ANTHROPIC_API_KEY = pick("claude_api_key", base["ANTHROPIC_API_KEY"])
     ns.OLLAMA_SEARCH_KEY = pick("ollama_search_key", base["OLLAMA_SEARCH_KEY"])
+    # Ollama Cloud (ollama.com): fixed host, its own model + key (kept separate from
+    # a local Ollama so switching between them never mixes credentials).
+    ns.OLLAMA_CLOUD_HOST = OLLAMA_CLOUD_HOST
+    ns.OLLAMA_CLOUD_MODEL = pick("ollama_cloud_model", base["OLLAMA_CLOUD_MODEL"])
+    ns.OLLAMA_CLOUD_API_KEY = pick("ollama_cloud_api_key", base["OLLAMA_CLOUD_API_KEY"])
     return ns
 
 
@@ -90,7 +100,7 @@ def effective_for(provider=None, model=None, config=None) -> SimpleNamespace:
         eff.AI_PROVIDER = provider.strip().lower()
     if model:
         attr = {"ollama": "OLLAMA_MODEL", "openai": "OPENAI_MODEL",
-                "claude": "CLAUDE_MODEL"}.get(eff.AI_PROVIDER)
+                "claude": "CLAUDE_MODEL", "ollama_cloud": "OLLAMA_CLOUD_MODEL"}.get(eff.AI_PROVIDER)
         if attr:
             setattr(eff, attr, model.strip())
     return eff
@@ -128,8 +138,9 @@ def set_overrides(provider=None, base_url=None, model=None, api_key=None,
         stored = get_overrides().get("ai_provider") or ""
         target = (provider.strip() if provider is not None else "") or \
             ("" if stored == "off" else stored)
-    if target in ("ollama", "openai", "claude"):
-        if base_url is not None and target != "claude":
+    if target in ("ollama", "ollama_cloud", "openai", "claude"):
+        # claude and ollama_cloud have no editable base URL (hosted / pinned host).
+        if base_url is not None and target not in ("claude", "ollama_cloud"):
             pairs[_pkey(target, "base_url")] = base_url.strip()
         if model is not None:
             pairs[_pkey(target, "model")] = model.strip()
@@ -149,6 +160,9 @@ def _active_view(eff) -> dict:
     if p == "ollama":
         return {"baseUrl": eff.OLLAMA_HOST, "model": eff.OLLAMA_MODEL,
                 "apiKeySet": bool(eff.OLLAMA_API_KEY)}
+    if p == "ollama_cloud":
+        return {"baseUrl": "", "model": eff.OLLAMA_CLOUD_MODEL,
+                "apiKeySet": bool(eff.OLLAMA_CLOUD_API_KEY)}
     if p == "openai":
         return {"baseUrl": eff.OPENAI_BASE_URL, "model": eff.OPENAI_MODEL,
                 "apiKeySet": bool(eff.OPENAI_API_KEY)}
@@ -177,6 +191,10 @@ def probe_config(config=None, provider=None, base_url=None, api_key=None) -> Sim
             eff.OLLAMA_HOST = base_url.strip()
         if api_key:
             eff.OLLAMA_API_KEY = api_key
+    elif p == "ollama_cloud":
+        # Host is pinned; the cloud needs the key to list models.
+        if api_key:
+            eff.OLLAMA_CLOUD_API_KEY = api_key
     elif p == "openai":
         if base_url:
             eff.OPENAI_BASE_URL = base_url.strip()
@@ -196,6 +214,11 @@ def list_models(eff, timeout: float = 12.0) -> list[str]:
             if p == "ollama":
                 h = {"Authorization": f"Bearer {eff.OLLAMA_API_KEY}"} if eff.OLLAMA_API_KEY else {}
                 r = c.get(f"{eff.OLLAMA_HOST.rstrip('/')}/api/tags", headers=h)
+                r.raise_for_status()
+                return sorted(m.get("name", "") for m in r.json().get("models", []) if m.get("name"))
+            if p == "ollama_cloud":
+                h = {"Authorization": f"Bearer {eff.OLLAMA_CLOUD_API_KEY}"} if eff.OLLAMA_CLOUD_API_KEY else {}
+                r = c.get(f"{eff.OLLAMA_CLOUD_HOST.rstrip('/')}/api/tags", headers=h)
                 r.raise_for_status()
                 return sorted(m.get("name", "") for m in r.json().get("models", []) if m.get("name"))
             if p == "openai":

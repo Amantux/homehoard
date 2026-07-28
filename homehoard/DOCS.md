@@ -46,8 +46,9 @@ Data (SQLite database + attachments) is stored under `/share/homehoard`.
 ## AI features
 
 Wire up any LLM or local SLM once in **Tools → AI provider**, then it powers
-everything below. Choose **Ollama** (self-hosted), **OpenAI-compatible** — point the
-base URL at a local model server such as LM Studio, vLLM, llama.cpp, or Ollama's
+everything below. Choose **Ollama** (self-hosted), **Ollama Cloud** (ollama.com —
+paste your API key, then *List models* to pick one), **OpenAI-compatible** — point
+the base URL at a local model server such as LM Studio, vLLM, llama.cpp, or Ollama's
 `/v1` — or **Anthropic Claude**. Everything runs against *your* provider; nothing is
 sent anywhere else.
 
