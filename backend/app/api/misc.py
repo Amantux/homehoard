@@ -126,6 +126,57 @@ def put_chat_settings():
     return jsonify({"stream": stream})
 
 
+@bp.get("/settings/ai/jobs")
+@owner_required
+def get_ai_job_settings():
+    """The async-job AI preference: a provider+model default for background work,
+    separate from chat. `enrich` = enrichment jobs; `organize` = categorize +
+    cluster. Blank provider = same as the chat provider. Instance-admin only."""
+    denied = _instance_admin_or_403()
+    if denied:
+        return denied
+    from ..services.settings_store import get_overrides
+    o = get_overrides()
+    return jsonify({
+        "enrich": {"provider": o.get("enrich_provider", ""), "model": o.get("enrich_model", "")},
+        "organize": {"provider": o.get("organize_provider", ""), "model": o.get("organize_model", "")},
+    })
+
+
+@bp.put("/settings/ai/jobs")
+@owner_required
+def put_ai_job_settings():
+    """Set the async-job AI preference. Body: {enrich:{provider,model},
+    organize:{provider,model}}. A blank provider means 'same as chat'.
+    Instance-admin only."""
+    denied = _instance_admin_or_403()
+    if denied:
+        return denied
+    from ..services.ai import provider_config
+    from ..services.settings_store import set_values, get_overrides
+
+    data = request.get_json(force=True) or {}
+    pairs: dict[str, str] = {}
+    for area in ("enrich", "organize"):
+        blk = data.get(area)
+        if not isinstance(blk, dict):
+            continue
+        if "provider" in blk:
+            prov = str(blk.get("provider") or "")
+            if prov and prov not in provider_config.VALID_PROVIDERS:
+                return jsonify({"error": f"unknown provider '{prov}'"}), 422
+            pairs[f"{area}_provider"] = prov
+        if "model" in blk:
+            pairs[f"{area}_model"] = str(blk.get("model") or "")[:100]
+    if pairs:
+        set_values(pairs)
+    o = get_overrides()
+    return jsonify({
+        "enrich": {"provider": o.get("enrich_provider", ""), "model": o.get("enrich_model", "")},
+        "organize": {"provider": o.get("organize_provider", ""), "model": o.get("organize_model", "")},
+    })
+
+
 @bp.get("/currency")
 def currency():
     return jsonify(CURRENCIES)

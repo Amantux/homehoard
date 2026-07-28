@@ -72,15 +72,14 @@ def icl_examples(gid, kind, limit=8) -> str:
 
 
 def _job_provider(opts: dict):
-    """The provider for a job run: a per-run override if given, else the configured
-    default. Raises JobError (→ job errored) when unavailable."""
+    """The provider for an organize (categorize/cluster) run. Precedence: a per-run
+    override > the stored "Background" async preference > the configured chat
+    provider. Raises JobError (→ job errored) when unavailable."""
     from .ai.base import ProviderError
-    from .ai.registry import get_provider, provider_for
+    from .ai.registry import get_provider, resolve_job_provider
     from .jobs import JobError
     try:
-        if opts.get("provider") or opts.get("model"):
-            return provider_for(opts.get("provider"), opts.get("model"))
-        return get_provider()
+        return resolve_job_provider("categorize", opts) or get_provider()
     except ProviderError as exc:
         raise JobError(str(exc)) from exc
 

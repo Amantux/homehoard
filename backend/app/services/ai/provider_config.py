@@ -106,6 +106,17 @@ def effective_for(provider=None, model=None, config=None) -> SimpleNamespace:
     return eff
 
 
+# --- async-job AI preference ---------------------------------------------
+def job_preference(kind: str) -> tuple[str | None, str | None]:
+    """Stored async default ``(provider, model)`` for a background job. ``enrich``
+    has its own preference; the organize jobs (``categorize`` / ``cluster``) share
+    the ``organize`` preference. Either element is None when unset (→ same as the
+    interactive chat provider)."""
+    prefix = "enrich" if kind == "enrich" else "organize"
+    over = get_overrides()
+    return (over.get(f"{prefix}_provider") or None, over.get(f"{prefix}_model") or None)
+
+
 # --- writes ---------------------------------------------------------------
 def _pkey(provider: str, field: str) -> str:
     # Ollama keeps its original (un-prefixed style) names for back-compat.

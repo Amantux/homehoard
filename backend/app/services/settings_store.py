@@ -18,6 +18,11 @@ AI_KEYS = (
     "claude_model", "claude_api_key",
     # Chat UX: household default for streaming responses ("true"/"false").
     "chat_streaming",
+    # Async-job AI preference: a provider+model default for background work,
+    # separate from the interactive chat provider. "enrich" = enrichment jobs;
+    # "organize" = the categorize + cluster jobs. Blank provider = same as chat.
+    "enrich_provider", "enrich_model",
+    "organize_provider", "organize_model",
 )
 
 

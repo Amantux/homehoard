@@ -148,7 +148,7 @@ def _enrich_job(job: Job) -> dict:
     results survive a worker kill."""
     from . import enrich
     from .ai.base import ProviderError
-    from .ai.registry import provider_for
+    from .ai.registry import resolve_job_provider
     from ..api.items import _apply_description, _describe_fields  # local: api↔services
     from ..models import Item
 
@@ -157,14 +157,12 @@ def _enrich_job(job: Job) -> dict:
     gid = job.group_id
     opts = json.loads(job.params) if job.params else {}
     note = str(opts.get("note") or "")
-    # A per-run provider/model override; None → the configured default. A model
-    # alone (no provider) overrides the model on the configured provider.
-    provider = None
-    if opts.get("provider") or opts.get("model"):
-        try:
-            provider = provider_for(opts.get("provider"), opts.get("model"))
-        except ProviderError as exc:
-            raise JobError(str(exc)) from exc
+    # Provider precedence: per-run override > the stored "Enrichment" async
+    # preference > None (→ describe() falls back to the configured chat provider).
+    try:
+        provider = resolve_job_provider("enrich", opts)
+    except ProviderError as exc:
+        raise JobError(str(exc)) from exc
 
     def missing_q():
         return (db.session.query(Item)

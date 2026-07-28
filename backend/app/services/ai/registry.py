@@ -70,6 +70,22 @@ def provider_for(provider=None, model=None) -> AIProvider:
     return p
 
 
+def resolve_job_provider(kind: str, opts: dict | None = None) -> AIProvider | None:
+    """The provider override for a background job of ``kind`` (enrich / categorize /
+    cluster), or None to fall back to the caller's default (the configured chat
+    provider). Precedence: per-run ``opts`` (provider/model) > the stored async
+    preference for this kind. Raises ``ProviderError`` if the chosen provider is
+    unavailable."""
+    from .provider_config import job_preference
+    opts = opts or {}
+    pref_provider, pref_model = job_preference(kind)
+    provider = opts.get("provider") or pref_provider
+    model = opts.get("model") or pref_model
+    if provider or model:
+        return provider_for(provider, model)
+    return None
+
+
 def list_providers(config=None) -> list[dict]:
     """Report every provider, whether it's available, and which is active."""
     eff = effective(config)

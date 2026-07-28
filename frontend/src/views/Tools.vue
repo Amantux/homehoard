@@ -53,6 +53,26 @@ async function saveChatDefault(on) {
   } catch (e) { ui.error(e.message || 'Could not save') } finally { chatSaving.value = false }
 }
 onMounted(loadChatDefault)
+
+// Async-job AI preference: a provider+model default for background jobs, separate
+// from chat. Blank provider = same as chat. A per-run choice still wins.
+const jobAi = ref({ enrich: { provider: '', model: '' }, organize: { provider: '', model: '' } })
+const jobAiSaving = ref(false)
+const JOB_AREAS = [
+  { k: 'enrich', l: 'Enrichment (descriptions)' },
+  { k: 'organize', l: 'Background (auto-categorize + groupings)' },
+]
+async function loadJobAi() {
+  try { jobAi.value = await api.get('/settings/ai/jobs') } catch (e) { /* admin-only / keep defaults */ }
+}
+async function saveJobAi() {
+  jobAiSaving.value = true
+  try {
+    jobAi.value = await api.put('/settings/ai/jobs', jobAi.value)
+    ui.toast('Saved background-task AI')
+  } catch (e) { ui.error(e.message || 'Could not save') } finally { jobAiSaving.value = false }
+}
+onMounted(loadJobAi)
 async function loadAiModels() {
   aiLoadingModels.value = true
   try {
@@ -273,6 +293,26 @@ const actions = [
         @change="saveChatDefault($event.target.checked)" />
       <span>Stream chat responses by default</span>
     </label>
+  </div>
+
+  <div v-if="canEditAi" class="card">
+    <h2>AI for background tasks</h2>
+    <p class="muted">Optionally run background jobs on a different model than chat — e.g. a
+      cheap or local model for bulk work. <strong>Same as chat</strong> uses the provider above.
+      A per-run choice (on <em>AI descriptions</em> / <em>AI organize</em>) still wins.</p>
+    <div v-for="area in JOB_AREAS" :key="area.k" style="max-width:520px;margin-bottom:14px">
+      <div class="muted" style="font-size:0.85rem;font-weight:600;margin-bottom:4px">{{ area.l }}</div>
+      <div class="row" style="gap:8px">
+        <select v-model="jobAi[area.k].provider" style="flex:1">
+          <option value="">Same as chat</option>
+          <option v-for="p in ai.validProviders" :key="p" :value="p">{{ PROVIDER_LABELS[p] || p }}</option>
+        </select>
+        <input v-model="jobAi[area.k].model" placeholder="model (optional)" style="flex:1" />
+      </div>
+    </div>
+    <div class="row" style="justify-content:flex-end;max-width:520px">
+      <button :disabled="jobAiSaving" @click="saveJobAi">{{ jobAiSaving ? 'Saving…' : 'Save' }}</button>
+    </div>
   </div>
 
   <div class="card">
