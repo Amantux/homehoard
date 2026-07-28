@@ -165,15 +165,20 @@ def chat_stream():
             yield json.dumps({"type": "error", "error": "The assistant failed."}) + "\n"
             return
 
-        pos = _next_position(session)
-        user_msg = ChatMessage(role="user", content=message, position=pos,
-                               session_id=session.id)
-        assistant_msg = ChatMessage(
-            role="assistant", content=reply, tool_trace=json.dumps(trace),
-            position=pos + 1, session_id=session.id)
-        db.session.add_all([user_msg, assistant_msg])
-        session.updated_at = utcnow()
-        db.session.commit()
+        try:
+            pos = _next_position(session)
+            user_msg = ChatMessage(role="user", content=message, position=pos,
+                                   session_id=session.id)
+            assistant_msg = ChatMessage(
+                role="assistant", content=reply, tool_trace=json.dumps(trace),
+                position=pos + 1, session_id=session.id)
+            db.session.add_all([user_msg, assistant_msg])
+            session.updated_at = utcnow()
+            db.session.commit()
+        except Exception:  # noqa: BLE001 - a commit failure must surface, not end silently
+            db.session.rollback()
+            yield json.dumps({"type": "error", "error": "Could not save the reply."}) + "\n"
+            return
         yield json.dumps({
             "type": "done",
             "sessionId": session.id,

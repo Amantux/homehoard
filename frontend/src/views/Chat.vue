@@ -70,15 +70,22 @@ async function sendStream(message) {
   msgs.value.push({ role: 'assistant', content: '', actions: [] })
   const idx = msgs.value.length - 1 // mutate via the reactive proxy, not the raw object
   let errored = null
-  await streamPost('/chat/stream', { message, sessionId: sessionId.value }, (ev) => {
-    const a = msgs.value[idx]
-    if (ev.type === 'delta') { a.content += ev.text; scrollDown() }
-    else if (ev.type === 'done') {
-      sessionId.value = ev.sessionId
-      a.content = ev.reply || a.content
-      a.actions = ev.actions || []
-    } else if (ev.type === 'error') { errored = new Error(ev.error || 'Something went wrong.') }
-  })
+  try {
+    await streamPost('/chat/stream', { message, sessionId: sessionId.value }, (ev) => {
+      const a = msgs.value[idx]
+      if (ev.type === 'delta') { a.content += ev.text; scrollDown() }
+      else if (ev.type === 'done') {
+        sessionId.value = ev.sessionId
+        a.content = ev.reply || a.content
+        a.actions = ev.actions || []
+      } else if (ev.type === 'error') { errored = new Error(ev.error || 'Something went wrong.') }
+    })
+  } catch (e) {
+    // Transport-level failure (connection dropped): drop the empty placeholder so
+    // it doesn't linger above the error bubble send() will push.
+    if (!msgs.value[idx].content) msgs.value.splice(idx, 1)
+    throw e
+  }
   if (errored) {
     msgs.value.pop() // remove the streaming placeholder before showing the error
     throw errored
