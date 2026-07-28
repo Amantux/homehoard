@@ -8,6 +8,7 @@ import QuickCreate from './components/QuickCreate.vue'
 import ScannerModal from './components/ScannerModal.vue'
 import SearchModal from './components/SearchModal.vue'
 import ReportBug from './components/ReportBug.vue'
+import ChatAssistant from './components/ChatAssistant.vue'
 
 const route = useRoute()
 const auth = useAuth()
@@ -41,7 +42,6 @@ const nav = [
   { to: '/locations', icon: '📍', label: 'Locations' },
   { to: '/labels', icon: '🏷️', label: 'Labels' },
   { to: '/maintenance', icon: '🔧', label: 'Maintenance' },
-  { to: '/chat', icon: '💬', label: 'Assistant' },
 ]
 </script>
 
@@ -101,6 +101,7 @@ const nav = [
     <ScannerModal v-if="showScanner" @close="showScanner = false" />
     <SearchModal v-if="showSearch" @close="showSearch = false" />
     <ReportBug v-if="showReport" @close="showReport = false" />
+    <ChatAssistant />
     <Toasts />
   </template>
 
