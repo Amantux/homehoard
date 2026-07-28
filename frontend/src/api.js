@@ -52,3 +52,44 @@ export const api = {
   del: (p) => request('DELETE', p),
   upload: (p, form) => request('POST', p, form, true),
 }
+
+// POST that consumes a newline-delimited-JSON (NDJSON) streaming response,
+// invoking onEvent(obj) for each parsed line as it arrives. Used by the chat
+// assistant's streaming mode. Uses fetch + a ReadableStream reader (not
+// EventSource) so the Authorization header still goes out.
+export async function streamPost(path, body, onEvent) {
+  const headers = { 'Content-Type': 'application/json' }
+  const token = getToken()
+  if (token) headers['Authorization'] = token
+  const res = await fetch(apiUrl(path), {
+    method: 'POST', headers, body: JSON.stringify(body),
+  })
+  if (res.status === 401) {
+    setToken(null)
+    if (!location.hash.includes('/login')) location.hash = '#/login'
+  }
+  if (!res.ok || !res.body) {
+    let msg = res.statusText
+    try { const j = await res.json(); msg = (j && j.error) || msg } catch (e) { /* non-JSON */ }
+    throw new Error(msg)
+  }
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buf = ''
+  const flush = (chunk, last) => {
+    buf += chunk
+    let nl
+    while ((nl = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, nl).trim()
+      buf = buf.slice(nl + 1)
+      if (line) onEvent(JSON.parse(line))
+    }
+    if (last && buf.trim()) onEvent(JSON.parse(buf.trim()))
+  }
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    flush(decoder.decode(value, { stream: true }), false)
+  }
+  flush(decoder.decode(), true)
+}

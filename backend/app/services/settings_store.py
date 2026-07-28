@@ -14,6 +14,8 @@ AI_KEYS = (
     "openai_base_url", "openai_model", "openai_api_key",
     # Anthropic Claude
     "claude_model", "claude_api_key",
+    # Chat UX: household default for streaming responses ("true"/"false").
+    "chat_streaming",
 )
 
 

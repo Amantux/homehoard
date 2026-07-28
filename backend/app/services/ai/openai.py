@@ -64,3 +64,49 @@ class OpenAIProvider(AIProvider):
                 id=call.id, name=call.function.name,
                 arguments=json.loads(call.function.arguments or "{}")))
         return out
+
+    def chat_stream(self, messages, system="", tools=None, max_tokens=2048):
+        """True token streaming via Chat Completions ``stream=True``. Text arrives
+        as ``delta.content``; tool calls arrive fragmented across chunks and are
+        reassembled by index before their JSON arguments are parsed."""
+        client = self._get_client()
+        msgs = ([{"role": "system", "content": system}] if system else []) + messages
+        kwargs = {"model": self.model, "max_tokens": max_tokens,
+                  "messages": msgs, "stream": True}
+        if tools:
+            kwargs["tools"] = [
+                {"type": "function", "function": {
+                    "name": t["name"], "description": t.get("description", ""),
+                    "parameters": t.get("parameters", {"type": "object"})}}
+                for t in tools
+            ]
+        content = ""
+        frags: dict[int, dict] = {}
+        try:
+            for chunk in client.chat.completions.create(**kwargs):
+                if not chunk.choices:
+                    continue
+                delta = chunk.choices[0].delta
+                if delta.content:
+                    content += delta.content
+                    yield {"type": "delta", "text": delta.content}
+                for tc in (delta.tool_calls or []):
+                    slot = frags.setdefault(tc.index, {"id": "", "name": "", "args": ""})
+                    if tc.id:
+                        slot["id"] = tc.id
+                    if tc.function and tc.function.name:
+                        slot["name"] = tc.function.name
+                    if tc.function and tc.function.arguments:
+                        slot["args"] += tc.function.arguments
+        except Exception as exc:  # noqa: BLE001 - normalize SDK/HTTP errors
+            raise ProviderError(f"openai request failed: {exc}") from exc
+        out = ChatResult(content=content)
+        for idx in sorted(frags):
+            f = frags[idx]
+            try:
+                args = json.loads(f["args"] or "{}")
+            except json.JSONDecodeError:
+                args = {}
+            out.tool_calls.append(ToolCall(
+                id=f["id"] or f"call_{idx}", name=f["name"], arguments=args))
+        yield {"type": "final", "result": out}

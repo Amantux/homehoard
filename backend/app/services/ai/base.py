@@ -67,6 +67,26 @@ class AIProvider(ABC):
         (JSON-Schema ``parameters``); adapters translate to their own format.
         """
 
+    def chat_stream(
+        self,
+        messages: list[dict],
+        system: str = "",
+        tools: list[dict] | None = None,
+        max_tokens: int = 2048,
+    ):
+        """Stream one conversational turn.
+
+        Yields ``{"type": "delta", "text": str}`` events as text arrives, then
+        exactly one terminal ``{"type": "final", "result": ChatResult}`` carrying
+        the full content + any tool calls. The default has no real streaming — it
+        runs the blocking :meth:`chat` and emits its whole content as one delta;
+        adapters override this with true token streaming.
+        """
+        result = self.chat(messages, system=system, tools=tools, max_tokens=max_tokens)
+        if result.content:
+            yield {"type": "delta", "text": result.content}
+        yield {"type": "final", "result": result}
+
     def complete_json(
         self, prompt: str, system: str = "", max_tokens: int = 4096
     ) -> dict:

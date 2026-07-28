@@ -106,6 +106,26 @@ def diagnostics():
     )
 
 
+@bp.get("/settings/chat")
+@login_required
+def get_chat_settings():
+    """The household default for streaming chat responses. Any member can read it
+    (the client also honours a per-browser override); only the owner sets it."""
+    from ..services.settings_store import get_overrides
+    val = (get_overrides().get("chat_streaming") or "").strip().lower()
+    return jsonify({"stream": val == "true"})
+
+
+@bp.put("/settings/chat")
+@owner_required
+def put_chat_settings():
+    from ..services.settings_store import set_values
+    data = request.get_json(force=True) or {}
+    stream = bool(data.get("stream"))
+    set_values({"chat_streaming": "true" if stream else "false"})
+    return jsonify({"stream": stream})
+
+
 @bp.get("/currency")
 def currency():
     return jsonify(CURRENCIES)

@@ -33,6 +33,22 @@ async function loadAi() {
     canEditAi.value = true
   } catch (e) { canEditAi.value = false }
 }
+
+// Household default for streaming chat replies (owner-editable). Each browser can
+// override it on the Assistant page; the default is classic POST.
+const chatStreamDefault = ref(false)
+const chatSaving = ref(false)
+async function loadChatDefault() {
+  try { chatStreamDefault.value = !!(await api.get('/settings/chat')).stream } catch (e) { /* keep default */ }
+}
+async function saveChatDefault(on) {
+  chatSaving.value = true
+  try {
+    chatStreamDefault.value = !!(await api.put('/settings/chat', { stream: on })).stream
+    ui.toast('Saved chat default')
+  } catch (e) { ui.error(e.message || 'Could not save') } finally { chatSaving.value = false }
+}
+onMounted(loadChatDefault)
 async function loadAiModels() {
   aiLoadingModels.value = true
   try {
@@ -236,6 +252,18 @@ const actions = [
     <div class="row" style="justify-content:flex-end;max-width:520px">
       <button :disabled="aiSaving" @click="saveAi">{{ aiSaving ? 'Saving…' : 'Save' }}</button>
     </div>
+  </div>
+
+  <div v-if="canEditAi" class="card">
+    <h2>Chat</h2>
+    <p class="muted">Household default for how chat replies arrive. <strong>Stream</strong>
+      shows the answer as it's written; <strong>classic</strong> shows it all at once. Each
+      person can override this for their own browser on the Assistant page.</p>
+    <label style="display:flex;gap:8px;align-items:center;max-width:520px">
+      <input type="checkbox" style="width:auto" :checked="chatStreamDefault" :disabled="chatSaving"
+        @change="saveChatDefault($event.target.checked)" />
+      <span>Stream chat responses by default</span>
+    </label>
   </div>
 
   <div class="card">

@@ -191,3 +191,65 @@ def run_chat(gid: str, provider: AIProvider, history: list[dict],
     # Exhausted the loop — ask once more for a plain answer.
     final = provider.chat(messages, system=SYSTEM)
     return {"reply": final.content or "", "trace": trace}
+
+
+def run_chat_stream(gid: str, provider: AIProvider, history: list[dict],
+                    user_message: str, max_iters: int = 6):
+    """Streaming variant of :func:`run_chat`.
+
+    Yields events for the endpoint to forward to the client:
+      * ``{"type": "delta", "text": str}`` — assistant text as it is generated
+      * ``{"type": "tool", "name": str}`` — a tool is about to run (status)
+      * ``{"type": "done", "reply": str, "trace": [...]}`` — terminal
+
+    Every model turn streams live; a turn that also asks for tools has its (usually
+    empty) preamble streamed, the tools executed under per-tool SAVEPOINTs exactly
+    as in :func:`run_chat`, and the loop continues. The caller owns the single
+    commit — this generator only ``flush``es tool writes.
+    """
+    messages = list(history) + [{"role": "user", "content": user_message}]
+    trace: list[dict] = []
+
+    def _consume_turn(use_tools: bool):
+        result = None
+        for ev in provider.chat_stream(messages, system=SYSTEM,
+                                       tools=(TOOLS if use_tools else None)):
+            if ev["type"] == "delta":
+                if ev["text"]:
+                    yield {"type": "delta", "text": ev["text"]}
+            elif ev["type"] == "final":
+                result = ev["result"]
+        yield {"type": "_result", "result": result}
+
+    for _ in range(max_iters):
+        result = None
+        for ev in _consume_turn(use_tools=True):
+            if ev["type"] == "_result":
+                result = ev["result"]
+            else:
+                yield ev
+        if result is None or not result.tool_calls:
+            yield {"type": "done", "reply": (result.content if result else ""), "trace": trace}
+            return
+        messages.append({"role": "assistant", "content": result.content or "(using tools)"})
+        for call in result.tool_calls:
+            yield {"type": "tool", "name": call.name}
+            sp = db.session.begin_nested()
+            try:
+                output = execute_tool(gid, call.name, call.arguments)
+                sp.commit()
+            except Exception as exc:  # noqa: BLE001 - feed errors back, never 500
+                sp.rollback()
+                output = {"error": f"{call.name} failed: {exc}"}
+            trace.append({"tool": call.name, "args": call.arguments, "result": output})
+            messages.append({"role": "user", "content": (
+                f"Result of {call.name}({json.dumps(call.arguments)}): "
+                f"{json.dumps(output)}")})
+    # Exhausted the loop — one more turn, no tools, still streamed.
+    result = None
+    for ev in _consume_turn(use_tools=False):
+        if ev["type"] == "_result":
+            result = ev["result"]
+        else:
+            yield ev
+    yield {"type": "done", "reply": (result.content if result else ""), "trace": trace}

@@ -1,13 +1,39 @@
 <script setup>
-import { ref, nextTick } from 'vue'
-import { api } from '../api'
+import { ref, computed, onMounted, nextTick } from 'vue'
+import { api, streamPost } from '../api'
 
-const msgs = ref([]) // { role: 'user'|'assistant', content, actions? }
+const msgs = ref([]) // { role: 'user'|'assistant', content, actions?, error? }
 const input = ref('')
 const busy = ref(false)
 const needsSetup = ref(false)
 const sessionId = ref(null)
 const body = ref(null)
+
+// Transport choice: per-browser override (localStorage) wins over the household
+// default (backend), which defaults to classic POST. See docs/chat-and-providers.md.
+const STREAM_KEY = 'hbox_chat_stream'
+const householdDefault = ref(false)
+const override = ref(readOverride())
+const streaming = computed(() =>
+  override.value === null ? householdDefault.value : override.value)
+
+function readOverride() {
+  const v = localStorage.getItem(STREAM_KEY)
+  if (v === 'true') return true
+  if (v === 'false') return false
+  return null
+}
+function setStreaming(on) {
+  override.value = !!on
+  localStorage.setItem(STREAM_KEY, on ? 'true' : 'false')
+}
+
+onMounted(async () => {
+  try {
+    const s = await api.get('/settings/chat')
+    householdDefault.value = !!s.stream
+  } catch (e) { /* default stays false */ }
+})
 
 const suggestions = [
   'Where is my drill?',
@@ -21,6 +47,44 @@ async function scrollDown() {
   if (body.value) body.value.scrollTop = body.value.scrollHeight
 }
 
+function handleError(e) {
+  if (String(e.message || '').toLowerCase().includes('provider')) {
+    needsSetup.value = true
+    if (msgs.value.length && msgs.value[msgs.value.length - 1].role === 'assistant'
+        && !msgs.value[msgs.value.length - 1].content) {
+      msgs.value.pop() // drop the empty streaming placeholder
+    }
+    msgs.value.pop() // drop the unanswered user turn; the setup panel explains why
+  } else {
+    msgs.value.push({ role: 'assistant', content: '', error: e.message || 'Something went wrong.' })
+  }
+}
+
+async function sendPost(message) {
+  const r = await api.post('/chat', { message, sessionId: sessionId.value })
+  sessionId.value = r.sessionId
+  msgs.value.push({ role: 'assistant', content: r.reply, actions: r.actions || [] })
+}
+
+async function sendStream(message) {
+  msgs.value.push({ role: 'assistant', content: '', actions: [] })
+  const idx = msgs.value.length - 1 // mutate via the reactive proxy, not the raw object
+  let errored = null
+  await streamPost('/chat/stream', { message, sessionId: sessionId.value }, (ev) => {
+    const a = msgs.value[idx]
+    if (ev.type === 'delta') { a.content += ev.text; scrollDown() }
+    else if (ev.type === 'done') {
+      sessionId.value = ev.sessionId
+      a.content = ev.reply || a.content
+      a.actions = ev.actions || []
+    } else if (ev.type === 'error') { errored = new Error(ev.error || 'Something went wrong.') }
+  })
+  if (errored) {
+    msgs.value.pop() // remove the streaming placeholder before showing the error
+    throw errored
+  }
+}
+
 async function send(text) {
   const message = (text ?? input.value).trim()
   if (!message || busy.value) return
@@ -30,16 +94,10 @@ async function send(text) {
   busy.value = true
   scrollDown()
   try {
-    const r = await api.post('/chat', { message, sessionId: sessionId.value })
-    sessionId.value = r.sessionId
-    msgs.value.push({ role: 'assistant', content: r.reply, actions: r.actions || [] })
+    if (streaming.value) await sendStream(message)
+    else await sendPost(message)
   } catch (e) {
-    if (String(e.message || '').toLowerCase().includes('provider')) {
-      needsSetup.value = true
-      msgs.value.pop() // drop the unanswered user turn; the setup panel explains why
-    } else {
-      msgs.value.push({ role: 'assistant', content: '', error: e.message || 'Something went wrong.' })
-    }
+    handleError(e)
   } finally {
     busy.value = false
     scrollDown()
@@ -56,7 +114,13 @@ function newChat() {
 <template>
   <div class="page-head">
     <h1>Assistant</h1>
-    <button v-if="msgs.length" class="secondary" @click="newChat">New chat</button>
+    <div style="display:flex;gap:12px;align-items:center">
+      <label class="stream-toggle" title="Stream the reply token-by-token (this browser)">
+        <input type="checkbox" :checked="streaming" @change="setStreaming($event.target.checked)" />
+        Stream replies
+      </label>
+      <button v-if="msgs.length" class="secondary" @click="newChat">New chat</button>
+    </div>
   </div>
 
   <div class="card" style="display:flex;flex-direction:column;height:calc(100vh - 170px);min-height:420px">
@@ -83,13 +147,14 @@ function newChat() {
       <div v-for="(m, i) in msgs" :key="i" class="chat-row" :class="m.role">
         <div class="chat-bubble" :class="{ error: m.error }">
           <span v-if="m.error" class="danger">{{ m.error }}</span>
-          <span v-else style="white-space:pre-wrap">{{ m.content }}</span>
+          <span v-else-if="m.content" style="white-space:pre-wrap">{{ m.content }}</span>
+          <span v-else class="muted">…</span>
           <div v-if="m.actions && m.actions.length" class="chat-actions">
             <span v-for="(a, j) in m.actions" :key="j" class="chip">✓ {{ a.tool.replace(/_/g, ' ') }}</span>
           </div>
         </div>
       </div>
-      <div v-if="busy" class="chat-row assistant"><div class="chat-bubble muted">Thinking…</div></div>
+      <div v-if="busy && !streaming" class="chat-row assistant"><div class="chat-bubble muted">Thinking…</div></div>
     </div>
 
     <form style="display:flex;gap:8px;margin-top:12px" @submit.prevent="send()">
@@ -116,4 +181,9 @@ function newChat() {
   font-size:.75rem; padding:2px 8px; border-radius:999px;
   background:var(--surface, #fff); border:1px solid var(--border); color:var(--text);
 }
+.stream-toggle {
+  display:flex; align-items:center; gap:6px; font-size:.85rem; color:var(--muted);
+  cursor:pointer; user-select:none;
+}
+.stream-toggle input { width:auto; }
 </style>

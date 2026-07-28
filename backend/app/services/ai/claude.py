@@ -57,3 +57,33 @@ class ClaudeProvider(AIProvider):
                 out.tool_calls.append(ToolCall(
                     id=block.id, name=block.name, arguments=dict(block.input)))
         return out
+
+    def chat_stream(self, messages, system="", tools=None, max_tokens=2048):
+        """True token streaming via the Anthropic SDK's ``messages.stream``: text
+        deltas come from ``text_stream``; any ``tool_use`` blocks (with their
+        accumulated input) are read from the final message once the stream ends."""
+        client = self._get_client()
+        kwargs = {"model": self.model, "max_tokens": max_tokens, "messages": messages}
+        if system:
+            kwargs["system"] = system
+        if tools:
+            kwargs["tools"] = [
+                {"name": t["name"], "description": t.get("description", ""),
+                 "input_schema": t.get("parameters", {"type": "object"})}
+                for t in tools
+            ]
+        content = ""
+        try:
+            with client.messages.stream(**kwargs) as stream:
+                for text in stream.text_stream:
+                    content += text
+                    yield {"type": "delta", "text": text}
+                final = stream.get_final_message()
+        except Exception as exc:  # noqa: BLE001 - normalize SDK/HTTP errors
+            raise ProviderError(f"claude request failed: {exc}") from exc
+        out = ChatResult(content=content)
+        for block in final.content:
+            if block.type == "tool_use":
+                out.tool_calls.append(ToolCall(
+                    id=block.id, name=block.name, arguments=dict(block.input)))
+        yield {"type": "final", "result": out}
