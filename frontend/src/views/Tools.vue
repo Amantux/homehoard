@@ -321,9 +321,13 @@ const actions = [
           <option value="">Same as chat</option>
           <option v-for="p in ai.validProviders" :key="p" :value="p">{{ PROVIDER_LABELS[p] || p }}</option>
         </select>
-        <input v-model="jobAi[area.k].model" :list="`jobmodels-${area.k}`"
-               placeholder="model (optional)" style="flex:1" />
-        <datalist :id="`jobmodels-${area.k}`"><option v-for="m in jobModels[area.k]" :key="m" :value="m" /></datalist>
+        <select v-if="jobModels[area.k].length" v-model="jobAi[area.k].model" style="flex:1">
+          <option value="">Default model</option>
+          <option v-for="m in jobModels[area.k]" :key="m" :value="m">{{ m }}</option>
+          <option v-if="jobAi[area.k].model && !jobModels[area.k].includes(jobAi[area.k].model)"
+                  :value="jobAi[area.k].model">{{ jobAi[area.k].model }} (current)</option>
+        </select>
+        <input v-else v-model="jobAi[area.k].model" placeholder="model (optional)" style="flex:1" />
         <button type="button" class="secondary sm" :disabled="jobModelsLoading[area.k]"
                 @click="listJobModels(area.k)">{{ jobModelsLoading[area.k] ? '…' : 'List' }}</button>
       </div>
