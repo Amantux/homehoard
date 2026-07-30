@@ -28,23 +28,10 @@ async function loadStatus() {
   } catch (e) { /* stay optimistic */ }
 }
 
-// Transport: per-browser override (localStorage) over the household default
-// (backend), which defaults to classic POST. See docs/chat-and-providers.md.
-const STREAM_KEY = 'hbox_chat_stream'
+// Transport is controlled by the household setting (fetched below) — no per-widget
+// toggle. Defaults to classic POST. See docs/chat-and-providers.md.
 const householdDefault = ref(false)
-const streamOverride = ref(readOverride())
-const streaming = computed(() =>
-  streamOverride.value === null ? householdDefault.value : streamOverride.value)
-function readOverride() {
-  const v = localStorage.getItem(STREAM_KEY)
-  if (v === 'true') return true
-  if (v === 'false') return false
-  return null
-}
-function setStreaming(on) {
-  streamOverride.value = !!on
-  localStorage.setItem(STREAM_KEY, on ? 'true' : 'false')
-}
+const streaming = computed(() => householdDefault.value)
 
 onMounted(async () => {
   try { householdDefault.value = !!(await api.get('/settings/chat')).stream } catch (e) { /* default false */ }
@@ -148,9 +135,6 @@ async function send(text) {
             </span>
           </div>
           <div style="display:flex;gap:10px;align-items:center">
-            <label class="stream-toggle" title="Stream the reply as it's written (this browser)">
-              <input type="checkbox" :checked="streaming" @change="setStreaming($event.target.checked)" /> Stream
-            </label>
             <button v-if="msgs.length" class="linkish" @click="reset">New chat</button>
           </div>
         </header>
@@ -220,8 +204,6 @@ async function send(text) {
   padding: 12px 16px; border-bottom: 1px solid var(--border);
 }
 .linkish { background: none; border: none; color: var(--accent); cursor: pointer; font-size: 0.8rem; }
-.stream-toggle { display: flex; align-items: center; gap: 5px; font-size: 0.78rem; color: var(--muted); cursor: pointer; user-select: none; }
-.stream-toggle input { width: auto; margin: 0; }
 .ai-tag { font-size: 0.66rem; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border); white-space: nowrap; }
 .ai-tag.on { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
 .ai-tag.off { background: var(--danger-soft); color: var(--danger); border-color: transparent; }
