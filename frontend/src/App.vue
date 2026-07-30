@@ -103,7 +103,8 @@ const nav = [
                  @close="showCreate = false; ui.closeCreate()" />
     <ScannerModal v-if="showScanner" @close="showScanner = false" />
     <SearchModal v-if="showSearch" @close="showSearch = false" />
-    <ReportBug v-if="showReport" @close="showReport = false" />
+    <ReportBug v-if="showReport || ui.bugReport" :initial="ui.bugReport"
+               @close="showReport = false; ui.closeBugReport()" />
     <ChatAssistant />
     <Toasts />
   </template>

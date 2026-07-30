@@ -8,6 +8,9 @@ export const useUI = defineStore('ui', {
     toasts: [],
     // When set, App.vue opens the Create modal pre-set to this kind.
     createKind: null,
+    // When set ({description, type?}), App.vue opens the Report-a-bug modal prefilled
+    // (used by the chat assistant's bug-report walkthrough).
+    bugReport: null,
   }),
   actions: {
     openCreate(kind = 'item') {
@@ -15,6 +18,12 @@ export const useUI = defineStore('ui', {
     },
     closeCreate() {
       this.createKind = null
+    },
+    openBugReport(payload) {
+      this.bugReport = payload || {}
+    },
+    closeBugReport() {
+      this.bugReport = null
     },
     applyTheme() {
       const resolved =

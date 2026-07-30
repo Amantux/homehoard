@@ -4,6 +4,17 @@
 // optional) and shows suggestion chips + a proactive setup state.
 import { ref, computed, onMounted, nextTick } from 'vue'
 import { api, streamPost } from '../api'
+import { useUI } from '../stores/ui'
+
+const ui = useUI()
+// The assistant ends a bug-report summary with this marker; we hide it and offer a
+// button that opens the Report-a-bug modal prefilled with the summary.
+const BUG_MARKER = '[[REPORT_BUG]]'
+function stripBug(text) {
+  if (!text || !text.includes(BUG_MARKER)) return { content: text, summary: null }
+  const content = text.split(BUG_MARKER).join('').replace(/\s+$/, '')
+  return { content, summary: content }
+}
 
 const open = ref(false)
 const msgs = ref([]) // { role, content, actions?, error? }
@@ -68,7 +79,8 @@ async function scrollDown() {
 async function sendPost(message) {
   const r = await api.post('/chat', { message, sessionId: sessionId.value })
   sessionId.value = r.sessionId
-  msgs.value.push({ role: 'assistant', content: r.reply, actions: r.actions || [] })
+  const { content, summary } = stripBug(r.reply)
+  msgs.value.push({ role: 'assistant', content, actions: r.actions || [], bugReportSummary: summary })
 }
 
 async function sendStream(message) {
@@ -81,8 +93,10 @@ async function sendStream(message) {
       if (ev.type === 'delta') { a.content += ev.text; scrollDown() }
       else if (ev.type === 'done') {
         sessionId.value = ev.sessionId
-        a.content = ev.reply || a.content
+        const { content, summary } = stripBug(ev.reply || a.content)
+        a.content = content
         a.actions = ev.actions || []
+        a.bugReportSummary = summary
       } else if (ev.type === 'error') { errored = new Error(ev.error || 'Something went wrong.') }
     })
   } catch (e) {
@@ -165,6 +179,11 @@ async function send(text) {
             <div v-if="m.actions && m.actions.length" class="actions">
               <span v-for="(a, j) in m.actions" :key="j" class="action">✓ {{ a.tool.replace(/_/g, ' ') }}</span>
             </div>
+            <div v-if="m.bugReportSummary" class="actions">
+              <button class="bug-btn" @click="ui.openBugReport({ description: m.bugReportSummary })">
+                🐞 Open bug report
+              </button>
+            </div>
           </div>
 
           <div v-if="busy && !streaming" class="muted thinking">Thinking…</div>
@@ -228,6 +247,9 @@ async function send(text) {
 .bubble.err { background: var(--danger-soft); color: var(--danger); }
 
 .actions { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 6px; }
+.bug-btn { font-size: .8rem; padding: 5px 10px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--surface-2, transparent); color: var(--text); font-weight: 600; }
+.bug-btn:hover { border-color: var(--accent); }
 .action {
   display: inline-flex; align-items: center; gap: 6px; font-size: 0.74rem;
   background: var(--surface-2); color: var(--text); border: 1px solid var(--border);

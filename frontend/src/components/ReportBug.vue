@@ -12,12 +12,16 @@ const VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'unkn
 // the ~8 KB browser/GitHub ceiling before falling back to the clipboard.
 const MAX_URL = 6800
 
+const props = defineProps({
+  // Optional prefill from the chat bug-report walkthrough: { description?, type? }.
+  initial: { type: Object, default: null },
+})
 const emit = defineEmits(['close'])
 const route = useRoute()
 
-const type = ref('bug') // 'bug' | 'feature'
+const type = ref(props.initial?.type || 'bug') // 'bug' | 'feature'
 const title = ref('')
-const description = ref('')
+const description = ref(props.initial?.description || '')
 const includeDiag = ref(true)
 const diagText = ref('')
 const loading = ref(true)
