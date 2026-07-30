@@ -44,6 +44,7 @@ const MODES = [
   { id: 'checkout', label: 'Check out' },
   { id: 'checkin', label: 'Check in' },
   { id: 'onboard', label: 'Add to…' },
+  { id: 'newbin', label: 'New bin' },
 ]
 
 function tokenFromText(text) {
@@ -104,6 +105,21 @@ async function handle(code, format) {
     navigating = true
     close()
     router.push('/t/' + encodeURIComponent(code))
+    return
+  }
+
+  // New-bin mode: label a physical bin by scanning a barcode. Creates a bin that
+  // resolves to this code, then drops into onboard mode so you can fill it.
+  if (mode.value === 'newbin') {
+    try {
+      const bin = await api.post('/bins',
+        { name: `Bin ${code.slice(-5)}`, code, codeFormat: format || 'barcode' })
+      setTarget('bin', bin.id, bin.name)
+      mode.value = 'onboard'
+      flash(true, `🗃️ Created ${bin.name} — scan items to fill it, or rename it later`)
+    } catch (e) {
+      flash(false, e.message || 'That code is already assigned to something')
+    }
     return
   }
 
@@ -325,6 +341,7 @@ onBeforeUnmount(stopCamera)
       <p class="muted" style="margin-top:10px;font-size:0.85rem">
         <template v-if="mode === 'onboard'">Keep scanning — each code drops an item into <strong>{{ targetName || '(pick a target)' }}</strong>.</template>
         <template v-else-if="mode === 'open'">Point at a code to open it.</template>
+        <template v-else-if="mode === 'newbin'">Scan a barcode or QR code to create a new bin labelled with it, then keep scanning to fill it.</template>
         <template v-else>Point at item codes to {{ mode === 'checkout' ? 'check them out' : 'check them in' }} — one after another.</template>
         <span v-if="engine" class="badge" style="margin-left:4px">{{ engine === 'native' ? 'fast scanner' : 'compatibility scanner' }}</span>
       </p>

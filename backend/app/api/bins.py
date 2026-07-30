@@ -3,7 +3,8 @@ from flask import Blueprint, request, jsonify, abort
 from ..extensions import db
 from sqlalchemy.orm import selectinload, joinedload
 
-from ..models import Bin, Item
+from ..models import Bin, Item, QrTag
+from ..models.qrtag import gen_token
 from ..auth import login_required, current_group
 from ..schemas.serializers import bin_out, bin_summary, item_summary
 from ..services.holdings import resync_item, primary_holding, resync_bin_holdings
@@ -34,6 +35,14 @@ def list_bins():
 @login_required
 def create_bin():
     data = request.get_json(force=True) or {}
+    code = (data.get("code") or "").strip()
+    if code:
+        # Reject a code already in use BEFORE creating the bin, so a taken barcode
+        # never leaves an orphan bin behind (mirrors POST /qr-tags' 409).
+        taken = (db.session.query(QrTag)
+                 .filter_by(group_id=current_group().id, code=code).first())
+        if taken:
+            return jsonify({"error": "that code is already assigned"}), 409
     b = Bin(
         name=data.get("name", ""),
         description=data.get("description", ""),
@@ -41,6 +50,16 @@ def create_bin():
         group_id=current_group().id,
     )
     db.session.add(b)
+    if code:
+        db.session.flush()  # need b.id for the tag
+        # Register the scanned barcode so it resolves to this bin (external tag,
+        # same shape as the external branch of POST /qr-tags).
+        db.session.add(QrTag(
+            kind="bin", bin_id=b.id, group_id=current_group().id,
+            source="external", code=code,
+            token=code if len(code) <= 60 else gen_token(),
+            code_format=data.get("codeFormat", "barcode"),
+        ))
     db.session.commit()
     return jsonify(bin_out(b)), 201
 
@@ -101,6 +120,14 @@ def add_item(bin_id, item_id):
     if ph:
         ph.bin_id = item.bin_id
         ph.location_id = item.location_id
+        # If the item already had a placement in this bin, combine the two rather
+        # than leaving two holdings for the same spot.
+        dup = next((h for h in item.holdings if h is not ph
+                    and h.location_id == ph.location_id and h.bin_id == ph.bin_id), None)
+        if dup is not None:
+            ph.quantity = round((ph.quantity or 0) + (dup.quantity or 0), 4)
+            db.session.delete(dup)
+            item.holdings.remove(dup)
     resync_item(item)
     db.session.commit()
     return jsonify(item_summary(item))

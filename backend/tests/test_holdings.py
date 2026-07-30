@@ -124,3 +124,37 @@ def test_move_even_split_does_not_crash(auth_client):
                          json={"toBinId": b2["id"], "quantity": 1})
     assert r.status_code == 200
     assert {h["bin"]["name"]: h["quantity"] for h in r.get_json()["holdings"]} == {"A": 1, "B": 1}
+
+
+def test_add_placement_in_same_bin_combines_into_one(auth_client):
+    # Adding more of the same item to a bin it's already in should COMBINE into the
+    # existing placement (sum the quantity), not create a duplicate holding row.
+    loc = _loc(auth_client, "Kitchen")
+    b = _bin(auth_client, "Drawer", loc["id"])
+    it = _item(auth_client, name="AA", quantity=8, binId=b["id"])
+
+    r = auth_client.post(f"/api/v1/items/{it['id']}/holdings",
+                         json={"binId": b["id"], "quantity": 5}).get_json()
+
+    assert r["quantity"] == 13
+    assert r["placementCount"] == 1                       # combined, not duplicated
+    assert r["holdings"][0]["quantity"] == 13
+    b_items = auth_client.get(f"/api/v1/bins/{b['id']}").get_json()["items"]
+    aa = [i for i in b_items if i["name"] == "AA"]
+    assert len(aa) == 1 and aa[0]["quantityHere"] == 13
+
+
+def test_move_item_into_bin_it_already_occupies_combines(auth_client):
+    loc = _loc(auth_client, "Kitchen")
+    b1 = _bin(auth_client, "Drawer", loc["id"])
+    b2 = _bin(auth_client, "Garage", loc["id"])
+    it = _item(auth_client, name="AA", quantity=8, binId=b1["id"])          # primary in b1
+    auth_client.post(f"/api/v1/items/{it['id']}/holdings",
+                     json={"binId": b2["id"], "quantity": 3})                # some in b2
+
+    auth_client.put(f"/api/v1/bins/{b2['id']}/items/{it['id']}")            # move item into b2
+
+    full = auth_client.get(f"/api/v1/items/{it['id']}").get_json()
+    in_b2 = [h for h in full["holdings"] if h.get("bin") and h["bin"]["id"] == b2["id"]]
+    assert len(in_b2) == 1 and in_b2[0]["quantity"] == 11                   # 8 + 3 combined
+    assert full["placementCount"] == 1

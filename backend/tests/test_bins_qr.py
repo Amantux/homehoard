@@ -247,3 +247,26 @@ def test_item_field_time_type(auth_client):
     ).get_json()
     assert updated["fields"][0]["type"] == "time"
     assert updated["fields"][0]["timeValue"].startswith("2026-01-15")
+
+
+def test_create_bin_with_code_resolves_to_that_bin(auth_client):
+    # Scanning a barcode to create a bin: the code must resolve back to the new bin.
+    b = auth_client.post("/api/v1/bins",
+                         json={"name": "Shelf 3", "code": "0123456789012"}).get_json()
+    r = auth_client.get("/api/v1/barcode/0123456789012").get_json()
+    assert r["status"] == "registered" and r["kind"] == "bin"
+    assert r["targetId"] == b["id"]
+
+
+def test_create_bin_with_already_used_code_is_rejected(auth_client):
+    auth_client.post("/api/v1/bins", json={"name": "Shelf 3", "code": "DUP-CODE"})
+    before = len(auth_client.get("/api/v1/bins").get_json())
+    r = auth_client.post("/api/v1/bins", json={"name": "Shelf 4", "code": "DUP-CODE"})
+    assert r.status_code == 409                       # clean error, not a crash
+    after = len(auth_client.get("/api/v1/bins").get_json())
+    assert after == before                            # no orphan bin created
+
+
+def test_create_bin_without_code_makes_no_tag(auth_client):
+    auth_client.post("/api/v1/bins", json={"name": "Plain bin"})
+    assert auth_client.get("/api/v1/barcode/nope-not-a-code").get_json()["status"] == "not_found"

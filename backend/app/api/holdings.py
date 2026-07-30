@@ -72,9 +72,16 @@ def add_holding(item_id):
     qty, err = _positive_qty(data.get("quantity", 1))
     if err:
         return err
-    it.holdings.append(ItemHolding(  # append only; cascade persists it
-        location_id=location_id, bin_id=bin_id, quantity=qty,
-        notes=(data.get("notes") or ""), group_id=it.group_id))
+    # Combine with an existing placement in the same spot rather than creating a
+    # second holding row for it (same match as move_holding's destination merge).
+    existing = next((h for h in it.holdings
+                     if h.location_id == location_id and h.bin_id == bin_id), None)
+    if existing is not None:
+        existing.quantity = round((existing.quantity or 0) + qty, 4)
+    else:
+        it.holdings.append(ItemHolding(  # append only; cascade persists it
+            location_id=location_id, bin_id=bin_id, quantity=qty,
+            notes=(data.get("notes") or ""), group_id=it.group_id))
     resync_item(it)
     db.session.commit()
     return jsonify(item_out(it)), 201
