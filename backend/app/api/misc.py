@@ -44,6 +44,33 @@ def status():
     )
 
 
+@bp.get("/db/target")
+@owner_required
+def db_target():
+    """Owner-only: the DB coordinates this instance runs on, so the operator can
+    point the sibling add-ons (Edibl, myMeal) at the SAME PostgreSQL when they are
+    deployed together. Username and password are STRIPPED — this never returns the
+    full URL or any credential, only host/port/database (or just the backend for
+    the built-in SQLite, which cannot be shared across apps)."""
+    from sqlalchemy.engine import make_url
+
+    uri = current_app.config["SQLALCHEMY_DATABASE_URI"]
+    try:
+        u = make_url(uri)
+    except Exception:  # noqa: BLE001 - never 500 on a malformed URI
+        return jsonify({"backend": "unknown"})
+    if (u.drivername or "").startswith("sqlite"):
+        return jsonify({"backend": "sqlite"})
+    return jsonify(
+        {
+            "backend": "postgresql",
+            "host": u.host or "",
+            "port": u.port or 5432,
+            "database": u.database or "",
+        }
+    )
+
+
 @bp.get("/ready")
 def ready():
     """Readiness: dependencies are actually usable (DB reachable, data dir

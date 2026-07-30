@@ -138,6 +138,57 @@ async function clearAiKey() {
     ui.toast('Saved API key cleared')
   } catch (e) { ui.error(e.message || 'Could not clear key') }
 }
+
+// ── Cross-app sync: copy this app's AI config to Edibl / myMeal as a code string.
+// The API key is NEVER included; field names are app-agnostic so the string is
+// interchangeable across the three apps.
+const syncPasteInput = ref('')
+const syncApplying = ref(false)
+function copyAiSettings() {
+  const cfg = {
+    v: 1,
+    provider: ai.value.provider || '',
+    baseUrl: ai.value.baseUrl || '',
+    model: ai.value.model || '',
+    stream: !!chatStreamDefault.value,
+    jobEnrich: jobAi.value.enrich || { provider: '', model: '' },
+    jobOrganize: jobAi.value.organize || { provider: '', model: '' },
+  }
+  const str = 'AICFG1:' + btoa(unescape(encodeURIComponent(JSON.stringify(cfg))))
+  navigator.clipboard.writeText(str).then(
+    () => ui.toast('Copied — paste into your other apps’ Settings'),
+    () => ui.error('Could not copy to clipboard'))
+}
+async function applyAiSettings() {
+  const raw = (syncPasteInput.value || '').trim()
+  if (!raw.startsWith('AICFG1:')) { ui.error('That doesn’t look like an AI-settings code.'); return }
+  let cfg
+  try { cfg = JSON.parse(decodeURIComponent(escape(atob(raw.slice(7))))) }
+  catch { ui.error('Couldn’t read that code — copy it again.'); return }
+  if (!cfg || !cfg.provider) { ui.error('That code has no provider.'); return }
+  syncApplying.value = true
+  try {
+    // Provider / URL / model — blanks omitted (match saveAi); NEVER a key.
+    const p = { provider: cfg.provider }
+    if (cfg.baseUrl) p.baseUrl = cfg.baseUrl
+    if (cfg.model) p.model = cfg.model
+    await api.put('/settings/ai', p)
+    if (typeof cfg.stream === 'boolean') await api.put('/settings/chat', { stream: cfg.stream })
+    if (cfg.jobEnrich || cfg.jobOrganize) {
+      await api.put('/settings/ai/jobs', {
+        enrich: cfg.jobEnrich || { provider: '', model: '' },
+        organize: cfg.jobOrganize || { provider: '', model: '' } })
+    }
+    // Reload so the UI reflects what was applied.
+    ai.value = await api.get('/settings/ai')
+    aiForm.value = { provider: ai.value.provider, baseUrl: ai.value.baseUrl,
+      model: ai.value.model, apiKey: '', ollamaSearchKey: '' }
+    chatStreamDefault.value = !!(await api.get('/settings/chat')).stream
+    try { jobAi.value = await api.get('/settings/ai/jobs') } catch (e) { /* admin-only */ }
+    syncPasteInput.value = ''
+    ui.toast('AI settings applied — add this app’s API key if the provider needs one.')
+  } catch (e) { ui.error(e.message || 'Could not apply settings.') } finally { syncApplying.value = false }
+}
 onMounted(loadAi)
 
 async function runAction(path, label) {
@@ -298,10 +349,28 @@ const actions = [
   </div>
 
   <div v-if="canEditAi" class="card">
+    <h2>Sync to your other apps</h2>
+    <p class="muted" style="max-width:520px">Deploying Edibl, HomeHoard, and myMeal together? Copy this
+      app's AI settings — provider, URL, model, streaming default, and background-task models — and paste
+      the code into the other apps so you configure the LLM once. <strong>The API key is never
+      included</strong>; add each app's key separately.</p>
+    <div class="row" style="max-width:520px">
+      <button class="secondary" @click="copyAiSettings">📋 Copy AI settings</button>
+    </div>
+    <label style="display:block;max-width:520px;margin-top:12px">
+      <span class="muted" style="font-size:0.85rem">Paste a settings code from another app</span>
+      <input v-model="syncPasteInput" placeholder="AICFG1:…" style="width:100%;margin-top:4px" />
+    </label>
+    <div class="row" style="justify-content:flex-end;max-width:520px;margin-top:8px">
+      <button class="secondary" :disabled="syncApplying || !syncPasteInput.trim()" @click="applyAiSettings">
+        {{ syncApplying ? 'Applying…' : 'Apply' }}</button>
+    </div>
+  </div>
+
+  <div v-if="canEditAi" class="card">
     <h2>Chat</h2>
     <p class="muted">Household default for how chat replies arrive. <strong>Stream</strong>
-      shows the answer as it's written; <strong>classic</strong> shows it all at once. Each
-      person can override this for their own browser on the Assistant page.</p>
+      shows the answer as it's written; <strong>classic</strong> shows it all at once.</p>
     <label style="display:flex;gap:8px;align-items:center;max-width:520px">
       <input type="checkbox" style="width:auto" :checked="chatStreamDefault" :disabled="chatSaving"
         @change="saveChatDefault($event.target.checked)" />
