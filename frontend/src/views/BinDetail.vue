@@ -5,11 +5,13 @@ import { api, apiUrl } from '../api'
 import { money, loadCurrency } from '../format'
 import { useUI } from '../stores/ui'
 import QrPanel from '../components/QrPanel.vue'
+import PhotoCapture from '../components/PhotoCapture.vue'
 
 const route = useRoute()
 const router = useRouter()
 const ui = useUI()
 const id = route.params.id
+const showCapture = ref(false)
 const bin = ref(null)
 const locations = ref([])
 const allItems = ref([])
@@ -26,8 +28,7 @@ const primaryImg = computed(() => {
 
 async function load() { bin.value = await api.get('/bins/' + id) }
 
-async function uploadPhoto(e) {
-  const file = e.target.files[0]
+async function uploadPhotoFile(file) {
   if (!file) return
   const form = new FormData()
   form.append('file', file)
@@ -35,8 +36,9 @@ async function uploadPhoto(e) {
   form.append('name', file.name)
   bin.value = await api.upload(`/bins/${id}/attachments`, form)
   ui.toast('Photo added')
-  e.target.value = ''
 }
+async function uploadPhoto(e) { await uploadPhotoFile(e.target.files[0]); e.target.value = '' }
+function onCapture(file) { showCapture.value = false; uploadPhotoFile(file) }
 async function removeAttachment(a) {
   await api.del(`/bins/${id}/attachments/${a.id}`)
   await load()
@@ -171,10 +173,14 @@ async function remove() {
       </div>
       <p v-else class="muted">No photos yet.</p>
       <div class="divider"></div>
-      <input type="file" accept="image/*" @change="uploadPhoto" />
+      <div class="row" style="gap:8px;align-items:center;flex-wrap:wrap">
+        <input type="file" accept="image/*" @change="uploadPhoto" aria-label="Upload a photo" />
+        <button type="button" class="secondary sm" @click="showCapture = true">📷 Take photo</button>
+      </div>
     </div>
 
     <div v-show="tab==='qr'"><QrPanel kind="bin" :target-id="bin.id" /></div>
+    <PhotoCapture v-if="showCapture" @captured="onCapture" @close="showCapture = false" />
   </div>
   <div v-else class="card"><div class="skeleton" style="height:240px"></div></div>
 </template>

@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { api } from '../api'
 import { useUI } from '../stores/ui'
 import Combobox from './Combobox.vue'
+import PhotoCapture from './PhotoCapture.vue'
 import { indexById, pathString } from '../locationTree'
 import { parseQuickAdd } from '../quickParse'
 
@@ -27,6 +28,20 @@ const sessionCount = ref(0)
 const nameInput = ref(null)
 const suggestions = ref([])
 const parsedPlace = ref('') // free text from NL that didn't match anything yet
+const photo = ref(null)     // captured/selected photo File — items & bins only
+const photoPreview = ref('')
+const showCapture = ref(false)
+
+function onCaptured(file) {
+  photo.value = file
+  if (photoPreview.value) URL.revokeObjectURL(photoPreview.value)
+  photoPreview.value = URL.createObjectURL(file)
+  showCapture.value = false
+}
+function removePhoto() {
+  photo.value = null
+  if (photoPreview.value) { URL.revokeObjectURL(photoPreview.value); photoPreview.value = '' }
+}
 
 async function loadPlaces() {
   const [locs, bs] = await Promise.all([api.get('/locations'), api.get('/bins')])
@@ -137,6 +152,7 @@ function resetPerItem() {
   quantity.value = 1
   suggestions.value = []
   parsedPlace.value = ''
+  removePhoto()
 }
 
 // stay = keep the modal open for the next item (bin/location stay selected).
@@ -167,6 +183,18 @@ async function submit(stay = false) {
     } else {
       await api.post('/labels', { name: name.value, description: description.value })
       if (!stay) router.push('/labels')
+    }
+    // Attach the captured photo (items + bins support attachments). Never let a photo
+    // hiccup lose the record the user just created.
+    if (photo.value && created?.id && (kind.value === 'item' || kind.value === 'bin')) {
+      try {
+        const form = new FormData()
+        form.append('file', photo.value)
+        form.append('type', 'photo')
+        await api.upload(`/${kind.value === 'item' ? 'items' : 'bins'}/${created.id}/attachments`, form)
+      } catch (e) {
+        ui.error('Created, but the photo upload failed: ' + e.message)
+      }
     }
     sessionCount.value += 1
     ui.toast(`${name.value} created`)
@@ -260,6 +288,20 @@ async function submit(stay = false) {
         <input v-model="code" placeholder="Scan or type a code to attach"
                @keyup.enter="submit(true)" /></label>
 
+      <!-- Photo — items & bins support attachments; capture uploads after create -->
+      <div v-if="kind === 'item' || kind === 'bin'" class="field">
+        <span>Photo <span class="muted" style="font-weight:400">— optional</span></span>
+        <div class="row" style="gap:10px;align-items:center">
+          <button type="button" class="secondary sm" @click="showCapture = true">
+            📷 {{ photo ? 'Change photo' : 'Add photo' }}</button>
+          <div v-if="photoPreview" class="photo-thumb">
+            <img :src="photoPreview" alt="Photo preview" />
+            <button type="button" class="ghost icon-btn sm" aria-label="Remove photo"
+                    @click="removePhoto">✕</button>
+          </div>
+        </div>
+      </div>
+
       <div class="row" style="justify-content:space-between;align-items:center;margin-top:6px">
         <span class="muted" style="font-size:0.85rem">{{ sessionCount ? sessionCount + ' added' : '' }}</span>
         <div class="row" style="gap:8px">
@@ -270,10 +312,15 @@ async function submit(stay = false) {
       </div>
     </div>
   </div>
+
+  <PhotoCapture v-if="showCapture" @captured="onCaptured" @close="showCapture = false" />
 </template>
 
 <style scoped>
 .suggest-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: -4px 0 14px; }
+.photo-thumb { position: relative; width: 46px; height: 46px; }
+.photo-thumb img { width: 100%; height: 100%; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); }
+.photo-thumb .icon-btn { position: absolute; top: -8px; right: -8px; background: var(--surface); border: 1px solid var(--border); border-radius: 999px; line-height: 1; padding: 1px 5px; }
 .suggest-chip { cursor: pointer; border: 1px solid var(--accent); background: var(--accent-soft); }
 .suggest-chip:hover { background: var(--accent); color: var(--accent-fg); }
 .suggest-chip:hover .muted { color: var(--accent-fg); }

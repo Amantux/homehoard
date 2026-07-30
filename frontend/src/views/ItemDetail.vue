@@ -5,11 +5,13 @@ import { api, apiUrl } from '../api'
 import { money, shortDate, loadCurrency } from '../format'
 import { useUI } from '../stores/ui'
 import QrPanel from '../components/QrPanel.vue'
+import PhotoCapture from '../components/PhotoCapture.vue'
 
 const route = useRoute()
 const router = useRouter()
 const ui = useUI()
 const id = route.params.id
+const showCapture = ref(false)
 
 const item = ref(null)
 const binId = ref('')
@@ -158,8 +160,7 @@ async function checkIn() {
   ui.toast('Checked in')
 }
 
-async function upload(e) {
-  const file = e.target.files[0]
+async function uploadFile(file) {
   if (!file) return
   const form = new FormData()
   form.append('file', file)
@@ -168,6 +169,8 @@ async function upload(e) {
   item.value = await api.upload(`/items/${id}/attachments`, form)
   ui.toast('Attachment uploaded')
 }
+function upload(e) { uploadFile(e.target.files[0]) }
+function onCapture(file) { showCapture.value = false; uploadFile(file) }
 
 async function addMaint() {
   if (!newMaint.value.name) return
@@ -397,8 +400,12 @@ async function addMaint() {
       </div>
       <p v-else class="muted">No attachments yet.</p>
       <div class="divider"></div>
-      <input type="file" @change="upload" />
+      <div class="row" style="gap:8px;align-items:center;flex-wrap:wrap">
+        <input type="file" @change="upload" aria-label="Upload a photo or file" />
+        <button type="button" class="secondary sm" @click="showCapture = true">📷 Take photo</button>
+      </div>
     </div>
+    <PhotoCapture v-if="showCapture" @captured="onCapture" @close="showCapture = false" />
 
     <!-- MAINTENANCE -->
     <div v-show="tab==='maintenance'" class="card">
