@@ -5,16 +5,9 @@
 import { ref, computed, onMounted, nextTick } from 'vue'
 import { api, streamPost } from '../api'
 import { useUI } from '../stores/ui'
+import { hideMarker, finalizeReply } from '../utils/bugMarker'
 
 const ui = useUI()
-// The assistant ends a bug-report summary with this marker; we hide it and offer a
-// button that opens the Report-a-bug modal prefilled with the summary.
-const BUG_MARKER = '[[REPORT_BUG]]'
-function stripBug(text) {
-  if (!text || !text.includes(BUG_MARKER)) return { content: text, summary: null }
-  const content = text.split(BUG_MARKER).join('').replace(/\s+$/, '')
-  return { content, summary: content }
-}
 
 const open = ref(false)
 const msgs = ref([]) // { role, content, actions?, error? }
@@ -79,21 +72,25 @@ async function scrollDown() {
 async function sendPost(message) {
   const r = await api.post('/chat', { message, sessionId: sessionId.value })
   sessionId.value = r.sessionId
-  const { content, summary } = stripBug(r.reply)
+  const { content, summary } = finalizeReply(r.reply)
   msgs.value.push({ role: 'assistant', content, actions: r.actions || [], bugReportSummary: summary })
 }
 
 async function sendStream(message) {
-  msgs.value.push({ role: 'assistant', content: '', actions: [] })
+  msgs.value.push({ role: 'assistant', content: '', raw: '', actions: [] })
   const idx = msgs.value.length - 1 // mutate via the reactive proxy, not the raw object
   let errored = null
   try {
     await streamPost('/chat/stream', { message, sessionId: sessionId.value }, (ev) => {
       const a = msgs.value[idx]
-      if (ev.type === 'delta') { a.content += ev.text; scrollDown() }
-      else if (ev.type === 'done') {
+      if (ev.type === 'delta') {
+        a.raw += ev.text
+        a.content = hideMarker(a.raw)   // hide the marker (incl. a mid-stream partial) as it streams
+        scrollDown()
+      } else if (ev.type === 'done') {
         sessionId.value = ev.sessionId
-        const { content, summary } = stripBug(ev.reply || a.content)
+        a.raw = ev.reply || a.raw
+        const { content, summary } = finalizeReply(a.raw)
         a.content = content
         a.actions = ev.actions || []
         a.bugReportSummary = summary
