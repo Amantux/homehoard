@@ -17,7 +17,10 @@ from app.extensions import db
 
 config = context.config
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # disable_existing_loggers=False: don't let Alembic's fileConfig disable the
+    # app's own loggers (e.g. "homehoard") — startup runs migrations in-process, so
+    # the default (True) would silently suppress all app logging after boot.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = db.metadata
 
