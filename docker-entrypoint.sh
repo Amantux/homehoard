@@ -12,7 +12,11 @@ if [ -f "$OPTIONS" ]; then
   HBOX_OLLAMA_SEARCH_KEY="$(python3 -c "import json;v=json.load(open('$OPTIONS')).get('ollama_search_key');print('' if v is None else v)")"
   HBOX_BARCODE_LOOKUP="$(python3 -c "import json;print(str(json.load(open('$OPTIONS')).get('barcode_lookup', False)).lower())")"
   HBOX_BARCODE_DB_KEY="$(python3 -c "import json;v=json.load(open('$OPTIONS')).get('barcode_db_key');print('' if v is None else v)")"
-  export HBOX_DISABLE_AUTH HBOX_ALLOW_REGISTRATION HBOX_MCP_ENABLED HBOX_OLLAMA_SEARCH_KEY HBOX_BARCODE_LOOKUP HBOX_BARCODE_DB_KEY
+  HBOX_DATABASE_URL="$(python3 -c "import json;v=json.load(open('$OPTIONS')).get('database_url');print('' if v is None else v)")"
+  HBOX_MIGRATE_FROM_SQLITE="$(python3 -c "import json;print(str(json.load(open('$OPTIONS')).get('migrate_from_sqlite', False)).lower())")"
+  HBOX_USE_SHARED_POSTGRES="$(python3 -c "import json;print(str(json.load(open('$OPTIONS')).get('use_shared_postgres', False)).lower())")"
+  HBOX_POSTGRES_PROVISION_TOKEN="$(python3 -c "import json;v=json.load(open('$OPTIONS')).get('postgres_provision_token');print('' if v is None else v)")"
+  export HBOX_DISABLE_AUTH HBOX_ALLOW_REGISTRATION HBOX_MCP_ENABLED HBOX_OLLAMA_SEARCH_KEY HBOX_BARCODE_LOOKUP HBOX_BARCODE_DB_KEY HBOX_DATABASE_URL HBOX_MIGRATE_FROM_SQLITE HBOX_USE_SHARED_POSTGRES HBOX_POSTGRES_PROVISION_TOKEN
 fi
 
 # Sensible defaults.
@@ -40,6 +44,13 @@ fi
 python3 /app/backend/ha_discovery.py || true
 
 cd /app/backend
+
+# Shared PostgreSQL: when enabled, discover the add-on and provision our own
+# database (writes the DSN to /data/.database_url, which the app reads). Runs
+# before schema init so migrations target the right database. Best-effort — it
+# self-selects SQLite if anything is missing, so it never blocks startup.
+$RUN_AS python3 -m app.pg_provision \
+  || echo "HomeHoard: shared-PostgreSQL provisioning skipped."
 
 # Initialize / migrate the database ONCE, before starting workers. Otherwise
 # each of gunicorn's workers races to run create_all()/_migrate() on a fresh DB

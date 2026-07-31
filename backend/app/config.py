@@ -21,6 +21,13 @@ class Config:
     # One-shot: when DATABASE_URL points at an EMPTY Postgres and a local SQLite DB
     # exists, copy the SQLite data into Postgres on startup before serving.
     MIGRATE_FROM_SQLITE = _bool("HBOX_MIGRATE_FROM_SQLITE", False)
+    # Auto-provision a private database on the shared "Shared PostgreSQL" add-on
+    # (opt-in). When on and no explicit DATABASE_URL is set, `app.pg_provision`
+    # discovers the add-on at startup and writes the resulting DSN to
+    # <DATA_DIR>/.database_url, which sqlalchemy_uri() then reads. Blank token =
+    # auto-obtained from the add-on's Supervisor discovery message.
+    USE_SHARED_POSTGRES = _bool("HBOX_USE_SHARED_POSTGRES", False)
+    POSTGRES_PROVISION_TOKEN = os.environ.get("HBOX_POSTGRES_PROVISION_TOKEN", "")
 
     # --- AI provider (chat + tooling) ------------------------------------
     # HomeHoard talks to LLMs through a provider-agnostic layer (services/ai).
@@ -115,23 +122,40 @@ class Config:
         return url
 
     @classmethod
+    def _resolve_db_url(cls, raw: str, source: str = "HBOX_DATABASE_URL") -> str:
+        """Normalize + validate a raw DB URL (from the env var or a provisioned
+        DSN). Pins the psycopg 3 driver and rejects anything we can't load."""
+        url = cls._normalize_db_url(raw)
+        scheme = url.split(":", 1)[0]
+        if not (scheme.startswith("sqlite") or scheme.startswith("postgresql")):
+            raise RuntimeError(
+                f"{source} scheme {scheme!r} is unsupported. Only SQLite "
+                "(default) and Postgres (postgresql+psycopg://user:pass@host/db) "
+                "are supported."
+            )
+        if scheme.startswith("postgresql+") and scheme != "postgresql+psycopg":
+            raise RuntimeError(
+                f"{source} driver {scheme!r} isn't bundled — use "
+                "postgresql+psycopg:// (the sync psycopg 3 driver HomeHoard ships)."
+            )
+        return url
+
+    @classmethod
     def sqlalchemy_uri(cls) -> str:
         raw = (cls.DATABASE_URL or "").strip()
-        if raw:  # a blank / whitespace-only value falls through to SQLite
-            url = cls._normalize_db_url(raw)
-            scheme = url.split(":", 1)[0]
-            if not (scheme.startswith("sqlite") or scheme.startswith("postgresql")):
-                raise RuntimeError(
-                    f"HBOX_DATABASE_URL scheme {scheme!r} is unsupported. Only SQLite "
-                    "(default) and Postgres (postgresql+psycopg://user:pass@host/db) "
-                    "are supported."
-                )
-            if scheme.startswith("postgresql+") and scheme != "postgresql+psycopg":
-                raise RuntimeError(
-                    f"HBOX_DATABASE_URL driver {scheme!r} isn't bundled — use "
-                    "postgresql+psycopg:// (the sync psycopg 3 driver HomeHoard ships)."
-                )
-            return url
+        if raw:  # explicit URL wins; a blank value falls through
+            return cls._resolve_db_url(raw)
+        # Shared PostgreSQL: use the DSN app.pg_provision wrote at startup, if any.
+        # A blank/missing file (add-on not reachable yet) falls through to SQLite,
+        # and the next start retries provisioning.
+        if cls.USE_SHARED_POSTGRES:
+            try:
+                with open(os.path.join(cls.DATA_DIR, ".database_url")) as fh:
+                    provisioned = fh.read().strip()
+            except OSError:
+                provisioned = ""
+            if provisioned:
+                return cls._resolve_db_url(provisioned, "the provisioned database DSN")
         os.makedirs(cls.DATA_DIR, exist_ok=True)
         return f"sqlite:///{os.path.join(cls.DATA_DIR, 'homehoard.db')}"
 

@@ -26,6 +26,10 @@ discovery:
 # never exposed on the host/LAN.
 map:
   - share:rw
+# hassio_api + the manager role let the app read the Supervisor add-on list and
+# discovery messages, so it can find the Shared PostgreSQL add-on to auto-provision.
+hassio_api: true
+hassio_role: manager
 options:
   disable_auth: true
   allow_registration: false
@@ -33,6 +37,10 @@ options:
   ollama_search_key: ""
   barcode_lookup: false
   barcode_db_key: ""
+  database_url: ""
+  migrate_from_sqlite: false
+  use_shared_postgres: false
+  postgres_provision_token: ""
 schema:
   disable_auth: bool
   allow_registration: bool
@@ -47,3 +55,20 @@ schema:
   # Optional API key for the product-barcode DB. The default lookup endpoint is
   # keyless; set this only if you've pointed the lookup at a keyed provider.
   barcode_db_key: password?
+  # Optional external Postgres. Blank = built-in SQLite in /data (or the shared
+  # add-on below). Format: postgresql+psycopg://user:pass@host:5432/homehoard
+  database_url: password?
+  # One-shot: when moving to Postgres (via database_url OR use_shared_postgres)
+  # with existing data in the built-in SQLite, turn this on and restart once to
+  # copy that data into the (empty) Postgres, then leave it on (no-op once the
+  # target has data). Without it, switching to Postgres serves an EMPTY database.
+  migrate_from_sqlite: bool
+  # Auto-provision a private database on the "Shared PostgreSQL" add-on so all
+  # your apps share one Postgres server (each keeps its own database). Requires
+  # that add-on installed. Ignored if database_url is set. If you already have
+  # data in the built-in SQLite, also enable migrate_from_sqlite to carry it over.
+  use_shared_postgres: bool
+  # Provisioning token for the Shared PostgreSQL add-on. Leave blank to
+  # auto-obtain it from the add-on (recommended); set it only if auto-discovery
+  # can't reach the add-on's token.
+  postgres_provision_token: password?
