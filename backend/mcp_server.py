@@ -9,6 +9,7 @@ Run:  python mcp_server.py    (serves SSE on HBOX_MCP_HOST:HBOX_MCP_PORT/sse)
 """
 import hmac
 import os
+import sys
 
 import httpx
 from mcp.server.fastmcp import FastMCP
@@ -412,21 +413,119 @@ def _require_token(asgi_app, token: str):
     return wrapper
 
 
+# --- External exposure: per-client API-key auth (mirrors Edibl edibl_mcp.py) -------
+# When mcp_expose_external is on, the endpoint is reachable from outside HA, so it
+# must authenticate every request against a DB-backed, revocable API key with an
+# `mcp` (or `full`) scope — not a shared static token. The sidecar builds the Flask
+# app once for these read-only key lookups. The entrypoint launches this process with
+# HBOX_WORKER_ENABLED=false so create_app() here does NOT start a second AI-job
+# worker; migrations are a no-op (the main app already ran them under an flock).
+_app = None
+
+
+def _get_app():
+    global _app
+    if _app is None:
+        from app import create_app
+        _app = create_app()
+    return _app
+
+
+def _key_ok(raw: str) -> bool:
+    """True if `raw` is a live ApiToken whose scope allows MCP (`mcp` or `full`)."""
+    if not raw:
+        return False
+    try:
+        app = _get_app()
+        from app.extensions import db
+        from app.models import ApiToken, hash_token
+        with app.app_context():
+            rec = db.session.query(ApiToken).filter_by(token_hash=hash_token(raw)).first()
+            ok = rec is not None and (rec.scope or "full") in ("mcp", "full")
+            db.session.remove()
+            return ok
+    except Exception as exc:  # noqa: BLE001 — fail closed on any lookup error
+        print(f"homehoard-mcp: key check failed: {exc}", file=sys.stderr)
+        return False
+
+
+def _mcp_key_exists() -> bool:
+    """True if a usable key exists to let external clients in — scope `mcp` OR `full`
+    (matching what `_key_ok` accepts and the docs' "mint an MCP or Full key"). Used by
+    refuse-to-serve. Raises on a DB error so the caller fails closed."""
+    app = _get_app()
+    from app.extensions import db
+    from app.models import ApiToken
+    with app.app_context():
+        exists = (db.session.query(ApiToken.id)
+                  .filter(ApiToken.scope.in_(("mcp", "full"))).first() is not None)
+        db.session.remove()
+        return exists
+
+
+def _authorized(header_value: str, server_token: str) -> bool:
+    if server_token and hmac.compare_digest(header_value, f"Bearer {server_token}"):
+        return True
+    if header_value.startswith("Bearer "):
+        return _key_ok(header_value[len("Bearer "):].strip())
+    return False
+
+
+def _guard_external(asgi_app, server_token: str):
+    """ASGI gate for external exposure: EVERY http request must present a valid
+    mcp/full API key (or the optional static server token). Fail-closed."""
+    async def wrapper(scope, receive, send):
+        if scope["type"] == "http":
+            header = dict(scope.get("headers") or []).get(b"authorization", b"").decode()
+            if not _authorized(header, server_token):
+                await send({"type": "http.response.start", "status": 401,
+                            "headers": [(b"content-type", b"text/plain")]})
+                await send({"type": "http.response.body", "body": b"unauthorized"})
+                return
+        await asgi_app(scope, receive, send)
+
+    return wrapper
+
+
+def _expose_external() -> bool:
+    return os.environ.get("HBOX_MCP_EXPOSE_EXTERNAL", "").strip().lower() in (
+        "1", "true", "yes", "on")
+
+
 if __name__ == "__main__":
     host = os.environ.get("HBOX_MCP_HOST", "0.0.0.0")
     port = int(os.environ.get("HBOX_MCP_PORT", "7766"))
     server_token = os.environ.get("HBOX_MCP_SERVER_TOKEN", "")
 
-    app = mcp.sse_app()
-    if server_token:
-        app = _require_token(app, server_token)
+    if _expose_external():
+        # Fail-closed: never serve an externally-reachable endpoint that nobody can
+        # authenticate to. Require a deliberately-minted `mcp` key to exist first.
+        try:
+            has_key = _mcp_key_exists()
+        except Exception as exc:  # noqa: BLE001
+            print(f"ERROR: homehoard-mcp: could not verify an MCP key exists: {exc}. "
+                  "Refusing to serve.", file=sys.stderr)
+            sys.exit(1)
+        if not has_key:
+            print("ERROR: mcp_expose_external is on but no MCP-scoped API key exists. "
+                  "Mint one in the app (Tools → API tokens, scope 'MCP'), then restart. "
+                  "Refusing to serve an unauthenticated external MCP endpoint.",
+                  file=sys.stderr)
+            sys.exit(1)
+        app = _guard_external(mcp.sse_app(), server_token)
+        print("homehoard-mcp: external exposure ON — every request must carry a valid "
+              "MCP/Full API key.", file=sys.stderr)
     else:
-        import sys
-        print(
-            "WARNING: HBOX_MCP_SERVER_TOKEN is not set — the MCP endpoint is "
-            "UNAUTHENTICATED. Set it and keep port 7766 on a trusted network.",
-            file=sys.stderr,
-        )
+        app = mcp.sse_app()
+        if server_token:
+            app = _require_token(app, server_token)
+        else:
+            print(
+                "WARNING: HBOX_MCP_SERVER_TOKEN is not set — the MCP endpoint is "
+                "UNAUTHENTICATED. Keep port 7766 on a trusted network, or enable "
+                "mcp_expose_external + mint an MCP key to reach it from outside HA.",
+                file=sys.stderr,
+            )
 
     import uvicorn
     uvicorn.run(app, host=host, port=port)

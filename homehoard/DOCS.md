@@ -23,6 +23,7 @@ server** so Assist can answer *"where is my drill?"*.
 | `disable_auth` | `true` | Skip in-app auth (Ingress already authenticates you). Set `false` for username/password login. |
 | `allow_registration` | `false` | Allow creating new accounts (only relevant when auth is enabled). |
 | `enable_mcp` | `true` | Run the MCP server (SSE on port `7766`) for the Home Assistant MCP Client. |
+| `mcp_expose_external` | `false` | Allow the MCP server to be reached from **outside** HA. Requires a minted MCP or Full API key (the server refuses to start without one; an MCP-scoped key is recommended) and mapping port `7766` in the Network tab. See "Reaching the MCP server from outside Home Assistant". |
 | `ollama_search_key` | `""` | Optional [Ollama](https://ollama.com) API key to look items up online and generate a short searchable description. Blank = off. |
 | `barcode_lookup` | `false` | Identify an unknown scanned product barcode (UPC/EAN) online — product DB → Open Food Facts → Ollama web-search — to prefill a new item's name/brand. Off = scans still resolve your own QR tags and items, just no online product lookup. |
 | `barcode_db_key` | `""` | Optional API key for the product-barcode DB. The default lookup endpoint is keyless — set this only if you've pointed the lookup at a keyed provider. |
@@ -105,3 +106,27 @@ http://<slug>-homehoard:7766/sse
 
 Assist can then *find items, list checkouts, check things in/out, edit, and move*
 by voice or chat. Disable with the `enable_mcp` option.
+
+### Reaching the MCP server from OUTSIDE Home Assistant
+
+By default the MCP server is internal-only and **unauthenticated** (safe because it
+isn't reachable from your host/LAN). To connect an external MCP client (e.g. Claude
+Desktop, another agent) you must turn on authentication **and** publish the port —
+both, in this order:
+
+1. **Mint an MCP key.** In HomeHoard → **Home Assistant → API tokens**, generate a
+   token with **Scope = MCP only**. Copy it (shown once). MCP keys are rejected by
+   the REST API, so they only grant MCP access, and you can revoke one client without
+   touching the others.
+2. **Turn on `mcp_expose_external`** in the add-on **Configuration**. With this on,
+   every MCP request must carry a valid MCP (or Full) key, and the MCP server
+   **refuses to start** until at least one MCP or Full key exists — so it can never
+   come up open. An MCP-scoped key is recommended (it can't touch the REST API).
+   Restart the add-on after minting the key.
+3. **Publish the port.** In the add-on's **Network** tab, map container port `7766`
+   to a host port. Point your client at `http://<your-ha-host>:<mapped-port>/sse`
+   with header `Authorization: Bearer <your MCP key>`.
+
+⚠️ Anything reachable over MCP includes **mutating** tools (move/check-in/out/edit).
+The bearer key is the only control — put it behind TLS (a reverse proxy) if you
+expose it beyond your LAN, and revoke the key in the token list if it leaks.

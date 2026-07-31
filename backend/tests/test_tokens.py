@@ -88,6 +88,41 @@ def test_tokens_are_group_isolated(app, auth_client):
     ).status_code == 200
 
 
+def test_scope_defaults_to_full_and_authenticates_rest(app, auth_client):
+    created = _make_token(auth_client, "Default")
+    assert created["scope"] == "full"
+    raw = created["token"]
+    assert app.test_client().get(
+        "/api/v1/ha/summary", headers={"Authorization": f"Bearer {raw}"}
+    ).status_code == 200
+
+
+def test_invalid_scope_rejected(auth_client):
+    r = auth_client.post("/api/v1/tokens", json={"name": "x", "scope": "bogus"})
+    assert r.status_code == 400
+
+
+def test_mcp_scoped_key_is_rejected_at_the_rest_api(app, auth_client):
+    """An MCP-scoped key is for the MCP transport alone and must NOT authenticate
+    the REST API (scope gate)."""
+    raw = auth_client.post(
+        "/api/v1/tokens", json={"name": "mcp", "scope": "mcp"}
+    ).get_json()["token"]
+    fresh = app.test_client()
+    assert fresh.get(
+        "/api/v1/ha/summary", headers={"Authorization": f"Bearer {raw}"}
+    ).status_code == 401
+
+
+def test_rest_scoped_key_works_at_rest(app, auth_client):
+    raw = auth_client.post(
+        "/api/v1/tokens", json={"name": "rest", "scope": "rest"}
+    ).get_json()["token"]
+    assert app.test_client().get(
+        "/api/v1/ha/summary", headers={"Authorization": f"Bearer {raw}"}
+    ).status_code == 200
+
+
 def test_last_used_recorded_on_use(app, auth_client):
     raw = _make_token(auth_client)["token"]
     assert auth_client.get("/api/v1/tokens").get_json()[0]["lastUsedAt"] is None

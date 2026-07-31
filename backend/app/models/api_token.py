@@ -18,6 +18,11 @@ from .base import IDMixin, TimestampMixin
 # without a database round-trip, and so users recognize a HomeHoard key.
 TOKEN_PREFIX = "hh_"
 
+# Per-key access scope. `full` reaches everything (default for legacy keys); `rest`
+# is REST-only (no MCP); `mcp` is issued for the MCP transport alone and is REJECTED
+# at the REST API (see auth._user_from_api_token).
+TOKEN_SCOPES = ("full", "rest", "mcp")
+
 
 def generate_raw_token() -> str:
     return TOKEN_PREFIX + secrets.token_urlsafe(32)
@@ -32,6 +37,8 @@ class ApiToken(IDMixin, TimestampMixin, db.Model):
 
     name: Mapped[str] = mapped_column(String(255), default="")
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    # full | rest | mcp — see TOKEN_SCOPES. Legacy rows default to "full".
+    scope: Mapped[str] = mapped_column(String(16), default="full", server_default="full")
     # First few chars of the raw token, kept for display ("hh_ab12…").
     hint: Mapped[str] = mapped_column(String(16), default="")
     last_used_at: Mapped[str] = mapped_column(DateTime, nullable=True)

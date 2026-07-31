@@ -12,6 +12,8 @@ const loading = ref(true)
 const loadError = ref('')
 const creating = ref(false)
 const newName = ref('')
+// full = REST + MCP; rest = REST only; mcp = MCP transport only (rejected at REST).
+const newScope = ref('full')
 // The raw token is returned by the API exactly once — held here until the user
 // dismisses it, since it can never be shown again.
 const revealed = ref(null)
@@ -37,9 +39,12 @@ onMounted(async () => {
 async function create() {
   creating.value = true
   try {
-    const t = await api.post('/tokens', { name: newName.value.trim() || 'Home Assistant' })
+    const t = await api.post('/tokens', {
+      name: newName.value.trim() || 'Home Assistant', scope: newScope.value,
+    })
     revealed.value = t
     newName.value = ''
+    newScope.value = 'full'
     await load()
   } catch (e) {
     ui.error(e.message)
@@ -158,6 +163,14 @@ const mcpUrl = computed(() => {
         <span>Token name</span>
         <input v-model="newName" placeholder="e.g. Home Assistant" @keyup.enter="create" />
       </label>
+      <label class="field" style="margin:0;max-width:170px">
+        <span>Scope</span>
+        <select v-model="newScope">
+          <option value="full">Full (REST + MCP)</option>
+          <option value="rest">REST only</option>
+          <option value="mcp">MCP only</option>
+        </select>
+      </label>
       <button :disabled="creating" @click="create">Generate token</button>
     </div>
 
@@ -170,11 +183,12 @@ const mcpUrl = computed(() => {
 
     <table v-else-if="tokens.length">
       <thead>
-        <tr><th>Name</th><th>Token</th><th>Created</th><th>Last used</th><th></th></tr>
+        <tr><th>Name</th><th>Scope</th><th>Token</th><th>Created</th><th>Last used</th><th></th></tr>
       </thead>
       <tbody>
         <tr v-for="t in tokens" :key="t.id">
           <td><strong>{{ t.name }}</strong></td>
+          <td class="muted">{{ (t.scope || 'full').toUpperCase() }}</td>
           <td class="muted"><code>{{ t.hint }}…</code></td>
           <td class="muted">{{ shortDate(t.createdAt) }}</td>
           <td class="muted">{{ t.lastUsedAt ? shortDate(t.lastUsedAt) : 'Never' }}</td>

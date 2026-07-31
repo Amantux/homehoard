@@ -1,7 +1,7 @@
 from .base import gen_uuid, utcnow  # noqa: F401
 from .group import Group, GroupInvitation  # noqa: F401
 from .user import User, AuthToken  # noqa: F401
-from .api_token import ApiToken, generate_raw_token, hash_token  # noqa: F401
+from .api_token import ApiToken, TOKEN_SCOPES, generate_raw_token, hash_token  # noqa: F401
 from .location import Location  # noqa: F401
 from .label import Label, item_labels  # noqa: F401
 from .item import Item, ItemField, ItemHolding  # noqa: F401
@@ -27,6 +27,7 @@ __all__ = [
     "User",
     "AuthToken",
     "ApiToken",
+    "TOKEN_SCOPES",
     "generate_raw_token",
     "hash_token",
     "Location",

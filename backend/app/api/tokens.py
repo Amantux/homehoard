@@ -8,7 +8,7 @@ is enabled (the add-on runs auth-disabled and needs none).
 from flask import Blueprint, request, jsonify, abort
 
 from ..extensions import db
-from ..models import ApiToken, generate_raw_token, hash_token
+from ..models import ApiToken, TOKEN_SCOPES, generate_raw_token, hash_token
 from ..auth import owner_required, current_user, current_group
 from ..schemas.serializers import iso
 
@@ -20,6 +20,7 @@ def _out(t: ApiToken) -> dict:
         "id": t.id,
         "name": t.name,
         "hint": t.hint,
+        "scope": t.scope or "full",
         "createdAt": iso(t.created_at),
         "lastUsedAt": iso(t.last_used_at),
     }
@@ -42,9 +43,13 @@ def list_tokens():
 def create_token_endpoint():
     data = request.get_json(force=True) or {}
     name = (data.get("name") or "").strip() or "API token"
+    scope = (data.get("scope") or "full").strip().lower()
+    if scope not in TOKEN_SCOPES:
+        return jsonify({"error": f"scope must be one of {', '.join(TOKEN_SCOPES)}"}), 400
     raw = generate_raw_token()
     token = ApiToken(
         name=name,
+        scope=scope,
         token_hash=hash_token(raw),
         hint=raw[:7],  # "hh_" + first 4 chars
         user_id=current_user().id,

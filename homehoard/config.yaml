@@ -18,12 +18,17 @@ panel_title: HomeHoard
 # Advertise to Home Assistant so the companion integration auto-discovers us.
 discovery:
   - homehoard
-# NOTE: the MCP server (SSE :7766) is intentionally NOT published to the host.
-# Everything reaches HomeHoard inside Home Assistant's boundary: the UI/API via
-# Ingress (port 7745, authenticated by HA), and the MCP server only over the
-# internal Supervisor network — Home Assistant's MCP Client connects to it by
-# the add-on's container hostname (http://<slug>-homehoard:7766/sse), so 7766 is
-# never exposed on the host/LAN.
+# The MCP server (SSE :7766) is UNPUBLISHED by default (null) — inside HA it's
+# reached over the internal Supervisor network (http://<slug>-homehoard:7766/sse),
+# authenticated by nothing because it's not host-reachable. To use it from OUTSIDE
+# Home Assistant: (1) set mcp_expose_external: true, (2) mint an MCP-scoped API key
+# in the app, (3) map a host port here in the add-on's Network tab. With
+# mcp_expose_external on, every request must carry that key (the server refuses to
+# start otherwise), so the port is never open even once mapped.
+ports:
+  7766/tcp: null
+ports_description:
+  7766/tcp: HomeHoard MCP (SSE) — set mcp_expose_external + mint an MCP key before mapping
 map:
   - share:rw
 # hassio_api + the manager role let the app read the Supervisor add-on list and
@@ -34,6 +39,7 @@ options:
   disable_auth: true
   allow_registration: false
   enable_mcp: true
+  mcp_expose_external: false
   ollama_search_key: ""
   barcode_lookup: false
   barcode_db_key: ""
@@ -45,6 +51,11 @@ schema:
   disable_auth: bool
   allow_registration: bool
   enable_mcp: bool
+  # Reach the MCP server from OUTSIDE Home Assistant. When on, every MCP request
+  # must carry a valid MCP/Full API key and the server refuses to start until you
+  # mint an MCP-scoped key — then map port 7766 in the Network tab. Off = MCP is
+  # internal-only (HA Assist), unchanged.
+  mcp_expose_external: bool
   # Optional: an Ollama API key (ollama.com) to look items up online and generate
   # a short searchable description. Blank = the feature is off.
   ollama_search_key: password?
