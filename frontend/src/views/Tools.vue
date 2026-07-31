@@ -144,6 +144,10 @@ async function clearAiKey() {
 // interchangeable across the three apps.
 const syncPasteInput = ref('')
 const syncApplying = ref(false)
+// Opt-in: also embed the API key in the copied code. Off by default. Uses its
+// OWN field (the provider form's apiKey is write-only and cleared after save).
+const syncIncludeKey = ref(false)
+const syncKeyInput = ref('')
 function copyAiSettings() {
   const cfg = {
     v: 1,
@@ -154,24 +158,34 @@ function copyAiSettings() {
     jobEnrich: jobAi.value.enrich || { provider: '', model: '' },
     jobOrganize: jobAi.value.organize || { provider: '', model: '' },
   }
-  const str = 'AICFG1:' + btoa(unescape(encodeURIComponent(JSON.stringify(cfg))))
+  const withKey = syncIncludeKey.value && !!syncKeyInput.value.trim()
+  if (withKey) cfg.apiKey = syncKeyInput.value.trim()
+  // AICFG2 signals the code carries a secret; keyless codes stay AICFG1.
+  const str = (withKey ? 'AICFG2:' : 'AICFG1:') +
+    btoa(unescape(encodeURIComponent(JSON.stringify(cfg))))
   navigator.clipboard.writeText(str).then(
-    () => ui.toast('Copied — paste into your other apps’ Settings'),
+    () => { syncKeyInput.value = ''
+      ui.toast(withKey ? 'Copied with API key — treat it like a password'
+        : 'Copied — paste into your other apps’ Settings') },
     () => ui.error('Could not copy to clipboard'))
 }
 async function applyAiSettings() {
   const raw = (syncPasteInput.value || '').trim()
-  if (!raw.startsWith('AICFG1:')) { ui.error('That doesn’t look like an AI-settings code.'); return }
+  const prefix = ['AICFG1:', 'AICFG2:'].find((p) => raw.startsWith(p))
+  if (!prefix) { ui.error('That doesn’t look like an AI-settings code.'); return }
   let cfg
-  try { cfg = JSON.parse(decodeURIComponent(escape(atob(raw.slice(7))))) }
+  try { cfg = JSON.parse(decodeURIComponent(escape(atob(raw.slice(prefix.length))))) }
   catch { ui.error('Couldn’t read that code — copy it again.'); return }
   if (!cfg || !cfg.provider) { ui.error('That code has no provider.'); return }
   syncApplying.value = true
   try {
-    // Provider / URL / model — blanks omitted (match saveAi); NEVER a key.
+    // Provider / URL / model — blanks omitted (match saveAi). The key is only
+    // sent when the code carried one (AICFG2); blank leaves the stored key as-is.
+    const hasKey = typeof cfg.apiKey === 'string' && !!cfg.apiKey.trim()
     const p = { provider: cfg.provider }
     if (cfg.baseUrl) p.baseUrl = cfg.baseUrl
     if (cfg.model) p.model = cfg.model
+    if (hasKey) p.apiKey = cfg.apiKey.trim()
     await api.put('/settings/ai', p)
     if (typeof cfg.stream === 'boolean') await api.put('/settings/chat', { stream: cfg.stream })
     if (cfg.jobEnrich || cfg.jobOrganize) {
@@ -186,7 +200,8 @@ async function applyAiSettings() {
     chatStreamDefault.value = !!(await api.get('/settings/chat')).stream
     try { jobAi.value = await api.get('/settings/ai/jobs') } catch (e) { /* admin-only */ }
     syncPasteInput.value = ''
-    ui.toast('AI settings applied — add this app’s API key if the provider needs one.')
+    ui.toast(hasKey ? 'AI settings and API key applied.'
+      : 'AI settings applied — add this app’s API key if the provider needs one.')
   } catch (e) { ui.error(e.message || 'Could not apply settings.') } finally { syncApplying.value = false }
 }
 onMounted(loadAi)
@@ -352,14 +367,24 @@ const actions = [
     <h2>Sync to your other apps</h2>
     <p class="muted" style="max-width:520px">Deploying Edibl, HomeHoard, and myMeal together? Copy this
       app's AI settings — provider, URL, model, streaming default, and background-task models — and paste
-      the code into the other apps so you configure the LLM once. <strong>The API key is never
-      included</strong>; add each app's key separately.</p>
-    <div class="row" style="max-width:520px">
+      the code into the other apps so you configure the LLM once. By default <strong>the API key is
+      not included</strong>; add each app's key separately, or opt in below to embed it.</p>
+    <label style="display:flex;gap:8px;align-items:center;max-width:520px">
+      <input type="checkbox" style="width:auto" v-model="syncIncludeKey" />
+      <span>Also include my API key in the code</span>
+    </label>
+    <div v-if="syncIncludeKey" style="max-width:520px;margin-top:8px">
+      <input type="password" v-model="syncKeyInput" placeholder="Paste the API key to embed"
+        autocomplete="off" style="width:100%" />
+      <p class="muted" style="font-size:0.85rem;margin-top:4px">Your API key will be embedded in the
+        copied text — treat it like a password and only paste it into your own apps.</p>
+    </div>
+    <div class="row" style="max-width:520px;margin-top:8px">
       <button class="secondary" @click="copyAiSettings">📋 Copy AI settings</button>
     </div>
     <label style="display:block;max-width:520px;margin-top:12px">
       <span class="muted" style="font-size:0.85rem">Paste a settings code from another app</span>
-      <input v-model="syncPasteInput" placeholder="AICFG1:…" style="width:100%;margin-top:4px" />
+      <input v-model="syncPasteInput" placeholder="AICFG1:… or AICFG2:…" style="width:100%;margin-top:4px" />
     </label>
     <div class="row" style="justify-content:flex-end;max-width:520px;margin-top:8px">
       <button class="secondary" :disabled="syncApplying || !syncPasteInput.trim()" @click="applyAiSettings">
