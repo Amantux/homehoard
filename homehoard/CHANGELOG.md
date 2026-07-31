@@ -1,7 +1,23 @@
 # Changelog
 
-## Unreleased
+## 1.1.0 — Stable release
 
+A stability milestone bringing this cycle's work together.
+
+- **Faster capture.** Scan a barcode to create a bin, snap a photo when creating an
+  item, and stock the same item in a bin more than once (quantities combine). Camera
+  photos now save the right way up, and search no longer jumps you off the item
+  you're on.
+- **One database, one AI setup across your apps.** Auto-provision HomeHoard's database
+  on the **Shared PostgreSQL** add-on (opt-in — `use_shared_postgres`), copy AI provider
+  settings between HomeHoard / Edibl / myMeal (optionally including the key), and a
+  Database-page helper for pointing all three at one Postgres.
+- **MCP, reachable and safe.** Expose the MCP server outside Home Assistant behind
+  per-client, revocable API keys (`mcp_expose_external` + a new mapped port). Every key
+  now has an **access class — Read-Only or Read-Write** — and a scope (Full / REST /
+  MCP), enforced on both the API and the MCP tools.
+- **Report a bug from chat.** The assistant walks you through a short report and opens
+  a prefilled GitHub issue; streaming replies are a Settings toggle.
 - **Understand scanned barcodes (1D + 2D).** Items now carry a product barcode,
   and scanning distinguishes 1D product codes (UPC/EAN/Code128…) from 2D codes
   (QR/DataMatrix…). Scanning a code you've saved on an item jumps straight to it.
