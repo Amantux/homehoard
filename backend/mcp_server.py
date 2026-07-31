@@ -8,6 +8,7 @@ or check items in/out via Assist.
 Run:  python mcp_server.py    (serves SSE on HBOX_MCP_HOST:HBOX_MCP_PORT/sse)
 """
 import hmac
+import json
 import os
 import sys
 
@@ -449,6 +450,98 @@ def _key_ok(raw: str) -> bool:
         return False
 
 
+# Tools a read-only key may call. Everything else (mutating tools AND any unknown/new
+# tool name) is denied to a read key — fail-safe: a new tool is never silently writable.
+READ_TOOLS = frozenset({
+    "where_is", "search_inventory", "get_item", "get_bin_contents",
+    "get_location_contents", "list_checkouts", "suggest_placement",
+    "inventory_statistics", "inventory_value", "warranties_expiring", "maintenance_due",
+})
+
+
+def _key_access(raw: str):
+    """Access class ('write'|'read') of a live mcp/full ApiToken, or None if the key
+    is invalid / not MCP-capable. Fail-closed (None) on any DB error."""
+    if not raw:
+        return None
+    try:
+        app = _get_app()
+        from app.extensions import db
+        from app.models import ApiToken, hash_token
+        with app.app_context():
+            rec = db.session.query(ApiToken).filter_by(token_hash=hash_token(raw)).first()
+            ok = rec is not None and (rec.scope or "full") in ("mcp", "full")
+            access = (rec.access or "write") if rec is not None else None
+            db.session.remove()
+            return access if ok else None
+    except Exception as exc:  # noqa: BLE001 — fail closed
+        print(f"homehoard-mcp: access check failed: {exc}", file=sys.stderr)
+        return None
+
+
+def _request_access(header_value: str, server_token: str):
+    """The access class for an authenticated request ('write'|'read'), or None if
+    unauthenticated. The static server token grants full ('write')."""
+    if server_token and hmac.compare_digest(header_value, f"Bearer {server_token}"):
+        return "write"
+    if header_value.startswith("Bearer "):
+        return _key_access(header_value[len("Bearer "):].strip())
+    return None
+
+
+async def _buffer_body(receive):
+    """Read all http.request messages so the body can be inspected, returning
+    (body_bytes, messages) — messages are replayed downstream via _replay()."""
+    messages, chunks, more = [], [], True
+    while more:
+        msg = await receive()
+        messages.append(msg)
+        if msg["type"] == "http.request":
+            chunks.append(msg.get("body", b""))
+            more = msg.get("more_body", False)
+        else:
+            more = False
+    return b"".join(chunks), messages
+
+
+def _replay(messages):
+    it = iter(messages)
+
+    async def receive():
+        try:
+            return next(it)
+        except StopIteration:
+            return {"type": "http.disconnect"}
+
+    return receive
+
+
+async def _read_only_gate(scope, receive, send):
+    """For a read-only key: pass the request through unless it is a `tools/call` POST
+    for a tool NOT in READ_TOOLS. Returns a receive callable to use downstream, or
+    None if it already sent a 403 (caller must stop)."""
+    if scope.get("method") != "POST" or "/messages" not in scope.get("path", ""):
+        return receive  # GET /sse, initialize, tools/list, ping, etc. — always allowed
+    body, messages = await _buffer_body(receive)
+    try:
+        parsed = json.loads(body or b"{}")
+    except Exception:  # noqa: BLE001 — let the MCP layer return its own parse error
+        return _replay(messages)
+    calls = parsed if isinstance(parsed, list) else [parsed]  # JSON-RPC may batch
+
+    def _is_write(m):
+        return (isinstance(m, dict) and m.get("method") == "tools/call"
+                and (m.get("params") or {}).get("name") not in READ_TOOLS)
+
+    if any(_is_write(m) for m in calls):
+        await send({"type": "http.response.start", "status": 403,
+                    "headers": [(b"content-type", b"text/plain")]})
+        await send({"type": "http.response.body",
+                    "body": b"read-only API key: this tool mutates data"})
+        return None
+    return _replay(messages)
+
+
 def _mcp_key_exists() -> bool:
     """True if a usable key exists to let external clients in — scope `mcp` OR `full`
     (matching what `_key_ok` accepts and the docs' "mint an MCP or Full key"). Used by
@@ -477,11 +570,16 @@ def _guard_external(asgi_app, server_token: str):
     async def wrapper(scope, receive, send):
         if scope["type"] == "http":
             header = dict(scope.get("headers") or []).get(b"authorization", b"").decode()
-            if not _authorized(header, server_token):
+            access = _request_access(header, server_token)
+            if access is None:
                 await send({"type": "http.response.start", "status": 401,
                             "headers": [(b"content-type", b"text/plain")]})
                 await send({"type": "http.response.body", "body": b"unauthorized"})
                 return
+            if access == "read":
+                receive = await _read_only_gate(scope, receive, send)
+                if receive is None:
+                    return  # a mutating tool call was rejected (403 already sent)
         await asgi_app(scope, receive, send)
 
     return wrapper

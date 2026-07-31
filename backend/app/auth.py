@@ -166,12 +166,24 @@ def _user_from_api_token(raw: str):
     # not authenticate the REST API. `full`/`rest` (and legacy NULL→"full") pass.
     if (record.scope or "full") == "mcp":
         return None
+    # Access class: a read-only key may authenticate but is limited to safe methods
+    # (enforced in login_required/owner_required). Stash it for that check.
+    g.token_access = record.access or "write"
     # Record usage, but at most once a minute to avoid a write on every request.
     now = datetime.utcnow()
     if record.last_used_at is None or (now - record.last_used_at).total_seconds() > 60:
         record.last_used_at = now
         db.session.commit()
     return db.session.get(User, record.user_id)
+
+
+def _read_only_blocked():
+    """A read-only API key may only make safe requests. Returns a 403 response for a
+    mutating method, else None. No-op for JWT/ingress users (no token → default write)."""
+    if getattr(g, "token_access", "write") == "read" and \
+            request.method not in ("GET", "HEAD", "OPTIONS"):
+        return jsonify({"error": "this API key is read-only"}), 403
+    return None
 
 
 def login_required(fn):
@@ -184,6 +196,9 @@ def login_required(fn):
                 request.method, request.path, request.remote_addr,
             )
             return jsonify({"error": "unauthorized"}), 401
+        blocked = _read_only_blocked()
+        if blocked:
+            return blocked
         g.current_user = user
         g.current_group = user.group
         return fn(*args, **kwargs)
@@ -201,6 +216,9 @@ def owner_required(fn):
             return jsonify({"error": "unauthorized"}), 401
         if not user.is_owner:
             return jsonify({"error": "owner privileges required"}), 403
+        blocked = _read_only_blocked()
+        if blocked:
+            return blocked
         g.current_user = user
         g.current_group = user.group
         return fn(*args, **kwargs)

@@ -23,6 +23,11 @@ TOKEN_PREFIX = "hh_"
 # at the REST API (see auth._user_from_api_token).
 TOKEN_SCOPES = ("full", "rest", "mcp")
 
+# Per-key access class, orthogonal to scope: `write` (default) can read AND mutate;
+# `read` is read-only — the REST API rejects non-GET/HEAD requests and the MCP guard
+# rejects mutating tool calls. Legacy rows default to "write".
+TOKEN_ACCESS = ("write", "read")
+
 
 def generate_raw_token() -> str:
     return TOKEN_PREFIX + secrets.token_urlsafe(32)
@@ -39,6 +44,8 @@ class ApiToken(IDMixin, TimestampMixin, db.Model):
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     # full | rest | mcp — see TOKEN_SCOPES. Legacy rows default to "full".
     scope: Mapped[str] = mapped_column(String(16), default="full", server_default="full")
+    # write | read — see TOKEN_ACCESS. A read key is read-only on REST and MCP.
+    access: Mapped[str] = mapped_column(String(8), default="write", server_default="write")
     # First few chars of the raw token, kept for display ("hh_ab12…").
     hint: Mapped[str] = mapped_column(String(16), default="")
     last_used_at: Mapped[str] = mapped_column(DateTime, nullable=True)

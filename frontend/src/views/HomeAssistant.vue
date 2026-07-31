@@ -14,6 +14,7 @@ const creating = ref(false)
 const newName = ref('')
 // full = REST + MCP; rest = REST only; mcp = MCP transport only (rejected at REST).
 const newScope = ref('full')
+const newAccess = ref('write')
 // The raw token is returned by the API exactly once — held here until the user
 // dismisses it, since it can never be shown again.
 const revealed = ref(null)
@@ -41,10 +42,12 @@ async function create() {
   try {
     const t = await api.post('/tokens', {
       name: newName.value.trim() || 'Home Assistant', scope: newScope.value,
+      access: newAccess.value,
     })
     revealed.value = t
     newName.value = ''
     newScope.value = 'full'
+    newAccess.value = 'write'
     await load()
   } catch (e) {
     ui.error(e.message)
@@ -171,6 +174,13 @@ const mcpUrl = computed(() => {
           <option value="mcp">MCP only</option>
         </select>
       </label>
+      <label class="field" style="margin:0;max-width:170px">
+        <span>Access</span>
+        <select v-model="newAccess">
+          <option value="write">Read &amp; write</option>
+          <option value="read">Read only</option>
+        </select>
+      </label>
       <button :disabled="creating" @click="create">Generate token</button>
     </div>
 
@@ -183,12 +193,13 @@ const mcpUrl = computed(() => {
 
     <table v-else-if="tokens.length">
       <thead>
-        <tr><th>Name</th><th>Scope</th><th>Token</th><th>Created</th><th>Last used</th><th></th></tr>
+        <tr><th>Name</th><th>Scope</th><th>Access</th><th>Token</th><th>Created</th><th>Last used</th><th></th></tr>
       </thead>
       <tbody>
         <tr v-for="t in tokens" :key="t.id">
           <td><strong>{{ t.name }}</strong></td>
           <td class="muted">{{ (t.scope || 'full').toUpperCase() }}</td>
+          <td class="muted">{{ (t.access || 'write') === 'read' ? 'Read only' : 'Read & write' }}</td>
           <td class="muted"><code>{{ t.hint }}…</code></td>
           <td class="muted">{{ shortDate(t.createdAt) }}</td>
           <td class="muted">{{ t.lastUsedAt ? shortDate(t.lastUsedAt) : 'Never' }}</td>

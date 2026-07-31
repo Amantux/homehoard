@@ -117,7 +117,9 @@ both, in this order:
 1. **Mint an MCP key.** In HomeHoard → **Home Assistant → API tokens**, generate a
    token with **Scope = MCP only**. Copy it (shown once). MCP keys are rejected by
    the REST API, so they only grant MCP access, and you can revoke one client without
-   touching the others.
+   touching the others. Set **Access = Read only** to give a client that can query
+   inventory but cannot move/check-out/edit anything (read-only keys are also limited
+   to GET on the REST API); leave it **Read & write** for a full client.
 2. **Turn on `mcp_expose_external`** in the add-on **Configuration**. With this on,
    every MCP request must carry a valid MCP (or Full) key, and the MCP server
    **refuses to start** until at least one MCP or Full key exists — so it can never
