@@ -20,14 +20,14 @@ jobs:
     name: hassfest (Home Assistant integration manifest)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: home-assistant/actions/hassfest@master
 
   hacs:
     name: HACS (integration installability)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: hacs/action@main
         with:
           category: integration
@@ -40,7 +40,7 @@ jobs:
     name: Add-on + HACS metadata lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Validate add-on config.yaml
         run: |
           python3 - <<'PY'
