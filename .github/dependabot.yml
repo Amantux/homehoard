@@ -1,29 +1,36 @@
 version: 2
 updates:
+  # Python backend
   - package-ecosystem: "pip"
     directory: "/backend"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
     groups:
-      python-deps:
-        patterns: ["*"]
+      backend-python:
+        update-types: ["minor", "patch"]   # majors get their own PR for review
 
+  # Vue frontend
   - package-ecosystem: "npm"
     directory: "/frontend"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
     groups:
-      npm-deps:
-        patterns: ["*"]
+      frontend-npm:
+        update-types: ["minor", "patch"]
 
+  # Container base image
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
       interval: "weekly"
 
+  # GitHub Actions (keeps checkout/setup-* off deprecated runtimes)
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+    groups:
+      actions:
+        patterns: ["*"]
