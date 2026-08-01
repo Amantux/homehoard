@@ -6,7 +6,7 @@ Flask-Cors>=5.0.0
 Flask-Limiter>=3.8.0
 SQLAlchemy==2.0.32
 # Schema migrations (SQLite + Postgres). Replaces the old create_all/_migrate.
-alembic>=1.13
+alembic>=1.18.5
 # Postgres driver (optional backend). psycopg 3 bundles libpq via [binary];
 # unused when HBOX_DATABASE_URL is blank (SQLite default).
 psycopg[binary]>=3.2
