@@ -21,7 +21,7 @@ gunicorn>=23.0.0
 # MCP server exposed to Home Assistant (runs alongside the app in the same container)
 mcp==1.27.0  # pin: newer mcp dropped mcp.server.fastmcp (breaks the MCP server + CI)
 uvicorn>=0.29.0
-httpx>=0.27.0
+httpx>=0.28.1
 # AI providers (lazy-imported by services/ai; only loaded when that provider is
 # selected). Ollama/OpenAI-compatible SLMs use httpx / the openai SDK; Claude uses
 # the anthropic SDK. A pure-Ollama install never imports these.
