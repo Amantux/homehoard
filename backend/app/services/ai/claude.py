@@ -6,7 +6,7 @@ through ``client.messages.create`` with ``system`` as a top-level parameter.
 """
 from __future__ import annotations
 
-from .base import AIProvider, ChatResult, ProviderError, ToolCall
+from .base import AIProvider, ChatResult, ProviderError, ToolCall, safe_upstream_detail
 
 
 class ClaudeProvider(AIProvider):
@@ -80,7 +80,7 @@ class ClaudeProvider(AIProvider):
                     yield {"type": "delta", "text": text}
                 final = stream.get_final_message()
         except Exception as exc:  # noqa: BLE001 - normalize SDK/HTTP errors
-            raise ProviderError(f"claude request failed: {exc}") from exc
+            raise ProviderError(f"claude request failed: {safe_upstream_detail(exc)}") from exc
         out = ChatResult(content=content)
         for block in final.content:
             if block.type == "tool_use":

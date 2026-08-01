@@ -11,7 +11,7 @@ import json
 
 import httpx
 
-from .base import AIProvider, ChatResult, ProviderError, ToolCall
+from .base import AIProvider, ChatResult, ProviderError, ToolCall, safe_upstream_detail
 
 
 class OllamaProvider(AIProvider):
@@ -35,7 +35,7 @@ class OllamaProvider(AIProvider):
                            headers=self._headers(), timeout=self.timeout)
             r.raise_for_status()
         except httpx.HTTPError as exc:
-            raise ProviderError(f"ollama request failed: {exc}") from exc
+            raise ProviderError(f"ollama request failed: {safe_upstream_detail(exc)}") from exc
         return r.json()
 
     def _complete(self, system: str, prompt: str, max_tokens: int) -> str:
@@ -109,12 +109,11 @@ class OllamaProvider(AIProvider):
                     if piece:
                         content += piece
                         yield {"type": "delta", "text": piece}
-                    for call in msg.get("tool_calls") or []:
-                        raw_calls.append(call)
+                    raw_calls.extend(msg.get("tool_calls") or [])
                     if obj.get("done"):
                         break
         except httpx.HTTPError as exc:
-            raise ProviderError(f"ollama request failed: {exc}") from exc
+            raise ProviderError(f"ollama request failed: {safe_upstream_detail(exc)}") from exc
         out = ChatResult(content=content)
         for i, call in enumerate(raw_calls):
             fn = call.get("function", {})
@@ -133,6 +132,11 @@ class OllamaCloudProvider(OllamaProvider):
     name = "ollama_cloud"
 
     def __init__(self, eff):
+        # Deliberately does NOT call super().__init__(eff): the parent reads the
+        # LOCAL OLLAMA_* attributes (and would raise on an eff that only carries
+        # cloud keys). Every attribute the parent sets is set here from the
+        # OLLAMA_CLOUD_* equivalents, so nothing is left uninitialised — this is
+        # why CodeQL's py/missing-call-to-init is dismissed rather than "fixed".
         self.host = (getattr(eff, "OLLAMA_CLOUD_HOST", "") or "https://ollama.com").rstrip("/")
         self.model = getattr(eff, "OLLAMA_CLOUD_MODEL", "") or ""
         self.timeout = float(getattr(eff, "AI_TIMEOUT_SECONDS", 60) or 60)

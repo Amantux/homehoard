@@ -4,13 +4,13 @@ import os
 import tempfile
 import time
 
-from flask import Blueprint, request, jsonify, Response, send_file, current_app, g
+from flask import Blueprint, Response, current_app, g, jsonify, request, send_file
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
+from ..auth import current_group, login_required, owner_required
 from ..extensions import db, limiter
 from ..models import Group, Item
-from ..auth import login_required, owner_required, current_group
 from ..services.csv_io import export_items, import_items
 
 bp = Blueprint("misc", __name__)
@@ -180,7 +180,7 @@ def put_ai_job_settings():
     if denied:
         return denied
     from ..services.ai import provider_config
-    from ..services.settings_store import set_values, get_overrides
+    from ..services.settings_store import get_overrides, set_values
 
     data = request.get_json(force=True) or {}
     pairs: dict[str, str] = {}
@@ -469,8 +469,11 @@ def migrate_postgres():
     """Copy the whole SQLite database into an EMPTY PostgreSQL target, then the
     operator sets HBOX_DATABASE_URL + restarts to run on it. Owner-only; never
     touches the SQLite source."""
-    from ..services.db_copy import (DbCopyError, TargetNotEmpty,
-                                    migrate_sqlite_to_postgres)
+    from ..services.db_copy import (
+        DbCopyError,
+        TargetNotEmpty,
+        migrate_sqlite_to_postgres,
+    )
 
     source = current_app.config["SQLALCHEMY_DATABASE_URI"]
     if not source.startswith("sqlite"):
@@ -485,7 +488,10 @@ def migrate_postgres():
     except DbCopyError as e:
         return jsonify({"error": str(e)}), 400
     except Exception as e:  # noqa: BLE001 — surface connection/other failures to the user
-        return jsonify({"error": f"Migration failed: {e}"}), 400
+        # Sanitize: a psycopg connection error echoes the DSN back, which carries
+        # the target Postgres PASSWORD. Redact before it reaches the response.
+        from ..services.ai.base import safe_upstream_detail
+        return jsonify({"error": f"Migration failed: {safe_upstream_detail(e)}"}), 400
     report["next"] = ("Data copied. Set HBOX_DATABASE_URL to this Postgres URL and "
                       "restart HomeHoard to run on it.")
     return jsonify(report)

@@ -1,13 +1,13 @@
 import os
 import uuid
 
-from flask import Blueprint, request, jsonify, abort, send_file, current_app
+from flask import Blueprint, abort, current_app, jsonify, request, send_file
 from werkzeug.utils import secure_filename
 
+from ..auth import current_group, login_required
 from ..extensions import db
-from ..models import Item, Bin, Attachment, Document
-from ..auth import login_required, current_group
-from ..schemas.serializers import item_out, bin_out
+from ..models import Attachment, Bin, Document, Item
+from ..schemas.serializers import bin_out, item_out
 
 bp = Blueprint("attachments", __name__)
 
@@ -88,6 +88,8 @@ def delete(item_id, attachment_id):
         try:
             os.remove(att.document.path)
         except OSError:
+            # Best-effort: the DB row is the source of truth. A missing/locked
+            # file must not block deleting the attachment record.
             pass
     db.session.delete(att)
     db.session.commit()
@@ -171,6 +173,8 @@ def bin_delete(bin_id, attachment_id):
         try:
             os.remove(att.document.path)
         except OSError:
+            # Best-effort: the DB row is the source of truth. A missing/locked
+            # file must not block deleting the attachment record.
             pass
     db.session.delete(att)
     db.session.commit()

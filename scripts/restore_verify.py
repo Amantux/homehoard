@@ -93,7 +93,8 @@ def main() -> int:
     args = ap.parse_args()
 
     t0 = time.monotonic()
-    manifest = json.load(open(os.path.join(args.backup, "manifest.json")))
+    with open(os.path.join(args.backup, "manifest.json")) as fh:
+        manifest = json.load(fh)
     checks = []
 
     workdir = tempfile.mkdtemp(prefix="homehoard-restore-")

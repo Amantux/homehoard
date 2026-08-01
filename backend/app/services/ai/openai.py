@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 
-from .base import AIProvider, ChatResult, ProviderError, ToolCall
+from .base import AIProvider, ChatResult, ProviderError, ToolCall, safe_upstream_detail
 
 
 class OpenAIProvider(AIProvider):
@@ -99,7 +99,7 @@ class OpenAIProvider(AIProvider):
                     if tc.function and tc.function.arguments:
                         slot["args"] += tc.function.arguments
         except Exception as exc:  # noqa: BLE001 - normalize SDK/HTTP errors
-            raise ProviderError(f"openai request failed: {exc}") from exc
+            raise ProviderError(f"openai request failed: {safe_upstream_detail(exc)}") from exc
         out = ChatResult(content=content)
         for idx in sorted(frags):
             f = frags[idx]

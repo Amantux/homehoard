@@ -1,17 +1,18 @@
 import logging
 from datetime import datetime, timezone
 
-from flask import Blueprint, request, jsonify, current_app
+from flask import Blueprint, current_app, jsonify, request
 
-from ..extensions import db, limiter
-from ..models import User, Group, GroupInvitation
 from ..auth import (
-    login_required,
+    create_token,
     current_user,
     hash_password,
+    login_required,
     verify_password,
-    create_token,
 )
+from ..extensions import db, limiter
+from ..logsafe import scrub
+from ..models import Group, GroupInvitation, User
 from ..schemas.serializers import user_out
 
 bp = Blueprint("users", __name__)
@@ -44,7 +45,9 @@ def _valid_invitation(token: str):
             exp = datetime.fromisoformat(str(inv.expires_at).replace("Z", "+00:00"))
         except ValueError:
             return None  # unparseable expiry → fail closed, not open
-        now = datetime.now(exp.tzinfo) if exp.tzinfo else datetime.utcnow()
+        # A naive utcnow() is deliberate: it pairs with a naive `exp`. Making it
+        # aware would change the comparison semantics, so the lint is suppressed.
+        now = datetime.now(exp.tzinfo) if exp.tzinfo else datetime.utcnow()  # noqa: DTZ003
         if now > exp:
             return None
     return inv
@@ -127,9 +130,9 @@ def login():
     # so response time doesn't reveal whether the account exists.
     valid = verify_password(password, user.password_hash if user else _DUMMY_HASH)
     if not user or not valid:
-        _LOGGER.warning("login failed for %r from %s", email, request.remote_addr)
+        _LOGGER.warning("login failed for %r from %s", email, scrub(request.remote_addr))
         return jsonify({"error": "invalid credentials"}), 401
-    _LOGGER.info("login ok for %r from %s", email, request.remote_addr)
+    _LOGGER.info("login ok for %r from %s", email, scrub(request.remote_addr))
     token = create_token(user)
     return jsonify(
         {

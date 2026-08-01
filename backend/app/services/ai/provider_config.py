@@ -14,9 +14,12 @@ Precedence (per field): non-empty DB override  >  env / add-on default.
 """
 from __future__ import annotations
 
+import logging
 from types import SimpleNamespace
 
 from ..settings_store import get_overrides, set_values
+
+_LOGGER = logging.getLogger(__name__)
 
 VALID_PROVIDERS = ("", "ollama", "ollama_cloud", "openai", "claude")
 SECRET_KEYS = frozenset({"ollama_api_key", "openai_api_key", "claude_api_key",
@@ -219,26 +222,44 @@ def list_models(eff, timeout: float = 12.0) -> list[str]:
     Best-effort; returns [] on any error (never raises into a request)."""
     import httpx
 
+    from .url_guard import llm_url_ok
+
     p = eff.AI_PROVIDER
+    # Resolve the base URL and validate it BEFORE constructing any HTTP client,
+    # so an unsafe URL provably never reaches the network layer (and a test can
+    # assert the request was never attempted). Validating at the point of USE
+    # matters because a base URL from env / the add-on option never passes
+    # through the /settings/ai guard. Loopback + private LAN stay allowed so a
+    # self-hosted Ollama works; link-local (cloud metadata) does not.
+    if p == "ollama":
+        base_url = (eff.OLLAMA_HOST or "").rstrip("/")
+    elif p == "ollama_cloud":
+        base_url = (eff.OLLAMA_CLOUD_HOST or "").rstrip("/")
+    elif p == "openai":
+        base_url = (eff.OPENAI_BASE_URL or "https://api.openai.com/v1").rstrip("/")
+    else:
+        # claude has no list endpoint; the UI falls back to a free-text field.
+        return []
+    ok, err = llm_url_ok(base_url)
+    if not ok:
+        _LOGGER.warning("refusing to list models: %s", err)
+        return []
+
     try:
         with httpx.Client(timeout=timeout) as c:
             if p == "ollama":
                 h = {"Authorization": f"Bearer {eff.OLLAMA_API_KEY}"} if eff.OLLAMA_API_KEY else {}
-                r = c.get(f"{eff.OLLAMA_HOST.rstrip('/')}/api/tags", headers=h)
+                r = c.get(f"{base_url}/api/tags", headers=h)
                 r.raise_for_status()
                 return sorted(m.get("name", "") for m in r.json().get("models", []) if m.get("name"))
             if p == "ollama_cloud":
                 h = {"Authorization": f"Bearer {eff.OLLAMA_CLOUD_API_KEY}"} if eff.OLLAMA_CLOUD_API_KEY else {}
-                r = c.get(f"{eff.OLLAMA_CLOUD_HOST.rstrip('/')}/api/tags", headers=h)
+                r = c.get(f"{base_url}/api/tags", headers=h)
                 r.raise_for_status()
                 return sorted(m.get("name", "") for m in r.json().get("models", []) if m.get("name"))
-            if p == "openai":
-                base_url = (eff.OPENAI_BASE_URL or "https://api.openai.com/v1").rstrip("/")
-                h = {"Authorization": f"Bearer {eff.OPENAI_API_KEY}"} if eff.OPENAI_API_KEY else {}
-                r = c.get(f"{base_url}/models", headers=h)
-                r.raise_for_status()
-                return sorted(m.get("id", "") for m in r.json().get("data", []) if m.get("id"))
+            h = {"Authorization": f"Bearer {eff.OPENAI_API_KEY}"} if eff.OPENAI_API_KEY else {}
+            r = c.get(f"{base_url}/models", headers=h)
+            r.raise_for_status()
+            return sorted(m.get("id", "") for m in r.json().get("data", []) if m.get("id"))
     except Exception:  # noqa: BLE001 - a model-picker failure must not 500
         return []
-    # claude has no list endpoint; the UI falls back to a free-text model field.
-    return []

@@ -10,6 +10,7 @@ import os
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from werkzeug.middleware.proxy_fix import ProxyFix
+from werkzeug.security import safe_join
 
 from .config import Config
 from .extensions import db, limiter
@@ -216,7 +217,7 @@ def _migrate(app):
     ``db.create_all`` never alters existing tables, so add any columns that were
     introduced after a database was first created, plus one-time data backfills.
     """
-    from sqlalchemy import text, inspect
+    from sqlalchemy import inspect, text
 
     if not db.engine.url.get_backend_name().startswith("sqlite"):
         return
@@ -302,26 +303,26 @@ def _migrate(app):
 
 
 def _register_blueprints(app):
-    from .api.users import bp as users_bp
-    from .api.groups import bp as groups_bp
-    from .api.locations import bp as locations_bp
-    from .api.labels import bp as labels_bp
-    from .api.items import bp as items_bp
-    from .api.holdings import bp as holdings_bp
-    from .api.bins import bp as bins_bp
-    from .api.qrtags import bp as qrtags_bp
     from .api.attachments import bp as attachments_bp
-    from .api.maintenance import bp as maintenance_bp
-    from .api.notifiers import bp as notifiers_bp
-    from .api.misc import bp as misc_bp
-    from .api.ha import bp as ha_bp
-    from .api.lookup import bp as lookup_bp
-    from .api.checkout import bp as checkout_bp
-    from .api.tokens import bp as tokens_bp
-    from .api.reports import bp as reports_bp
+    from .api.bins import bp as bins_bp
     from .api.chat import bp as chat_bp
+    from .api.checkout import bp as checkout_bp
+    from .api.groups import bp as groups_bp
+    from .api.ha import bp as ha_bp
+    from .api.holdings import bp as holdings_bp
+    from .api.items import bp as items_bp
     from .api.jobs import bp as jobs_bp
+    from .api.labels import bp as labels_bp
+    from .api.locations import bp as locations_bp
+    from .api.lookup import bp as lookup_bp
+    from .api.maintenance import bp as maintenance_bp
+    from .api.misc import bp as misc_bp
+    from .api.notifiers import bp as notifiers_bp
+    from .api.qrtags import bp as qrtags_bp
+    from .api.reports import bp as reports_bp
     from .api.suggestions import bp as suggestions_bp
+    from .api.tokens import bp as tokens_bp
+    from .api.users import bp as users_bp
 
     prefix = "/api/v1"
     for bp in (
@@ -375,15 +376,21 @@ _FRONTEND_DIST = os.environ.get(
 
 
 def _serve_spa(path):
-    full = os.path.join(_FRONTEND_DIST, path)
-    if path and os.path.isfile(full):
+    # safe_join, not os.path.join: it rejects traversal ("../") and absolute
+    # segments, returning None. os.path.join would happily build a path outside
+    # the dist dir, letting the isfile() check probe for arbitrary files.
+    # Nested asset paths ("assets/index-abc.js") are still served normally.
+    full = safe_join(_FRONTEND_DIST, path) if path else None
+    if full and os.path.isfile(full):
         return send_from_directory(_FRONTEND_DIST, path)
     index = os.path.join(_FRONTEND_DIST, "index.html")
     if os.path.isfile(index):
         return send_from_directory(_FRONTEND_DIST, "index.html")
     return (
-        "<h1>HomeHoard API</h1><p>Frontend not built. "
-        "API is available under <code>/api/v1</code>.</p>",
+        (
+            "<h1>HomeHoard API</h1><p>Frontend not built. "
+            "API is available under <code>/api/v1</code>.</p>"
+        ),
         200,
     )
 

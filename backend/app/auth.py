@@ -17,6 +17,7 @@ from flask import current_app, g, request, jsonify
 from passlib.hash import bcrypt
 
 from .extensions import db
+from .logsafe import scrub
 from .models import User, Group, ApiToken, hash_token
 from .models.api_token import TOKEN_PREFIX
 
@@ -193,7 +194,7 @@ def login_required(fn):
         if user is None:
             _LOGGER.warning(
                 "unauthorized %s %s from %s",
-                request.method, request.path, request.remote_addr,
+                scrub(request.method), scrub(request.path), scrub(request.remote_addr),
             )
             return jsonify({"error": "unauthorized"}), 401
         blocked = _read_only_blocked()
