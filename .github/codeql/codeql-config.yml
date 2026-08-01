@@ -1,0 +1,33 @@
+# CodeQL scan configuration for HomeHoard.
+#
+# Why this file exists: CodeQL's defaults bury security findings in style noise.
+# Two deliberate narrowings live here; both are scoped so a REAL security finding
+# in production code still fires. Do not widen either without recording why.
+#
+# 1. `queries: security-extended` (not the default `security-and-quality`).
+#    The quality suite duplicates what ruff/eslint already enforce on every
+#    commit (unused imports, lambda style, naming), and those alerts crowd out
+#    the security signal shipped alongside them. `security-extended` keeps — and
+#    widens — the security queries while dropping the pure-style ones. Genuine
+#    quality nits the suite would have caught are fixed by hand, not ignored.
+#
+# 2. `paths-ignore` covers test and generated-migration code ONLY. Neither is
+#    production attack surface: tests are never deployed, and Alembic revision
+#    files are generated scaffolding whose SQL is reviewed at authoring time.
+#    Application code under backend/app/** is deliberately NOT excluded.
+
+name: "HomeHoard CodeQL"
+
+# `queries` MUST be a list of query specs (each with `uses:`) — a bare scalar
+# fails codeql-action's config schema, which either reds the scan job or
+# silently falls back to the narrower default `code-scanning` suite.
+queries:
+  - uses: security-extended
+
+paths-ignore:
+  # Tests are not deployed; assertion idioms (side-effect-in-assert, unnecessary
+  # lambda, non-self method args) are conventional here, not defects.
+  - "backend/tests/**"
+  # Alembic revision scaffolding — generated, reviewed at authoring time, and
+  # never reachable from a request path.
+  - "backend/migrations/versions/**"

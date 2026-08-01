@@ -18,17 +18,21 @@ on:
 jobs:
   hassfest:
     name: hassfest (Home Assistant integration manifest)
+    permissions:
+      contents: read   # only checks out and validates files
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: home-assistant/actions/hassfest@master
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: home-assistant/actions/hassfest@ab22029681aa532bfe7de5774a9972d67bfbd2c0 # master @ 2026-07-30
 
   hacs:
     name: HACS (integration installability)
+    permissions:
+      contents: read   # only checks out and validates files
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: hacs/action@main
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: hacs/action@1ebf01c408f29afcb6406bd431bc98fd8cbb15aa # main @ 2026-06-08
         with:
           category: integration
           # `brands` checks that the domain is registered in home-assistant/brands,
@@ -38,9 +42,11 @@ jobs:
 
   addon-lint:
     name: Add-on + HACS metadata lint
+    permissions:
+      contents: read   # only checks out and validates files
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Validate add-on config.yaml
         run: |
           python3 - <<'PY'

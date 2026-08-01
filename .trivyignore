@@ -1,0 +1,11 @@
+# Trivy findings accepted with a documented reason. Keep this list short and
+# justified — an unexplained entry here is how a real finding gets buried.
+
+# DS-0002 — "Image user should not be 'root'".
+# The image intentionally has no final USER instruction: the container must
+# start as root to chown the Home Assistant-managed /data volume (whose
+# ownership we don't control), and docker-entrypoint.sh then runs EVERY
+# long-running process (gunicorn, the MCP server, provisioning, discovery) as
+# the unprivileged `app` user via gosu — see RUN_AS there. Only the supervising
+# shell stays root. Same model as the myMeal/Edibl add-ons.
+DS-0002
