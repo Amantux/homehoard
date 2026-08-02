@@ -1,0 +1,21 @@
+# Ruff configuration — pinned so the LOCAL pre-commit hook and CI enforce the
+# same rules.
+#
+# Why this file exists: neither side used to set `select`, so each fell back to
+# its ruff version's DEFAULTS — and those defaults widened between releases
+# (0.15.x = E4/E7/E9/F; 0.16.x adds B, C4, DTZ, I, PIE, PL, RUF, SIM, UP…).
+# The result was a hook that blocked edits on pre-existing violations CI never
+# checked, and — worse — RUF100 stripping `# noqa: E731` directives that CI
+# still requires, which broke the build. Selecting explicitly makes rule choice
+# independent of which ruff version happens to be installed.
+#
+# To adopt more rules, add them here deliberately and fix the backlog in its own
+# commit — don't let a version bump enable them silently.
+#
+# WARNING: an explicit `--select` on the COMMAND LINE overrides this file. Never
+# run `ruff check --fix --select ...,RUF100` — with the other rules switched off,
+# RUF100 judges every `# noqa` for a disabled rule "unused" and deletes it,
+# silently removing suppressions the CI rule set still needs. (This has broken
+# the build once already.) Plain `ruff check --fix` respects this config.
+[lint]
+select = ["E4", "E7", "E9", "F"]
