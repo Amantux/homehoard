@@ -154,6 +154,31 @@ jobs:
           path: smoke-*.json
           if-no-files-found: ignore
 
+  integration-tests:
+    name: HA integration (services)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    # Runs the companion integration's service tests in a real Home Assistant
+    # env (py3.13). These cover the confidence-tiering guards — an ambiguous
+    # name must not check the wrong item out, and the spoken clarification must
+    # name where each candidate lives — which nothing in the backend suite
+    # exercises.
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.13"
+      - name: Install harness
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r custom_components/homehoard/tests/requirements_test.txt
+      - name: Run integration tests
+        # asyncio_mode=auto: the async test fns have no per-test marker. sys.path
+        # is fixed in the tests' conftest so `custom_components.homehoard` imports.
+        run: pytest custom_components/homehoard/tests -q -o asyncio_mode=auto
+
   # Auto-bump the patch version on every push to main (skips its own commit).
   bump-version:
     name: Auto-bump patch version
@@ -163,7 +188,7 @@ jobs:
     if: >
       github.event_name == 'push' &&
       !startsWith(github.event.head_commit.message, 'chore: bump version')
-    needs: [backend-tests, frontend-build, validate-addon, lint, smoke]
+    needs: [backend-tests, frontend-build, validate-addon, lint, smoke, integration-tests]
     outputs:
       new_version: ${{ steps.bump.outputs.new_version }}
       bump_sha: ${{ steps.commit.outputs.sha }}

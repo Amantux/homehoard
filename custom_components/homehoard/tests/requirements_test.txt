@@ -1,0 +1,7 @@
+# Test-only deps for the HomeHoard integration (needs Home Assistant / Python 3.13+).
+# Pinned loosely; the harness pulls a matching Home Assistant. Run in its own CI job.
+#
+# NEVER install this into the system Python you run the backend suite with: it
+# pins an older dependency set (pydantic 1.x), which breaks the `mcp` package
+# and stops backend test modules collecting. Use a venv, or let CI run it.
+pytest-homeassistant-custom-component
