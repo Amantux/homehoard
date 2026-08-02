@@ -68,16 +68,36 @@ MIN_SECRET_LENGTH = 32
 REDACTED = "***redacted***"
 
 
+# scheme://user:pass@host — the credentials, not the whole URL.
+_URL_USERINFO = re.compile(r"(?P<scheme>[a-zA-Z][a-zA-Z0-9+.\-]*://)[^/@\s]*:[^/@\s]*@")
+
+
+def strip_url_credentials(value: str) -> str:
+    """Replace embedded userinfo in a URL with a redaction marker.
+
+    A provider base URL is not declared secret — knowing you point at
+    ``http://ollama.lan:11434`` is exactly what makes the startup log useful.
+    But operators do embed credentials in those URLs, and add-on logs get pasted
+    into public GitHub issues. Redact the credentials, keep the host.
+    """
+    return _URL_USERINFO.sub(lambda m: f"{m.group('scheme')}{REDACTED}@", value)
+
+
 def _is_placeholder(value: str) -> bool:
     v = value.strip().lower()
     return v in PLACEHOLDER_SECRETS or any(m in v for m in PLACEHOLDER_MARKERS)
 
 
-class ConfigError(Exception):
+class ConfigError(RuntimeError):
     """Raised when configuration is invalid. Carries every problem at once.
 
     Reporting one error per run turns fixing a misconfigured deployment into a
     guessing game, so validation collects all of them before raising.
+
+    Subclasses RuntimeError deliberately: bad configuration is a startup
+    failure, and create_app already refused to boot with ``RuntimeError`` for
+    exactly these cases. Callers (and tests) that catch RuntimeError keep
+    working whether the refusal comes from here or from create_app.
     """
 
     def __init__(self, errors: list[str]):
@@ -163,6 +183,22 @@ def csv_list(raw: str) -> tuple[str, ...]:
     return tuple(p.strip() for p in str(raw).split(",") if p.strip())
 
 
+def normalize_db_scheme(url: str) -> str:
+    """Rewrite ``postgres://`` and bare ``postgresql://`` to ``postgresql+psycopg://``.
+
+    Pure rewriting, no validation, and an unrecognised scheme passes through
+    untouched. ``services/db_copy`` needs exactly this: it must inspect the
+    normalized URL and raise its own curated ``DbCopyError`` for a non-Postgres
+    target, rather than have a raw ValueError cross the API boundary.
+    :func:`normalize_db_url` layers validation on top for everyone else.
+    """
+    if url.startswith("postgres://"):
+        url = "postgresql://" + url[len("postgres://"):]
+    if url.startswith("postgresql://"):
+        url = "postgresql+psycopg://" + url[len("postgresql://"):]
+    return url
+
+
 def normalize_db_url(url: str) -> str:
     """Validate a database URL's scheme+driver and normalize it.
 
@@ -174,8 +210,7 @@ def normalize_db_url(url: str) -> str:
     raises ValueError. Applied at the point of use, so it guards the env
     DATABASE_URL and the shared-Postgres DSN alike.
     """
-    if url.startswith("postgres://"):
-        url = "postgresql://" + url[len("postgres://"):]
+    url = normalize_db_scheme(url)
     scheme = url.split("://", 1)[0].lower()
     base, _, driver = scheme.partition("+")
     if base == "sqlite":
@@ -199,6 +234,9 @@ def as_str(raw: str) -> str:
     return str(raw)
 
 
+_UNSET = object()
+
+
 @dataclass(frozen=True)
 class Field:
     name: str                      # without the HBOX_ prefix
@@ -207,6 +245,11 @@ class Field:
     doc: str
     secret: bool = False
     ha_option: str | None = None   # matching key in options.json
+    # Default applied when running INSIDE Home Assistant and the option key is
+    # absent from options.json. Some settings are correctly permissive
+    # standalone and correctly restrictive as an add-on; the deleted shell block
+    # encoded exactly that, and dropping it silently flipped a default open.
+    ha_default: Any = _UNSET
     restart_required: bool = True
     supports_file: bool = False    # honours HBOX_<NAME>_FILE (Docker secrets)
 
@@ -260,7 +303,12 @@ FIELDS: tuple[Field, ...] = (
           ha_option="disable_auth"),
     Field("ALLOW_REGISTRATION", parse_bool, True,
           "Allow anyone who can reach the app to create an account.",
-          ha_option="allow_registration"),
+          # True standalone: /users/register has no first-user exception, so a
+          # fresh install with auth on could never create its first account.
+          # False as an add-on, matching config.yaml and the deleted shell line
+          # (`.get('allow_registration', False)`) — without this, an options.json
+          # missing the key silently opened registration on upgrade.
+          ha_option="allow_registration", ha_default=False),
     Field("MIN_PASSWORD_LENGTH", int_between(1, 128), 8,
           "Minimum password length enforced on register / change-password."),
     Field("WORKER_ENABLED", parse_bool, True,
@@ -392,9 +440,19 @@ class Settings:
 
     @property
     def sqlalchemy_uri(self) -> str:
-        # Explicit URL always wins.
-        if self.values["DATABASE_URL"]:
-            return normalize_db_url(self.values["DATABASE_URL"])
+        # Explicit URL always wins. Stripped first: a whitespace-only value is
+        # "unset", not a URL whose scheme happens to be blank.
+        explicit = (self.values["DATABASE_URL"] or "").strip()
+        if explicit:
+            # Wrapped: an unusable database URL is a configuration failure, and
+            # ConfigError is a RuntimeError, so callers see one refusal type
+            # whether it came from validation or from here (this path is also
+            # reached with validate=False). normalize_db_url names only the
+            # scheme/driver, never the URL, so no credential is echoed.
+            try:
+                return normalize_db_url(explicit)
+            except ValueError as exc:
+                raise ConfigError([f"HBOX_DATABASE_URL: {exc}"]) from None
         # Shared PostgreSQL: the entrypoint's provisioning step (pg_provision)
         # writes the discovered DSN here; read it rather than routing a runtime
         # value through the env/options precedence chain.
@@ -428,6 +486,10 @@ class Settings:
                 value = REDACTED
             elif isinstance(value, tuple):
                 value = list(value)
+            elif isinstance(value, str) and value:
+                # Applies to EVERY string field, not a hand-listed set of URL
+                # fields: a list would go stale the moment someone adds one.
+                value = strip_url_credentials(value)
             out[f.name] = value
         return out
 
@@ -468,7 +530,7 @@ def load_settings(
     overrides: dict[str, Any] | None = None,
     ha_options: dict[str, Any] | None = None,
     ha_options_path: str = "/data/options.json",
-    strict_secret: bool | None = None,
+    validate: bool = True,
 ) -> Settings:
     """Resolve settings from all sources. Pure: no I/O beyond reading inputs.
 
@@ -503,6 +565,8 @@ def load_settings(
             # "" for a cleared optional field), so it must not beat a default.
             if ha_raw != "" or f.default == "":
                 raw, source = ha_raw, "ha_option"
+        elif in_ha and f.ha_default is not _UNSET:
+            raw, source = f.ha_default, "ha_default"
         if f.name in overrides:
             raw, source = overrides[f.name], "override"
 
@@ -513,6 +577,10 @@ def load_settings(
 
         # Overrides may pass already-typed values (a test passing DEBUG=True).
         if source == "override" and not isinstance(raw, str):
+            values[f.name] = raw
+            sources[f.name] = source
+            continue
+        if source == "ha_default":
             values[f.name] = raw
             sources[f.name] = source
             continue
@@ -534,14 +602,19 @@ def load_settings(
     if errors:
         raise ConfigError(errors)
 
-    _validate_semantics(values, sources, in_ha, errors, warnings, strict_secret)
-    if errors:
-        raise ConfigError(errors)
+    # validate=False resolves values without the cross-field rules. Used by
+    # Config.sqlalchemy_uri(), which answers "which database?" for the bare
+    # `alembic` CLI — a recovery path that must not abort because CORS_ORIGINS
+    # or SECRET_KEY is unrelatedly wrong.
+    if validate:
+        _validate_semantics(values, sources, in_ha, errors, warnings)
+        if errors:
+            raise ConfigError(errors)
 
     return Settings(values=values, warnings=tuple(warnings), sources=sources)
 
 
-def _validate_semantics(values, sources, in_ha, errors, warnings, strict_secret) -> None:
+def _validate_semantics(values, sources, in_ha, errors, warnings) -> None:
     """Cross-field rules. This is where unsafe COMBINATIONS are caught.
 
     Individually valid settings can combine into an unambiguously unsafe
@@ -549,15 +622,23 @@ def _validate_semantics(values, sources, in_ha, errors, warnings, strict_secret)
     """
     # --- the signing secret ---
     secret = values["SECRET_KEY"]
-    # Default to strict whenever we are not obviously running inside HA.
-    strict = (not in_ha) if strict_secret is None else strict_secret
-    if secret:
+    # Only when authentication is on. With DISABLE_AUTH the key signs nothing an
+    # attacker can use, and refusing to boot would break the documented
+    # behind-ingress deployment (see test_default_secret_allowed_when_auth_disabled).
+    #
+    # There is deliberately NO "relaxed inside Home Assistant" case: create_app
+    # enforces the same length unconditionally when auth is on, so relaxing it
+    # here made config_check pass a configuration the app then refused to start
+    # on — the gate reporting "valid" and the container dying seconds later is
+    # the exact failure the gate exists to prevent. A BLANK secret is generated
+    # and persisted, and short-circuits before either check.
+    if secret and not values["DISABLE_AUTH"]:
         if _is_placeholder(secret):
             errors.append(
                 "HBOX_SECRET_KEY is a known placeholder value. Generate one with: "
                 "python3 -c 'import secrets;print(secrets.token_urlsafe(32))'"
             )
-        elif len(secret) < MIN_SECRET_LENGTH and strict and not values["DISABLE_AUTH"]:
+        elif len(secret) < MIN_SECRET_LENGTH:
             errors.append(
                 f"HBOX_SECRET_KEY is only {len(secret)} characters; at least "
                 f"{MIN_SECRET_LENGTH} are required when authentication is enabled."
@@ -634,7 +715,7 @@ def _validate_semantics(values, sources, in_ha, errors, warnings, strict_secret)
             )
 
     # --- database ---
-    uri = values["DATABASE_URL"]
+    uri = (values["DATABASE_URL"] or "").strip()
     if uri:
         try:
             normalize_db_url(uri)

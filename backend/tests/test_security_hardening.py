@@ -96,21 +96,22 @@ def test_private_lan_ollama_host_still_reaches_the_provider(monkeypatch):
 # --- SPA path traversal -------------------------------------------------------
 
 
-def test_spa_serves_a_nested_asset(app, tmp_path, monkeypatch):
-    import app as app_pkg
-
+def test_spa_serves_a_nested_asset(app, tmp_path):
     dist = tmp_path / "dist"
     (dist / "assets").mkdir(parents=True)
     (dist / "assets" / "app-abc123.js").write_text("console.log(1)")
     (dist / "index.html").write_text("<html></html>")
-    monkeypatch.setattr(app_pkg, "_FRONTEND_DIST", str(dist))
+    # Set through the app's own config (the FRONTEND_DIST setting), which is how
+    # an operator configures it — the module-level constant it used to patch no
+    # longer exists.
+    app.config["FRONTEND_DIST"] = str(dist)
 
     r = app.test_client().get("/assets/app-abc123.js")
     assert r.status_code == 200
     assert b"console.log(1)" in r.data
 
 
-def test_spa_refuses_traversal_without_erroring(app, tmp_path, monkeypatch):
+def test_spa_refuses_traversal_without_erroring(app, tmp_path):
     """A traversal must not 500 and must not serve a file outside the dist dir —
     it falls through to the SPA index instead.
 
@@ -119,14 +120,13 @@ def test_spa_refuses_traversal_without_erroring(app, tmp_path, monkeypatch):
     os.path.join built a real path outside dist and os.path.isfile returned True
     for it — that probe is the defect being fixed here.
     """
-    import app as app_pkg
     from app import _serve_spa
 
     dist = tmp_path / "dist"
     dist.mkdir()
     (dist / "index.html").write_text("<html>spa</html>")
     (tmp_path / "secret.txt").write_text("root:x:0:0:")
-    monkeypatch.setattr(app_pkg, "_FRONTEND_DIST", str(dist))
+    app.config["FRONTEND_DIST"] = str(dist)
 
     with app.test_request_context("/"):
         body = _serve_spa("../secret.txt")

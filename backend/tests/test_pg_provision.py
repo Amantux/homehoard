@@ -1,14 +1,17 @@
 """Shared-PostgreSQL auto-provisioning: DB-URL precedence + the startup client.
 
-No network: the Supervisor/provision calls are monkeypatched. Config attributes
-are class-level (read from env at import), so we patch them directly.
+No network: the Supervisor/provision calls are monkeypatched. Configuration is
+patched through the ENVIRONMENT rather than by setting Config attributes:
+pg_provision resolves via app.settings.load_settings(), which is what the
+entrypoint relies on now that the shell no longer translates options.json into
+env vars. Patching Config would test nothing.
 """
 import stat
 
 import pytest
 
 from app import pg_provision as pp
-from app.config import Config
+from app.settings import load_settings, normalize_db_url
 
 PG_DSN = "postgresql+psycopg://homehoard:secret@local-shared-postgres:5432/homehoard"
 
@@ -17,10 +20,10 @@ PG_DSN = "postgresql+psycopg://homehoard:secret@local-shared-postgres:5432/homeh
 def cfg(tmp_path, monkeypatch):
     """A clean temp data dir, shared-postgres off, no explicit DATABASE_URL.
     Individual tests flip the attributes they exercise."""
-    monkeypatch.setattr(Config, "DATA_DIR", str(tmp_path))
-    monkeypatch.setattr(Config, "DATABASE_URL", None)
-    monkeypatch.setattr(Config, "USE_SHARED_POSTGRES", False)
-    monkeypatch.setattr(Config, "POSTGRES_PROVISION_TOKEN", "")
+    monkeypatch.setenv("HBOX_DATA_DIR", str(tmp_path))
+    monkeypatch.delenv("HBOX_DATABASE_URL", raising=False)
+    monkeypatch.setenv("HBOX_USE_SHARED_POSTGRES", "false")
+    monkeypatch.setenv("HBOX_POSTGRES_PROVISION_TOKEN", "")
     monkeypatch.delenv("SUPERVISOR_TOKEN", raising=False)
     return tmp_path
 
@@ -39,8 +42,8 @@ def _forbid_network(monkeypatch):
 
 def _prime_reachable(monkeypatch, dsn):
     """Config + patched discovery/provision so main() reaches the write path."""
-    monkeypatch.setattr(Config, "USE_SHARED_POSTGRES", True)
-    monkeypatch.setattr(Config, "POSTGRES_PROVISION_TOKEN", "tok")
+    monkeypatch.setenv("HBOX_USE_SHARED_POSTGRES", "true")
+    monkeypatch.setenv("HBOX_POSTGRES_PROVISION_TOKEN", "tok")
     monkeypatch.setenv("SUPERVISOR_TOKEN", "sup")
     monkeypatch.setattr(pp, "_discovery_config",
                         lambda: {"provision_url": "http://x:8087/provision", "token": "tok"})
@@ -49,50 +52,50 @@ def _prime_reachable(monkeypatch, dsn):
     monkeypatch.setattr(pp, "_provision", lambda url, token: dsn)
 
 
-# ---- Config.sqlalchemy_uri precedence -------------------------------------
+# ---- database-URL precedence -------------------------------------
 
 def test_uri_explicit_database_url_wins_over_provisioned(cfg, monkeypatch):
-    monkeypatch.setattr(Config, "USE_SHARED_POSTGRES", True)
+    monkeypatch.setenv("HBOX_USE_SHARED_POSTGRES", "true")
     (cfg / ".database_url").write_text(PG_DSN)
-    monkeypatch.setattr(Config, "DATABASE_URL", "postgresql://u:p@host/db")
-    assert Config.sqlalchemy_uri() == "postgresql+psycopg://u:p@host/db"
+    monkeypatch.setenv("HBOX_DATABASE_URL", "postgresql://u:p@host/db")
+    assert load_settings().sqlalchemy_uri == "postgresql+psycopg://u:p@host/db"
 
 
 def test_uri_reads_provisioned_dsn_when_flag_on(cfg, monkeypatch):
-    monkeypatch.setattr(Config, "USE_SHARED_POSTGRES", True)
+    monkeypatch.setenv("HBOX_USE_SHARED_POSTGRES", "true")
     (cfg / ".database_url").write_text(PG_DSN + "\n")
-    assert Config.sqlalchemy_uri() == PG_DSN
+    assert load_settings().sqlalchemy_uri == PG_DSN
 
 
 def test_uri_ignores_provisioned_dsn_when_flag_off(cfg):
     (cfg / ".database_url").write_text(PG_DSN)
-    assert Config.sqlalchemy_uri().startswith("sqlite:///")
+    assert load_settings().sqlalchemy_uri.startswith("sqlite:///")
 
 
 def test_uri_sqlite_when_flag_on_but_no_file(cfg, monkeypatch):
-    monkeypatch.setattr(Config, "USE_SHARED_POSTGRES", True)
-    assert Config.sqlalchemy_uri().startswith("sqlite:///")
+    monkeypatch.setenv("HBOX_USE_SHARED_POSTGRES", "true")
+    assert load_settings().sqlalchemy_uri.startswith("sqlite:///")
 
 
 def test_resolve_accepts_psycopg(cfg):
-    assert Config._resolve_db_url("postgresql://u:p@h/db") == "postgresql+psycopg://u:p@h/db"
+    assert normalize_db_url("postgresql://u:p@h/db") == "postgresql+psycopg://u:p@h/db"
 
 
 def test_resolve_rejects_foreign_scheme(cfg):
-    with pytest.raises(RuntimeError):
-        Config._resolve_db_url("mysql://u:p@host/db")
+    with pytest.raises(ValueError):
+        normalize_db_url("mysql://u:p@host/db")
 
 
 def test_resolve_rejects_non_psycopg_driver(cfg):
-    with pytest.raises(RuntimeError):
-        Config._resolve_db_url("postgresql+asyncpg://u:p@host/db")
+    with pytest.raises(ValueError):
+        normalize_db_url("postgresql+asyncpg://u:p@host/db")
 
 
 # ---- pg_provision.main() short-circuits (must not touch the network) ------
 
 def test_main_noop_when_database_url_set(cfg, monkeypatch):
-    monkeypatch.setattr(Config, "DATABASE_URL", PG_DSN)
-    monkeypatch.setattr(Config, "USE_SHARED_POSTGRES", True)
+    monkeypatch.setenv("HBOX_DATABASE_URL", PG_DSN)
+    monkeypatch.setenv("HBOX_USE_SHARED_POSTGRES", "true")
     calls = _forbid_network(monkeypatch)
     assert pp.main() == 0
     assert not (cfg / pp.DSN_FILENAME).exists()
@@ -107,7 +110,7 @@ def test_main_noop_when_flag_off(cfg, monkeypatch):
 
 
 def test_main_noop_when_already_provisioned(cfg, monkeypatch):
-    monkeypatch.setattr(Config, "USE_SHARED_POSTGRES", True)
+    monkeypatch.setenv("HBOX_USE_SHARED_POSTGRES", "true")
     (cfg / pp.DSN_FILENAME).write_text(PG_DSN)
     calls = _forbid_network(monkeypatch)
     assert pp.main() == 0
@@ -115,14 +118,14 @@ def test_main_noop_when_already_provisioned(cfg, monkeypatch):
 
 
 def test_main_noop_without_supervisor_token(cfg, monkeypatch):
-    monkeypatch.setattr(Config, "USE_SHARED_POSTGRES", True)
+    monkeypatch.setenv("HBOX_USE_SHARED_POSTGRES", "true")
     # SUPERVISOR_TOKEN unset by the cfg fixture
     assert pp.main() == 0
     assert not (cfg / pp.DSN_FILENAME).exists()
 
 
 def test_main_noop_without_token(cfg, monkeypatch):
-    monkeypatch.setattr(Config, "USE_SHARED_POSTGRES", True)
+    monkeypatch.setenv("HBOX_USE_SHARED_POSTGRES", "true")
     monkeypatch.setenv("SUPERVISOR_TOKEN", "sup")
     monkeypatch.setattr(pp, "_discovery_config", lambda: None)
     assert pp.main() == 0
@@ -150,7 +153,7 @@ def test_main_stays_on_sqlite_when_existing_data_and_no_migrate(cfg, monkeypatch
     # Postgres and strand the data; stay on SQLite (no network, no DSN written).
     (cfg / "homehoard.db").write_bytes(b"SQLite format 3\x00 with data")
     _prime_reachable(monkeypatch, PG_DSN)
-    monkeypatch.setattr(Config, "MIGRATE_FROM_SQLITE", False, raising=False)
+    monkeypatch.setenv("HBOX_MIGRATE_FROM_SQLITE", "false")
     calls = _forbid_network(monkeypatch)
     assert pp.main() == 0
     assert not (cfg / pp.DSN_FILENAME).exists()
@@ -162,7 +165,7 @@ def test_main_provisions_over_existing_data_when_migrate_on(cfg, monkeypatch):
     # provisioning proceeds even though a populated SQLite file exists.
     (cfg / "homehoard.db").write_bytes(b"SQLite format 3\x00 with data")
     _prime_reachable(monkeypatch, PG_DSN)
-    monkeypatch.setattr(Config, "MIGRATE_FROM_SQLITE", True, raising=False)
+    monkeypatch.setenv("HBOX_MIGRATE_FROM_SQLITE", "true")
     assert pp.main() == 0
     assert (cfg / pp.DSN_FILENAME).read_text() == PG_DSN
 

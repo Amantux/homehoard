@@ -9,14 +9,21 @@ Run:  python mcp_server.py    (serves SSE on HBOX_MCP_HOST:HBOX_MCP_PORT/sse)
 """
 import hmac
 import json
-import os
 import sys
 
 import httpx
 from mcp.server.fastmcp import FastMCP
 
-API = os.environ.get("HBOX_MCP_API", "http://127.0.0.1:7745/api/v1")
-TOKEN = os.environ.get("HBOX_MCP_API_TOKEN")  # only needed if app auth is enabled
+from app.settings import load_settings
+
+# Resolved through the one registry, not raw os.environ: this is a separate
+# process, and the entrypoint no longer translates options.json into the
+# environment. Reading env directly is also how this file grew its own boolean
+# parser for MCP_EXPOSE_EXTERNAL, which differed from Config._bool.
+_SETTINGS = load_settings()
+
+API = _SETTINGS.mcp_api
+TOKEN = _SETTINGS.MCP_API_TOKEN or None  # only needed if app auth is enabled
 # The app's auth requires the "Bearer " scheme (auth.py rejects a bare token), so
 # MCP→app calls fail auth without it whenever disable_auth is off. Tolerate a token
 # that already includes the scheme (some operators set it to work around the old
@@ -643,14 +650,13 @@ def _guard_external(asgi_app, server_token: str):
 
 
 def _expose_external() -> bool:
-    return os.environ.get("HBOX_MCP_EXPOSE_EXTERNAL", "").strip().lower() in (
-        "1", "true", "yes", "on")
+    return bool(_SETTINGS.MCP_EXPOSE_EXTERNAL)
 
 
 if __name__ == "__main__":
-    host = os.environ.get("HBOX_MCP_HOST", "0.0.0.0")
-    port = int(os.environ.get("HBOX_MCP_PORT", "7766"))
-    server_token = os.environ.get("HBOX_MCP_SERVER_TOKEN", "")
+    host = _SETTINGS.MCP_HOST
+    port = _SETTINGS.MCP_PORT
+    server_token = _SETTINGS.MCP_SERVER_TOKEN
 
     if _expose_external():
         # Fail-closed: never serve an externally-reachable endpoint that nobody can

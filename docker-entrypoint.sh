@@ -2,42 +2,30 @@
 # Unified entrypoint: works standalone and as a Home Assistant add-on.
 set -e
 
-OPTIONS=/data/options.json
+# options.json is deliberately NOT parsed here. The application reads it via one
+# tested adapter (app.settings.load_ha_options), so the shell and Python cannot
+# disagree about what the configuration is. Eleven separate `python3 -c`
+# invocations used to re-parse the same file and duplicate its defaults — and
+# they had already drifted: the shell defaulted disable_auth to TRUE while
+# Config defaulted it to FALSE.
 
-# When running as an HA add-on, translate options.json into env vars.
-if [ -f "$OPTIONS" ]; then
-  HBOX_DISABLE_AUTH="$(python3 -c "import json;print(str(json.load(open('$OPTIONS')).get('disable_auth', True)).lower())")"
-  HBOX_ALLOW_REGISTRATION="$(python3 -c "import json;print(str(json.load(open('$OPTIONS')).get('allow_registration', False)).lower())")"
-  HBOX_MCP_ENABLED="$(python3 -c "import json;print(str(json.load(open('$OPTIONS')).get('enable_mcp', True)).lower())")"
-  HBOX_MCP_EXPOSE_EXTERNAL="$(python3 -c "import json;print(str(json.load(open('$OPTIONS')).get('mcp_expose_external', False)).lower())")"
-  HBOX_OLLAMA_SEARCH_KEY="$(python3 -c "import json;v=json.load(open('$OPTIONS')).get('ollama_search_key');print('' if v is None else v)")"
-  HBOX_BARCODE_LOOKUP="$(python3 -c "import json;print(str(json.load(open('$OPTIONS')).get('barcode_lookup', False)).lower())")"
-  HBOX_BARCODE_DB_KEY="$(python3 -c "import json;v=json.load(open('$OPTIONS')).get('barcode_db_key');print('' if v is None else v)")"
-  HBOX_DATABASE_URL="$(python3 -c "import json;v=json.load(open('$OPTIONS')).get('database_url');print('' if v is None else v)")"
-  HBOX_MIGRATE_FROM_SQLITE="$(python3 -c "import json;print(str(json.load(open('$OPTIONS')).get('migrate_from_sqlite', False)).lower())")"
-  HBOX_USE_SHARED_POSTGRES="$(python3 -c "import json;print(str(json.load(open('$OPTIONS')).get('use_shared_postgres', False)).lower())")"
-  HBOX_POSTGRES_PROVISION_TOKEN="$(python3 -c "import json;v=json.load(open('$OPTIONS')).get('postgres_provision_token');print('' if v is None else v)")"
-  export HBOX_DISABLE_AUTH HBOX_ALLOW_REGISTRATION HBOX_MCP_ENABLED HBOX_MCP_EXPOSE_EXTERNAL HBOX_OLLAMA_SEARCH_KEY HBOX_BARCODE_LOOKUP HBOX_BARCODE_DB_KEY HBOX_DATABASE_URL HBOX_MIGRATE_FROM_SQLITE HBOX_USE_SHARED_POSTGRES HBOX_POSTGRES_PROVISION_TOKEN
-fi
-
-# Sensible defaults.
+# The data dir is the one value the shell needs BEFORE Python can run (mkdir +
+# chown happen as root, before the privilege drop). Everything else — port, MCP
+# settings, auth — is resolved from the registry further down, so there is no
+# second set of defaults here to drift from the declared ones.
 : "${HBOX_DATA_DIR:=/data}"
-: "${HBOX_DISABLE_AUTH:=false}"
 # NOTE: HBOX_SECRET_KEY is intentionally NOT defaulted here. It used to be
 # `head -c 32 /dev/urandom`, which minted a NEW signing key on every container
 # start — silently logging every user out and voiding every issued API token
 # (including MCP keys) on each restart. The application now generates one once
 # and persists it under HBOX_DATA_DIR instead.
-: "${HBOX_PORT:=7745}"
-: "${HBOX_MCP_ENABLED:=true}"
-: "${HBOX_MCP_PORT:=7766}"
-export HBOX_DATA_DIR HBOX_DISABLE_AUTH HBOX_SECRET_KEY HBOX_PORT HBOX_MCP_PORT
+export HBOX_DATA_DIR
 
 mkdir -p "$HBOX_DATA_DIR"
 
-# Drop privileges to the non-root 'app' user for the server processes. Setup
-# above (reading /data/options.json) runs as root; make the data dir owned by
-# app, then run every long-lived process via gosu. If we're already non-root
+# Drop privileges to the non-root 'app' user for the server processes. The
+# mkdir/chown above run as root; make the data dir owned by app, then run every
+# long-lived process (including config resolution) via gosu. If we're already non-root
 # (e.g. some runtimes), RUN_AS is empty and we just run directly.
 RUN_AS=""
 if [ "$(id -u)" = "0" ]; then
@@ -56,6 +44,39 @@ if [ "$(id -u)" = "0" ]; then
 fi
 
 cd /app/backend
+
+# Validate the configuration before anything starts, so a bad options.json or
+# env var fails immediately with EVERY problem listed, rather than booting into
+# a confusing 500 on some later request.
+if ! $RUN_AS python3 -m app.config_check; then
+  echo "HomeHoard: refusing to start with invalid configuration (see above)." >&2
+  exit 1
+fi
+
+# Read back the handful of values the shell itself needs, from the SAME source
+# of truth the app uses. One process, one parse. Only structural values go
+# through this eval; a secret must never be eval'd.
+#
+# Two guards on the eval itself: the output is filtered to RESOLVED_* lines, so
+# a stray print() on any import path cannot become shell code; and the result is
+# captured first and checked, because `eval "$(cmd)"` swallows cmd's exit
+# status — a failed resolve would otherwise leave RESOLVED_PORT unset and
+# gunicorn would bind to "0.0.0.0:".
+#
+# Written as `python3 -c '...'` rather than a heredoc inside $( ):
+# the container's /bin/sh is dash, which failed to parse the heredoc form
+# with a trailing pipe. `sh -n` on a bash-as-sh host accepts it, so only a
+# real container run catches this.
+RESOLVED=$($RUN_AS python3 -c 'from app.settings import load_settings
+s = load_settings()
+print(f"RESOLVED_PORT={s.PORT}")
+print("RESOLVED_MCP_ENABLED=" + ("true" if s.MCP_ENABLED else "false"))
+print(f"RESOLVED_MCP_PORT={s.MCP_PORT}")' | grep "^RESOLVED_[A-Z_]*=")
+eval "$RESOLVED"
+if [ -z "${RESOLVED_PORT:-}" ] || [ -z "${RESOLVED_MCP_PORT:-}" ]; then
+  echo "HomeHoard: could not resolve settings for startup; refusing to start." >&2
+  exit 1
+fi
 
 # Shared PostgreSQL: when enabled, discover the add-on and provision our own
 # database (writes the DSN to /data/.database_url, which the app reads). Runs
@@ -100,13 +121,15 @@ $RUN_AS python3 ha_discovery.py \
 # supervising shell that forwards signals and reports an MCP exit.
 # ---------------------------------------------------------------------------
 MCP_PID=""
-if [ "${HBOX_MCP_ENABLED}" = "true" ]; then
+if [ "${RESOLVED_MCP_ENABLED}" = "true" ]; then
   # HBOX_WORKER_ENABLED=false: the sidecar builds create_app() only for DB-backed
   # key lookups — it must NOT start a second AI-job worker (the main app runs it).
-  HBOX_MCP_API="http://127.0.0.1:${HBOX_PORT}/api/v1" HBOX_WORKER_ENABLED=false \
+  # mcp_server.py resolves everything else (host, port, tokens, external
+  # exposure) from the registry itself, so nothing is passed twice.
+  HBOX_WORKER_ENABLED=false \
     $RUN_AS python3 mcp_server.py &
   MCP_PID=$!
-  echo "HomeHoard: MCP server started (pid $MCP_PID) on :${HBOX_MCP_PORT}/sse"
+  echo "HomeHoard: MCP server started (pid $MCP_PID) on :${RESOLVED_MCP_PORT}/sse"
 fi
 
 GUNICORN_PID=""
@@ -118,9 +141,9 @@ shutdown() {
 }
 trap shutdown TERM INT
 
-$RUN_AS gunicorn -b "0.0.0.0:${HBOX_PORT}" -w 2 --timeout 120 "app:create_app()" &
+$RUN_AS gunicorn -b "0.0.0.0:${RESOLVED_PORT}" -w 2 --timeout 120 "app:create_app()" &
 GUNICORN_PID=$!
-echo "HomeHoard: gunicorn on :${HBOX_PORT}"
+echo "HomeHoard: gunicorn on :${RESOLVED_PORT}"
 
 # Supervise. A dead MCP is reported rather than silently absent; a dead gunicorn
 # takes the container down with its real exit status.

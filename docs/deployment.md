@@ -24,16 +24,25 @@ upstream CVE can't wedge the pipeline.
 
 | Layer | Where | Notes |
 |---|---|---|
-| Safe defaults | `backend/app/config.py` | e.g. WAL, 72h JWT, min-password 8 |
+| Safe defaults | `backend/app/settings.py` (`FIELDS`) | every setting declared once; see [configuration.md](configuration.md) |
 | Dev | `python run.py` / vite proxy | set `HBOX_DISABLE_AUTH=1` or a secret |
 | Test | `tests/conftest.py` | rate limit off, fixed secret |
 | Prod (standalone) | env vars / `.env` (git-ignored) | `docker-compose.yml` |
-| Prod (HA add-on) | `/data/options.json` → env | `homehoard/config.yaml` schema |
+| Prod (HA add-on) | `/data/options.json`, read by one adapter | `homehoard/config.yaml` schema |
 | Secrets | env / secret manager | **never** in git |
 
 Required in production (auth enabled): **`HBOX_SECRET_KEY`** (≥32 random bytes —
 the app refuses to boot otherwise). Recommended: `HBOX_PROXY_HOPS`, optionally
 `HBOX_CORS_ORIGINS`.
+
+Configuration is validated at startup, before the database is opened or a port
+is bound: every problem is reported at once and the container refuses to start.
+Check a deployment without starting it — this also prints which settings are
+non-default and where each came from:
+
+```bash
+docker compose run --rm app python3 -m app.config_check
+```
 
 **MCP exposure (standalone):** the HA add-on keeps MCP internal (no host port).
 For standalone compose it's toggleable via `.env`:

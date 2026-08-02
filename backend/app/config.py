@@ -4,8 +4,6 @@ HomeHoard is a Python (Flask) port of homebox. Configuration is driven by
 environment variables so it can run standalone or as a Home Assistant add-on.
 """
 import os
-import secrets
-import stat
 from datetime import timedelta
 
 
@@ -116,90 +114,37 @@ class Config:
     MAX_UPLOAD_BYTES = int(os.environ.get("HBOX_MAX_UPLOAD_MB", "50")) * 1024 * 1024
     JSON_SORT_KEYS = False
 
+    # --- delegation to the configuration registry -------------------------
+    # These used to hold a SECOND implementation of DB-URL normalization and
+    # SQLite fallback. They now forward to app.settings so there is exactly one,
+    # per the one-adapter rule. Kept as classmethods because migrations/env.py
+    # and services/db_copy call them by name.
+
     @staticmethod
     def _normalize_db_url(url: str) -> str:
-        """Pin the psycopg (v3) driver for Postgres URLs. `postgres://` (Heroku
-        style) and bare `postgresql://` both resolve to psycopg2 in SQLAlchemy,
-        which we don't ship — rewrite them to `postgresql+psycopg://`."""
-        if url.startswith("postgres://"):
-            url = "postgresql://" + url[len("postgres://"):]
-        if url.startswith("postgresql://"):
-            url = "postgresql+psycopg://" + url[len("postgresql://"):]
-        return url
-
-    @classmethod
-    def _resolve_db_url(cls, raw: str, source: str = "HBOX_DATABASE_URL") -> str:
-        """Normalize + validate a raw DB URL (from the env var or a provisioned
-        DSN). Pins the psycopg 3 driver and rejects anything we can't load."""
-        url = cls._normalize_db_url(raw)
-        scheme = url.split(":", 1)[0]
-        if not (scheme.startswith("sqlite") or scheme.startswith("postgresql")):
-            raise RuntimeError(
-                f"{source} scheme {scheme!r} is unsupported. Only SQLite "
-                "(default) and Postgres (postgresql+psycopg://user:pass@host/db) "
-                "are supported."
-            )
-        if scheme.startswith("postgresql+") and scheme != "postgresql+psycopg":
-            raise RuntimeError(
-                f"{source} driver {scheme!r} isn't bundled — use "
-                "postgresql+psycopg:// (the sync psycopg 3 driver HomeHoard ships)."
-            )
-        return url
+        from .settings import normalize_db_scheme
+        return normalize_db_scheme(url)
 
     @classmethod
     def sqlalchemy_uri(cls) -> str:
-        raw = (cls.DATABASE_URL or "").strip()
-        if raw:  # explicit URL wins; a blank value falls through
-            return cls._resolve_db_url(raw)
-        # Shared PostgreSQL: use the DSN app.pg_provision wrote at startup, if any.
-        # A blank/missing file (add-on not reachable yet) falls through to SQLite,
-        # and the next start retries provisioning.
-        if cls.USE_SHARED_POSTGRES:
-            try:
-                with open(os.path.join(cls.DATA_DIR, ".database_url")) as fh:
-                    provisioned = fh.read().strip()
-            except OSError:
-                provisioned = ""
-            if provisioned:
-                return cls._resolve_db_url(provisioned, "the provisioned database DSN")
-        os.makedirs(cls.DATA_DIR, exist_ok=True)
-        return f"sqlite:///{os.path.join(cls.DATA_DIR, 'homehoard.db')}"
+        """Resolve the database URL, honouring attributes set on a subclass.
 
-    @classmethod
-    def attachments_dir(cls) -> str:
-        path = os.path.join(cls.DATA_DIR, "attachments")
-        os.makedirs(path, exist_ok=True)
-        return path
+        Subclassing Config to override DATABASE_URL/DATA_DIR is the established
+        way callers (and tests) express a one-off configuration, so those
+        attributes become explicit overrides. Called on the bare Config it means
+        "resolve normally", which includes /data/options.json.
+        """
+        from .settings import FIELDS_BY_NAME, load_settings
+        # validate=False: this answers "which database?" for the bare `alembic`
+        # CLI (migrations/env.py), a recovery path that must not abort because
+        # an unrelated setting like CORS_ORIGINS is wrong.
+        if cls is Config:
+            return load_settings(validate=False).sqlalchemy_uri
+        overrides = {n: getattr(cls, n) for n in FIELDS_BY_NAME if hasattr(cls, n)}
+        return load_settings(overrides=overrides, ha_options={},
+                             validate=False).sqlalchemy_uri
 
 
-def ensure_secret_key(supplied: str, data_dir: str) -> tuple[str, bool]:
-    """Return (secret, was_generated), persisting a generated one.
-
-    A signing key regenerated on every restart logs every user out and voids
-    every issued API token — including MCP keys — which looks like data loss
-    rather than a config problem. The entrypoint used to default HBOX_SECRET_KEY
-    to `head -c 32 /dev/urandom`, so that happened on EVERY container start. If
-    the operator does not supply one we now generate it ONCE and persist it
-    beside the database, so restarts are non-events.
-
-    A supplied value is returned untouched — including a known placeholder, so
-    create_app's fail-closed check still sees (and rejects) it.
-    """
-    if supplied:
-        return supplied, False
-
-    path = os.path.join(data_dir, ".secret_key")
-    try:
-        with open(path) as fh:
-            existing = fh.read().strip()
-    except OSError:
-        existing = ""
-    if existing:
-        return existing, False
-
-    generated = secrets.token_urlsafe(48)
-    os.makedirs(data_dir, exist_ok=True)
-    with open(path, "w") as fh:
-        fh.write(generated)
-    os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)  # 0600 — owner only
-    return generated, True
+# Moved to app/settings.py (one place for secret handling); re-exported so
+# `from app.config import ensure_secret_key` keeps resolving.
+from .settings import ensure_secret_key  # noqa: E402,F401

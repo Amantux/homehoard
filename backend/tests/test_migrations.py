@@ -58,6 +58,28 @@ def test_pre_alembic_db_is_adopted_and_data_survives(app):
         assert db.session.query(User).filter_by(email="a@x.com").count() == 1
 
 
+def test_bare_config_resolves_the_env_database_url(monkeypatch, tmp_path):
+    """`Config.sqlalchemy_uri()` called on Config itself — the branch
+    migrations/env.py uses for the standalone `alembic` CLI. The subclass tests
+    below exercise a different branch, so this one was uncovered.
+    """
+    monkeypatch.setenv("HBOX_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("HBOX_DATABASE_URL", "postgresql://u:p@h/db")
+
+    assert Config.sqlalchemy_uri() == "postgresql+psycopg://u:p@h/db"
+
+
+def test_bare_config_db_url_survives_an_unrelated_invalid_setting(monkeypatch, tmp_path):
+    """Recovering a broken deployment with `alembic upgrade head` must not abort
+    because CORS_ORIGINS or SECRET_KEY is wrong — it only asked which database."""
+    monkeypatch.setenv("HBOX_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("HBOX_DATABASE_URL", "sqlite:///x.db")
+    monkeypatch.setenv("HBOX_CORS_ORIGINS", "example.com")
+    monkeypatch.setenv("HBOX_SECRET_KEY", "short")
+
+    assert Config.sqlalchemy_uri() == "sqlite:///x.db"
+
+
 def test_url_validation_and_normalization(tmp_path):
     assert Config._normalize_db_url("postgres://u:p@h/db") == "postgresql+psycopg://u:p@h/db"
     assert Config._normalize_db_url("postgresql://u:p@h/db") == "postgresql+psycopg://u:p@h/db"

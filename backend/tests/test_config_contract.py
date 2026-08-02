@@ -22,6 +22,7 @@ from app.settings import (
     REDACTED,
     ConfigError,
     Settings,
+    as_str,
     csv_list,
     ensure_secret_key,
     int_between,
@@ -335,6 +336,41 @@ def test_load_settings_disable_auth_defaults_closed_when_the_option_is_absent():
     assert s.DISABLE_AUTH is False
 
 
+def test_allow_registration_defaults_closed_as_an_addon_open_standalone():
+    """The deleted shell read `.get('allow_registration', False)`; the Field
+    default is True. Without an HA-specific default, an options.json missing the
+    key silently OPENED registration on upgrade — the mirror of the disable_auth
+    case, failing the other way.
+
+    It cannot simply default False everywhere: /users/register has no first-user
+    exception, so a standalone install with auth on could never be bootstrapped.
+    """
+    standalone = resolve()
+    addon = resolve(ha_options={"disable_auth": True, "enable_mcp": True})
+
+    assert standalone.ALLOW_REGISTRATION is True
+    assert addon.ALLOW_REGISTRATION is False
+    assert addon.sources["ALLOW_REGISTRATION"] == "ha_default"
+
+
+def test_an_explicit_addon_option_still_beats_the_ha_default():
+    s = resolve(ha_options={"allow_registration": True, "disable_auth": True})
+
+    assert s.ALLOW_REGISTRATION is True
+    assert s.sources["ALLOW_REGISTRATION"] == "ha_option"
+
+
+def test_validate_false_skips_cross_field_rules_only():
+    """The bare `alembic` CLI asks for the database URL; that must not abort
+    because CORS_ORIGINS is unrelatedly wrong."""
+    env = {"HBOX_CORS_ORIGINS": "example.com", "HBOX_DATABASE_URL": "sqlite:///x.db"}
+
+    with pytest.raises(ConfigError):
+        load_settings(env=env, ha_options={})
+
+    assert load_settings(env=env, ha_options={}, validate=False).sqlalchemy_uri == "sqlite:///x.db"
+
+
 def test_every_shipped_addon_option_maps_to_a_declared_field():
     """Every key in the add-on's config.yaml must be read by some Field.
 
@@ -399,11 +435,29 @@ def test_load_settings_accepts_a_real_random_secret():
     assert resolve(env={"HBOX_SECRET_KEY": GOOD_SECRET}).SECRET_KEY == GOOD_SECRET
 
 
-def test_load_settings_inside_ha_does_not_require_a_long_secret():
-    """Behind ingress the key is generated and persisted, never operator-typed."""
+def test_load_settings_with_auth_off_ignores_a_short_secret():
+    """With DISABLE_AUTH the key signs nothing an attacker can use."""
     s = resolve(env={"HBOX_SECRET_KEY": "short"}, ha_options={"disable_auth": True})
 
     assert s.SECRET_KEY == "short"
+
+
+def test_load_settings_short_secret_is_refused_inside_ha_too_when_auth_is_on():
+    """There is no 'relaxed inside Home Assistant' case.
+
+    create_app enforces the same 32-char minimum unconditionally when auth is
+    on, so relaxing it here made config_check report a configuration VALID that
+    the app then refused to start on seconds later — the gate saying "fine"
+    while the container dies is the exact failure the gate exists to prevent.
+    """
+    with pytest.raises(ConfigError):
+        resolve(env={"HBOX_SECRET_KEY": "short"},
+                ha_options={"disable_auth": False, "enable_mcp": True})
+
+
+def test_a_blank_secret_is_never_a_config_error():
+    """Blank means 'generate and persist one', which is the normal add-on path."""
+    assert resolve(ha_options={"disable_auth": False}).SECRET_KEY == ""
 
 
 def test_secret_key_field_has_no_addon_option():
@@ -451,6 +505,33 @@ def test_every_credential_field_is_marked_secret():
     for f in FIELDS:
         if f.name.endswith(("_KEY", "_TOKEN")) or f.name == "DATABASE_URL":
             assert f.secret, f"{f.name} must be marked secret=True"
+
+
+def test_redacted_strips_credentials_embedded_in_a_url():
+    """Provider base URLs are not secret — the host is useful in the startup log
+    — but operators do embed credentials in them, and add-on logs get pasted
+    into public issues. The name-suffix check above cannot catch this: OLLAMA_URL
+    ends in neither _KEY nor _TOKEN.
+    """
+    s = resolve(env={"HBOX_OLLAMA_URL": "http://user:s3cr3t@ollama.lan:11434"})
+
+    shown = s.redacted()["OLLAMA_URL"]
+
+    assert "s3cr3t" not in shown
+    assert "ollama.lan:11434" in shown  # host kept: that is the useful part
+
+
+def test_redacted_leaks_no_credential_from_any_string_field():
+    """Sweeps every string field rather than a hand-listed set, so a URL setting
+    added later is covered without anyone remembering to update this test."""
+    env = {f.env_var: "https://user:hunter2@host.example/x"
+           for f in FIELDS if f.parse is as_str}
+
+    # validate=False: the point is redaction, not whether a URL is a legal value
+    # for every field (DATABASE_URL correctly rejects a non-Postgres scheme).
+    dumped = json.dumps(load_settings(env=env, ha_options={}, validate=False).redacted())
+
+    assert "hunter2" not in dumped
 
 
 def test_ensure_secret_key_persists_the_generated_key_across_restarts(tmp_path):

@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+- **HomeHoard now checks its settings before it starts.** If something is wrong
+  — a typo in an option, a port already in use by the MCP server, an unusable
+  database URL — it says so in the log, lists *every* problem at once, and stops
+  instead of starting up and failing later in a way that looks like a bug.
+- **Read this before updating if you edited options by hand.** A setting that
+  isn't a valid yes/no (something like `maybe`) used to be quietly treated as
+  "no". It is now an error, so an add-on that has been running on a typo will
+  refuse to start until you correct it. The log names the option and what it
+  accepts. Options set through the Configuration tab are unaffected.
+- The startup log now shows which settings are non-default and where each came
+  from (add-on option, environment, or built-in), which is the fastest way to
+  answer "but I set that". Passwords, keys and database URLs are redacted —
+  including credentials embedded in a provider URL.
+- Fixed: with an incomplete options file, self-registration could be left
+  enabled when it should have been off.
+
 ## 1.1.0 — Stable release
 
 A stability milestone bringing this cycle's work together.

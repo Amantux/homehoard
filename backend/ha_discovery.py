@@ -13,9 +13,11 @@ import socket
 import sys
 import urllib.request
 
+from app.settings import load_settings
+
 SUPERVISOR_API = "http://supervisor"
 TOKEN = os.environ.get("SUPERVISOR_TOKEN", "")
-PORT = int(os.environ.get("HBOX_PORT", "7745"))
+PORT = load_settings().PORT
 
 
 def _supervisor_self_info():
@@ -49,7 +51,7 @@ def resolve_host():
     Precedence: explicit operator override -> Supervisor -> container hostname
     (last-resort, and only correct outside HA).
     """
-    override = os.environ.get("HBOX_DISCOVERY_HOST", "").strip()
+    override = load_settings().DISCOVERY_HOST.strip()
     if override:
         return override, "HBOX_DISCOVERY_HOST"
     info = _supervisor_self_info() or {}

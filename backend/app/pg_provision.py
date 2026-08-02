@@ -100,9 +100,9 @@ def _existing_sqlite_has_data() -> bool:
     """True if the built-in SQLite DB exists and is non-empty — provisioning a fresh
     (empty) Postgres now would strand it. On a first-ever boot the file does not
     exist yet, so a clean install still provisions normally."""
-    from app.config import Config
+    from app.settings import load_settings
 
-    path = os.path.join(Config.DATA_DIR, f"{APP_NAME}.db")
+    path = os.path.join(load_settings().data_dir, f"{APP_NAME}.db")
     try:
         return os.path.getsize(path) > 0
     except OSError:
@@ -120,14 +120,21 @@ def _provision(url: str, token: str):
 
 
 def main() -> int:
-    from app.config import Config
+    # Resolve through the registry, not Config: this runs as its own
+    # process BEFORE the app, and the entrypoint no longer exports
+    # options.json into the environment. Reading env alone would silently
+    # disable shared PostgreSQL for every add-on user.
+    from app.settings import load_settings
 
-    if (Config.DATABASE_URL or "").strip():
+    settings = load_settings()
+    data_dir = settings.data_dir
+
+    if (settings.DATABASE_URL or "").strip():
         return 0  # explicit URL wins; nothing to provision
-    if not Config.USE_SHARED_POSTGRES:
+    if not settings.USE_SHARED_POSTGRES:
         return 0
 
-    dsn_path = os.path.join(Config.DATA_DIR, DSN_FILENAME)
+    dsn_path = os.path.join(data_dir, DSN_FILENAME)
     if os.path.isfile(dsn_path):
         with open(dsn_path) as fh:
             if fh.read().strip():
@@ -143,7 +150,7 @@ def main() -> int:
     # Postgres would silently serve a blank app. Stay on SQLite and tell them how
     # to move the data over. (With migrate_from_sqlite on we DO provision, and
     # _maybe_boot_migrate copies SQLite into the new database before serving.)
-    if _existing_sqlite_has_data() and not getattr(Config, "MIGRATE_FROM_SQLITE", False):
+    if _existing_sqlite_has_data() and not settings.MIGRATE_FROM_SQLITE:
         _log("use_shared_postgres is on but a local SQLite database already holds data; "
              "staying on SQLite so nothing is stranded. Set migrate_from_sqlite: true as "
              "well to copy it into the shared PostgreSQL on the next start")
@@ -155,7 +162,7 @@ def main() -> int:
         return 0
 
     cfg = _discovery_config()
-    token = (Config.POSTGRES_PROVISION_TOKEN or (cfg or {}).get("token") or "").strip()
+    token = (settings.POSTGRES_PROVISION_TOKEN or (cfg or {}).get("token") or "").strip()
     if not token:
         _log("no provisioning token available — set 'postgres_provision_token' to the "
              "Shared PostgreSQL add-on's token (its Log/Settings shows it). "
@@ -177,7 +184,7 @@ def main() -> int:
         if not dsn.startswith(DSN_PREFIX):
             _log(f"ignoring provision response with unsupported DSN scheme from {url}")
             continue
-        os.makedirs(Config.DATA_DIR, exist_ok=True)
+        os.makedirs(data_dir, exist_ok=True)
         fd = os.open(dsn_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w") as fh:
             fh.write(dsn)

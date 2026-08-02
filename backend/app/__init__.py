@@ -7,26 +7,76 @@ built Vue SPA.
 import logging
 import os
 
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, current_app, jsonify, request, send_from_directory
 from flask_cors import CORS
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import safe_join
 
-from .config import Config, ensure_secret_key
+from .config import Config
 from .extensions import db, limiter
+from .settings import FIELDS_BY_NAME, PLACEHOLDER_SECRETS, ensure_secret_key, load_settings
 
 _LOGGER = logging.getLogger("homehoard")
 
 
+def _ensure_dir(path: str) -> str:
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def _settings_from(config_object):
+    """Build Settings, honouring a legacy config object as a bag of overrides.
+
+    Tests (and any caller passing a Config subclass) fully specify their
+    configuration, so every attribute matching a declared field becomes an
+    explicit override — which is also what lets several differently-configured
+    apps exist in one process. Passing the bare Config class means "resolve
+    normally" (env + /data/options.json).
+    """
+    if config_object is None or config_object is Config:
+        return load_settings()
+
+    overrides = {}
+    for name in FIELDS_BY_NAME:
+        if hasattr(config_object, name):
+            overrides[name] = getattr(config_object, name)
+    # Legacy derived attributes: the old Config exposed the computed value, the
+    # registry declares the input. Only fill in if the caller didn't set the
+    # input directly.
+    if hasattr(config_object, "MAX_UPLOAD_BYTES") and "MAX_UPLOAD_MB" not in overrides:
+        overrides["MAX_UPLOAD_MB"] = max(1, int(config_object.MAX_UPLOAD_BYTES) // (1024 * 1024))
+    if hasattr(config_object, "JWT_EXPIRES") and "JWT_HOURS" not in overrides:
+        overrides["JWT_HOURS"] = max(1, int(config_object.JWT_EXPIRES.total_seconds() // 3600))
+    return load_settings(overrides=overrides, ha_options={})
+
+
 def create_app(config_object=Config):
     app = Flask(__name__, static_folder=None)
-    app.config.from_object(config_object)
-    app.config["SQLALCHEMY_DATABASE_URI"] = config_object.sqlalchemy_uri()
+    settings = _settings_from(config_object)
+
+    # Every declared field is exposed under its own name, exactly as
+    # `from_object(Config)` used to expose the class attributes — so existing
+    # `app.config["AI_PROVIDER"]`-style reads keep working.
+    app.config.update(settings.values)
+    app.config["SETTINGS"] = settings
+    # Absolute, matching the old `Config.DATA_DIR = os.path.abspath(...)` — the
+    # secret-key file and the SQLite database are located from this.
+    app.config["DATA_DIR"] = settings.data_dir
+    app.config["KNOWN_DEFAULT_SECRETS"] = PLACEHOLDER_SECRETS
+    app.config["JWT_EXPIRES"] = settings.jwt_expires
+    app.config["MAX_UPLOAD_BYTES"] = settings.max_upload_bytes
+    app.config["JSON_SORT_KEYS"] = False
+    app.config["SQLALCHEMY_DATABASE_URI"] = settings.sqlalchemy_uri
     # pool_pre_ping recycles connections a remote Postgres dropped (idle timeout,
     # restart). Harmless for SQLite. Enables the optional Postgres backend.
     app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"pool_pre_ping": True}
-    app.config["attachments_dir"] = config_object.attachments_dir
-    app.config["MAX_CONTENT_LENGTH"] = config_object.MAX_UPLOAD_BYTES
+    # Stays a CALLABLE that creates the directory: three call sites invoke it as
+    # `app.config["attachments_dir"]()`, and settings resolution is deliberately
+    # side-effect free, so the mkdir lives here.
+    app.config["attachments_dir"] = lambda: _ensure_dir(settings.attachments_dir)
+    app.config["MAX_CONTENT_LENGTH"] = settings.max_upload_bytes
+    for warning in settings.warnings:
+        _LOGGER.warning("Configuration: %s", warning)
     _db_uri = app.config["SQLALCHEMY_DATABASE_URI"]
     _LOGGER.info("HomeHoard storage backend: %s",
                  "sqlite" if _db_uri.startswith("sqlite") else _db_uri.split("://", 1)[0])
@@ -381,13 +431,23 @@ def _register_errors(app):
 
 
 # --- SPA serving ---------------------------------------------------------
-_FRONTEND_DIST = os.environ.get(
-    "HBOX_FRONTEND_DIST",
-    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist")),
-)
+_DEFAULT_FRONTEND_DIST = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist"))
+
+
+def _frontend_dist() -> str:
+    """Where the built SPA lives — read per request from the app's resolved
+    settings (FRONTEND_DIST, blank = the location baked into the image).
+
+    Deliberately NOT a module-level constant: resolving config at import time is
+    the pattern this refactor removed, and it made `python3 -m app.config_check`
+    die with a traceback on a bad config instead of reporting it cleanly.
+    """
+    return current_app.config.get("FRONTEND_DIST") or _DEFAULT_FRONTEND_DIST
 
 
 def _serve_spa(path):
+    _FRONTEND_DIST = _frontend_dist()
     # safe_join, not os.path.join: it rejects traversal ("../") and absolute
     # segments, returning None. os.path.join would happily build a path outside
     # the dist dir, letting the isfile() check probe for arbitrary files.

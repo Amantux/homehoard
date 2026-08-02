@@ -36,6 +36,83 @@ jobs:
         working-directory: backend
         run: pytest -q
 
+  config:
+    name: Configuration contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest
+      - name: Settings + precedence tests
+        working-directory: backend
+        run: pytest tests/test_config_contract.py -q
+      - name: Generated config docs are in sync with the code
+        run: python3 tools/gen_config_docs.py --check
+      - name: Every setting is documented, and every setting used is declared
+        # Bidirectional: a field missing from the docs AND a HBOX_* read in code
+        # that nobody declared are both failures. This is what stops the registry
+        # from quietly drifting back into scattered os.environ.get calls.
+        run: |
+          python3 - <<'CONTRACT'
+          import os, re, sys
+          sys.path.insert(0, "backend")
+          from app.settings import FIELDS
+
+          declared = {f.env_var for f in FIELDS}
+          problems = []
+
+          for doc in (".env.example", "docs/configuration.md"):
+              text = open(doc).read()
+              problems += [f"{v} is not documented in {doc}"
+                           for v in sorted(declared) if v not in text]
+
+          used = set()
+          roots = ["backend/app", "backend/mcp_server.py",
+                   "backend/ha_discovery.py", "backend/run.py"]
+          for root in roots:
+              paths = [root] if os.path.isfile(root) else [
+                  os.path.join(d, f) for d, _, fs in os.walk(root)
+                  for f in fs if f.endswith(".py")]
+              for path in paths:
+                  for m in re.findall(r"HBOX_[A-Z0-9_]+", open(path).read()):
+                      used.add(m[:-5] if m.endswith("_FILE") else m)
+
+          problems += [f"{v} is used in code but not declared in FIELDS"
+                       for v in sorted(used - declared)]
+
+          if problems:
+              print("Configuration contract violations:")
+              for p in problems:
+                  print(f"  - {p}")
+              sys.exit(1)
+          print(f"Configuration contract OK: {len(declared)} declared, "
+                f"{len(used)} referenced, all documented.")
+          CONTRACT
+      - name: Invalid configuration is actually rejected
+        # Mutation-style: if config_check stopped validating, these would pass
+        # silently and the gate in docker-entrypoint.sh would be decorative.
+        working-directory: backend
+        run: |
+          set -e
+          fail() { echo "EXPECTED REJECTION: $1"; exit 1; }
+          HBOX_DISABLE_AUTH=maybe python3 -m app.config_check --ha-options /nonexistent \
+            && fail "HBOX_DISABLE_AUTH=maybe" || true
+          HBOX_PORT=99999 python3 -m app.config_check --ha-options /nonexistent \
+            && fail "HBOX_PORT out of range" || true
+          HBOX_CORS_ORIGINS='*' python3 -m app.config_check --ha-options /nonexistent \
+            && fail "wildcard CORS origin" || true
+          HBOX_SECRET_KEY=change-me-in-production python3 -m app.config_check --ha-options /nonexistent \
+            && fail "placeholder secret with auth enabled" || true
+          python3 -m app.config_check --ha-options /nonexistent > /dev/null \
+            || fail "a VALID configuration was rejected"
+          echo "All invalid configurations were rejected; the valid one was accepted."
+
   frontend-build:
     name: Frontend build
     runs-on: ubuntu-latest
