@@ -119,6 +119,13 @@ docker compose run --rm app python3 -m app.config_check
 | `HBOX_DISCOVERY_HOST` | string | `_(empty)_` | no | — | Override the hostname advertised to Home Assistant via Supervisor discovery. Blank = ask the Supervisor for the add-on's own hostname. |
 | `HBOX_DEBUG` | boolean | `false` | no | — | Flask debug mode. NEVER enable in production — it exposes an interactive debugger that executes arbitrary code. |
 
+### Logging
+
+| Variable | Type | Default | Secret | HA option | Notes |
+|---|---|---|---|---|---|
+| `HBOX_LOG_LEVEL` | enum/int | `INFO` | no | `log_level` | Application log level. Applies to both the app and gunicorn. |
+| `HBOX_SLOW_REQUEST_MS` | enum/int | `1000` | no | — | Log a line for any request slower than this many milliseconds. 0 logs every request, which fills the log on a busy instance — the gunicorn access log already covers the ordinary case. |
+
 ## Security notes
 
 - **`HBOX_SECRET_KEY`** must be at least 32 characters when

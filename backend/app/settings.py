@@ -399,6 +399,15 @@ FIELDS: tuple[Field, ...] = (
     Field("DEBUG", parse_bool, False,
           "Flask debug mode. NEVER enable in production — it exposes an "
           "interactive debugger that executes arbitrary code."),
+
+    # --- logging ---
+    Field("LOG_LEVEL", one_of("DEBUG", "INFO", "WARNING", "ERROR"), "INFO",
+          "Application log level. Applies to both the app and gunicorn.",
+          ha_option="log_level"),
+    Field("SLOW_REQUEST_MS", int_between(0, 600000), 1000,
+          "Log a line for any request slower than this many milliseconds. 0 "
+          "logs every request, which fills the log on a busy instance — the "
+          "gunicorn access log already covers the ordinary case."),
 )
 
 FIELDS_BY_NAME = {f.name: f for f in FIELDS}

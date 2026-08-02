@@ -6,17 +6,25 @@ built Vue SPA.
 """
 import logging
 import os
+import re
+import time
+import uuid
 
-from flask import Flask, current_app, jsonify, request, send_from_directory
+from flask import Flask, current_app, g, jsonify, request, send_from_directory
 from flask_cors import CORS
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import safe_join
 
 from .config import Config
 from .extensions import db, limiter
+from .logging_setup import configure as configure_logging, request_id_var
+from .logsafe import scrub
 from .settings import FIELDS_BY_NAME, PLACEHOLDER_SECRETS, ensure_secret_key, load_settings
 
 _LOGGER = logging.getLogger("homehoard")
+
+# Request ids appear in every log line for a request; keep them boring.
+_SAFE_REQUEST_ID = re.compile(r"[A-Za-z0-9._-]+")
 
 
 def _ensure_dir(path: str) -> str:
@@ -57,6 +65,11 @@ def create_app(config_object=Config):
     # Every declared field is exposed under its own name, exactly as
     # `from_object(Config)` used to expose the class attributes — so existing
     # `app.config["AI_PROVIDER"]`-style reads keep working.
+    # Before anything else logs: until this release HomeHoard configured logging
+    # nowhere, so every INFO line was discarded and the only handler present had
+    # been installed as a side effect of Alembic's fileConfig.
+    configure_logging(settings, process=os.environ.get("HBOX_PROC", "app"))
+
     app.config.update(settings.values)
     app.config["SETTINGS"] = settings
     # Absolute, matching the old `Config.DATA_DIR = os.path.abspath(...)` — the
@@ -126,6 +139,7 @@ def create_app(config_object=Config):
 
     _init_schema(app)
 
+    _register_request_context(app)
     _register_blueprints(app)
     _register_spa(app)
     _register_errors(app)
@@ -134,6 +148,44 @@ def create_app(config_object=Config):
     from .worker import start_worker
     start_worker(app)  # background job poller (no-op when WORKER_ENABLED is False)
     return app
+
+
+def _register_request_context(app):
+    """Give every request a correlation id, and log the ones worth logging.
+
+    The id is echoed as X-Request-Id and included in a 500 body, so a user can
+    quote it in a bug report and it can be grepped straight out of the log.
+
+    Only slow requests and server errors get a line: gunicorn's access log
+    already records the ordinary ones, and writing a second line per request is
+    how a household add-on fills its disk.
+    """
+    @app.before_request
+    def _assign_request_id():
+        incoming = request.headers.get("X-Request-Id", "")
+        # Bounded and charset-checked: this value lands in every log line for
+        # the request, so an attacker-supplied one must not be able to forge
+        # log structure or bloat the file.
+        if incoming and len(incoming) <= 64 and _SAFE_REQUEST_ID.fullmatch(incoming):
+            rid = incoming
+        else:
+            rid = uuid.uuid4().hex[:12]
+        request_id_var.set(rid)
+        g._started_at = time.monotonic()
+
+    @app.after_request
+    def _finish_request(resp):
+        resp.headers.setdefault("X-Request-Id", request_id_var.get())
+        started = getattr(g, "_started_at", None)
+        if started is None:
+            return resp
+        elapsed_ms = int((time.monotonic() - started) * 1000)
+        threshold = app.config.get("SLOW_REQUEST_MS", 1000)
+        if resp.status_code >= 500 or (threshold >= 0 and elapsed_ms >= threshold):
+            _LOGGER.warning("%s %s -> %s in %dms",
+                            scrub(request.method), scrub(request.path),
+                            resp.status_code, elapsed_ms)
+        return resp
 
 
 def _register_security_headers(app):
@@ -428,6 +480,28 @@ def _register_errors(app):
     @app.errorhandler(429)
     def rate_limited(e):
         return jsonify({"error": "too many requests, slow down"}), 429
+
+    @app.errorhandler(Exception)
+    def unhandled(e):
+        """Log the traceback deliberately and return a curated body.
+
+        Flask's default already logs unhandled exceptions, but only if logging
+        happens to be configured — which it was not until this release. Doing it
+        explicitly also lets us hand the caller the request id, so "it broke
+        once" becomes a line an operator can actually find in the log.
+
+        The exception text is NEVER returned: a driver error can carry the
+        database password.
+        """
+        from werkzeug.exceptions import HTTPException
+
+        if isinstance(e, HTTPException):
+            return e  # 404/413/429 etc. keep their own handlers and status
+
+        rid = request_id_var.get()
+        _LOGGER.exception("unhandled error [%s] %s %s", rid,
+                          scrub(request.method), scrub(request.path))
+        return jsonify({"error": "internal server error", "requestId": rid}), 500
 
 
 # --- SPA serving ---------------------------------------------------------

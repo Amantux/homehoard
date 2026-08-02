@@ -71,7 +71,8 @@ RESOLVED=$($RUN_AS python3 -c 'from app.settings import load_settings
 s = load_settings()
 print(f"RESOLVED_PORT={s.PORT}")
 print("RESOLVED_MCP_ENABLED=" + ("true" if s.MCP_ENABLED else "false"))
-print(f"RESOLVED_MCP_PORT={s.MCP_PORT}")' | grep "^RESOLVED_[A-Z_]*=")
+print(f"RESOLVED_MCP_PORT={s.MCP_PORT}")
+print(f"RESOLVED_LOGLEVEL={s.LOG_LEVEL.lower()}")' | grep "^RESOLVED_[A-Z_]*=")
 eval "$RESOLVED"
 if [ -z "${RESOLVED_PORT:-}" ] || [ -z "${RESOLVED_MCP_PORT:-}" ]; then
   echo "HomeHoard: could not resolve settings for startup; refusing to start." >&2
@@ -126,7 +127,7 @@ if [ "${RESOLVED_MCP_ENABLED}" = "true" ]; then
   # key lookups — it must NOT start a second AI-job worker (the main app runs it).
   # mcp_server.py resolves everything else (host, port, tokens, external
   # exposure) from the registry itself, so nothing is passed twice.
-  HBOX_WORKER_ENABLED=false \
+  HBOX_WORKER_ENABLED=false HBOX_PROC=mcp \
     $RUN_AS python3 mcp_server.py &
   MCP_PID=$!
   echo "HomeHoard: MCP server started (pid $MCP_PID) on :${RESOLVED_MCP_PORT}/sse"
@@ -141,7 +142,12 @@ shutdown() {
 }
 trap shutdown TERM INT
 
-$RUN_AS gunicorn -b "0.0.0.0:${RESOLVED_PORT}" -w 2 --timeout 120 "app:create_app()" &
+# --access-logfile/--error-logfile to stdout: without them gunicorn logs no
+# requests at all, so there was zero request-level visibility. --log-level comes
+# from the same setting the app uses, so the two cannot disagree.
+$RUN_AS gunicorn -b "0.0.0.0:${RESOLVED_PORT}" -w 2 --timeout 120 \
+  --log-level "${RESOLVED_LOGLEVEL}" --access-logfile - --error-logfile - \
+  "app:create_app()" &
 GUNICORN_PID=$!
 echo "HomeHoard: gunicorn on :${RESOLVED_PORT}"
 

@@ -37,6 +37,7 @@ GROUPS = [
                                      "MCP_EXPOSE_EXTERNAL"]),
     ("Serving & misc", ["WORKER_ENABLED", "MAX_UPLOAD_MB", "FRONTEND_DIST",
                         "DISCOVERY_HOST", "DEBUG"]),
+    ("Logging", ["LOG_LEVEL", "SLOW_REQUEST_MS"]),
 ]
 
 

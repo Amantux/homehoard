@@ -654,6 +654,13 @@ def _expose_external() -> bool:
 
 
 if __name__ == "__main__":
+    # Configure logging explicitly here: this process builds its Flask app
+    # LAZILY (only when a key lookup needs the DB), so waiting for create_app
+    # meant the sidecar produced no log file at all — its own startup and, from
+    # here on, its tool-call audit trail went only to stderr.
+    from app.logging_setup import configure as _configure_logging
+    _configure_logging(_SETTINGS, process="mcp")
+
     host = _SETTINGS.MCP_HOST
     port = _SETTINGS.MCP_PORT
     server_token = _SETTINGS.MCP_SERVER_TOKEN

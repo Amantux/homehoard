@@ -11,7 +11,7 @@ from ..auth import (
     verify_password,
 )
 from ..extensions import db, limiter
-from ..logsafe import scrub
+from ..logsafe import mask_email, scrub
 from ..models import Group, GroupInvitation, User
 from ..schemas.serializers import user_out
 
@@ -130,9 +130,11 @@ def login():
     # so response time doesn't reveal whether the account exists.
     valid = verify_password(password, user.password_hash if user else _DUMMY_HASH)
     if not user or not valid:
-        _LOGGER.warning("login failed for %r from %s", email, scrub(request.remote_addr))
+        _LOGGER.warning("login failed for %s from %s", mask_email(email),
+                        scrub(request.remote_addr))
         return jsonify({"error": "invalid credentials"}), 401
-    _LOGGER.info("login ok for %r from %s", email, scrub(request.remote_addr))
+    _LOGGER.info("login ok for %s from %s", mask_email(email),
+                 scrub(request.remote_addr))
     token = create_token(user)
     return jsonify(
         {
