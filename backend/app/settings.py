@@ -461,7 +461,15 @@ class Settings:
                 with open(os.path.join(self.data_dir, ".database_url")) as fh:
                     url = fh.read().strip()
                 if url:
-                    return normalize_db_url(url)
+                    # Same wrapping as the explicit URL above: a provisioned DSN
+                    # we cannot load is a configuration failure, not a stray
+                    # ValueError from a helper. The message names only the
+                    # scheme/driver, never the DSN, which embeds a password.
+                    try:
+                        return normalize_db_url(url)
+                    except ValueError as exc:
+                        raise ConfigError(
+                            [f"the provisioned database DSN: {exc}"]) from None
             except OSError:
                 # The provisioned-DSN file is optional: absent/unreadable simply
                 # means "not provisioned yet", so fall through to the SQLite
