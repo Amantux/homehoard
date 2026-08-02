@@ -20,6 +20,8 @@ from collections import deque
 from threading import Lock
 from typing import Any
 
+from ..logsafe import scrub
+
 _LOG = logging.getLogger("homehoard.metrics")
 
 RING_SIZE = 200
@@ -34,7 +36,11 @@ def record(kind: str, **fields: Any) -> dict:
     small scalars; anything user-supplied is the caller's job to trim, because
     this ends up in a log file the debug tooling can read.
     """
-    sample = {"kind": kind, **fields}
+    # scrub EVERY value: an MCP tool name comes straight from the caller's
+    # JSON-RPC body, and a newline in it forges a whole log entry — including
+    # one with a future timestamp, which pushes real audit lines out of the
+    # tail that debug_recent_logs returns. Length-capped for the same reason.
+    sample = {"kind": kind, **{k: scrub(v, limit=120) for k, v in fields.items()}}
     with _LOCK:
         _RING.append(sample)
     # A single structured line, easy to grep by kind: `metric kind=job ...`.

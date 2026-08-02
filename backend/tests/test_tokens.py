@@ -129,3 +129,46 @@ def test_last_used_recorded_on_use(app, auth_client):
     fresh = app.test_client()
     fresh.get("/api/v1/ha/summary", headers={"Authorization": f"Bearer {raw}"})
     assert auth_client.get("/api/v1/tokens").get_json()[0]["lastUsedAt"] is not None
+
+
+def test_a_second_household_owner_cannot_mint_a_debug_key(client, auth_client):
+    """owner_required only proves ownership of the caller's OWN group, but a
+    debug key reads the WHOLE instance's logs — every household's request
+    paths, item names and sign-in addresses. Minting one is restricted to the
+    founding household's owner, the same bar the shared AI config uses.
+    """
+    client.post("/api/v1/users/register",
+                json={"email": "second@example.com", "password": "password123",
+                      "name": "Second"})
+    token = client.post("/api/v1/users/login",
+                        json={"username": "second@example.com",
+                              "password": "password123"}).get_json()["token"]
+    client.environ_base["HTTP_AUTHORIZATION"] = token
+
+    r = client.post("/api/v1/tokens",
+                    json={"name": "sneaky", "scope": "debug", "access": "read"})
+
+    assert r.status_code == 403
+
+
+def test_the_founding_owner_can_mint_a_debug_key(auth_client):
+    r = auth_client.post("/api/v1/tokens",
+                         json={"name": "agent", "scope": "debug", "access": "read"})
+
+    assert r.status_code in (200, 201)
+    assert r.get_json()["scope"] == "debug"
+
+
+def test_a_second_household_owner_can_still_mint_a_normal_key(client, auth_client):
+    """The new restriction must apply to the debug scope ONLY."""
+    client.post("/api/v1/users/register",
+                json={"email": "third@example.com", "password": "password123",
+                      "name": "Third"})
+    token = client.post("/api/v1/users/login",
+                        json={"username": "third@example.com",
+                              "password": "password123"}).get_json()["token"]
+    client.environ_base["HTTP_AUTHORIZATION"] = token
+
+    r = client.post("/api/v1/tokens", json={"name": "ok", "scope": "mcp"})
+
+    assert r.status_code in (200, 201)

@@ -49,9 +49,25 @@ _configured = False
 
 
 class UTCFormatter(logging.Formatter):
-    """ISO-8601 UTC with a literal Z, so a reader never has to guess the offset."""
+    """ISO-8601 UTC with a literal Z, so a reader never has to guess the offset.
+
+    Also where traceback redaction happens. Doing it in a Filter does not work:
+    ``record.exc_text`` is still None when filters run — ``Formatter.format()``
+    is what populates it — so the first handler to format a record emits the raw
+    traceback, and a driver error carries the database password.
+    """
 
     converter = time.gmtime
+
+    def __init__(self, fmt=None, extra_secrets: tuple = ()):
+        super().__init__(fmt)
+        self._extra = extra_secrets
+
+    def formatException(self, ei):  # noqa: N802 - stdlib signature
+        return redact(super().formatException(ei), self._extra)
+
+    def format(self, record):
+        return redact(super().format(record), self._extra)
 
     def formatTime(self, record, datefmt=None):  # noqa: N802 - stdlib signature
         base = time.strftime("%Y-%m-%dT%H:%M:%S", self.converter(record.created))
@@ -163,9 +179,14 @@ def configure(settings=None, process: str = "app", force: bool = False) -> str |
     level_name = (getattr(settings, "LOG_LEVEL", None) or "INFO").upper()
     level = getattr(logging, level_name, logging.INFO)
 
+    secrets_seen = _secret_values(settings)
     fmt = UTCFormatter(
-        "%(asctime)s %(levelname)s %(name)s [%(request_id)s] %(message)s")
-    filters = [RequestIdFilter(), RedactingFilter(_secret_values(settings))]
+        "%(asctime)s %(levelname)s %(name)s [%(request_id)s] %(message)s",
+        extra_secrets=secrets_seen)
+    # The filter still runs: it redacts record.msg itself, so anything reading
+    # the record (not the formatted line) is covered too. The formatter is the
+    # backstop that catches the traceback.
+    filters = [RequestIdFilter(), RedactingFilter(secrets_seen)]
 
     root = logging.getLogger()
     root.setLevel(level)

@@ -31,7 +31,8 @@ SECRETISH = re.compile(
     # renders as `"api_key": "…"`, which a bare name[=:] pattern never matches.
     # The optional `Bearer ` inside the VALUE matters: without it this arm
     # matches `Authorization: Bearer` and stops at the space, leaving the token.
-    | (?:api[-_]?key|access[-_]?token|authorization|key|token)
+    | (?:api[-_]?key|access[-_]?token|authorization|client[-_]?secret
+      |password|passwd|pwd|secret|key|token)
       ["']?\s*[=:]\s*["']?(?:Bearer\s+)?[^"'\s,}&]+
     | [A-Za-z][A-Za-z0-9+.\-]*://[^/\s:@]+:[^/\s@]+@   # scheme://user:pass@
     # Catch-all for high-entropy blobs (Ollama Cloud / bare hex or base64 keys)

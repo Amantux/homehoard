@@ -1,6 +1,7 @@
 """Serialization helpers producing homebox-compatible camelCase JSON."""
 import json
 from datetime import datetime, date
+from ..services.videos import embed_url, video_mime
 
 
 def iso(dt):
@@ -157,6 +158,15 @@ def attachment_out(a):
         "createdAt": iso(a.created_at),
         "updatedAt": iso(a.updated_at),
         "document": document_out(a.document) if a.document else None,
+        # A link has no document; a file has no url. Exactly one is set.
+        "url": a.url or None,
+        # Only set for a provider we are allowed to frame (see the CSP);
+        # everything else the UI renders as a plain external link.
+        "embedUrl": embed_url(a.url) if a.url else None,
+        # Whether this file can be played inline, decided by the server's own
+        # allowlist rather than by the client sniffing a filename.
+        "streamUrl": (f"/api/v1/videos/{a.id}/stream"
+                      if a.document and video_mime(a.document.title) else None),
     }
 
 
@@ -169,6 +179,9 @@ def maintenance_out(m):
         "scheduledDate": iso(m.scheduled_date),
         "completedDate": iso(m.completed_date),
         "itemId": m.item_id,
+        # Videos for THIS job. Ride along in the existing per-item maintenance
+        # payload, matching how the item detail page already loads its tabs.
+        "videos": [attachment_out(a) for a in m.attachments],
     }
 
 

@@ -705,18 +705,38 @@ def _authorized(header_value: str, server_token: str) -> bool:
     return False
 
 
+def _is_message_path(scope) -> bool:
+    """Whether this request targets the JSON-RPC message endpoint.
+
+    Deliberately NOT also checking the HTTP method. FastMCP mounts the endpoint
+    with Starlette's Mount, which matches on path alone, and
+    SseServerTransport.handle_post_message never checks the method either — so
+    PUT/GET/DELETE are processed exactly like POST. Gating the guard on
+    method == "POST" meant every rule below saw an empty tool list and allowed
+    the request through.
+    """
+    return "/messages" in scope.get("path", "")
+
+
 def _tool_names(scope, body: bytes) -> list[str]:
-    """Tool names in a JSON-RPC body, or [] if this is not a tools/call POST."""
-    if scope.get("method") != "POST" or "/messages" not in scope.get("path", ""):
+    """Tool names in a JSON-RPC body, or [] if this is not a message request."""
+    if not _is_message_path(scope):
         return []
     try:
         parsed = json.loads(body or b"{}")
     except Exception:  # noqa: BLE001 — let the MCP layer return its own parse error
         return []
     calls = parsed if isinstance(parsed, list) else [parsed]  # JSON-RPC may batch
-    return [(m.get("params") or {}).get("name") or ""
-            for m in calls
-            if isinstance(m, dict) and m.get("method") == "tools/call"]
+    out = []
+    for m in calls:
+        if not isinstance(m, dict) or m.get("method") != "tools/call":
+            continue
+        params = m.get("params")
+        # params may legitimately be a list or absent; .get on a list raises,
+        # which would 500 an unauthenticated request.
+        name = params.get("name") if isinstance(params, dict) else None
+        out.append(name if isinstance(name, str) else "")
+    return out
 
 
 async def _deny(send, status: int, message: bytes) -> None:
@@ -754,7 +774,7 @@ def _guard(asgi_app, server_token: str):
         # Buffer once; every branch below needs to know which tools were asked
         # for, and the body has to be replayed downstream either way.
         body, messages = b"", None
-        if scope.get("method") == "POST" and "/messages" in scope.get("path", ""):
+        if _is_message_path(scope):
             body, messages = await _buffer_body(receive)
             receive = _replay(messages)
         names = _tool_names(scope, body)

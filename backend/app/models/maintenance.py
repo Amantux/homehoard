@@ -18,3 +18,10 @@ class MaintenanceEntry(IDMixin, TimestampMixin, db.Model):
 
     item_id: Mapped[str] = mapped_column(String(36), ForeignKey("items.id"))
     item = relationship("Item", back_populates="maintenance_entries")
+
+    # How-to videos for THIS job (as opposed to the item's general ones).
+    # delete-orphan so removing a task takes its videos with it.
+    attachments = relationship(
+        "Attachment", back_populates="maintenance_entry",
+        cascade="all, delete-orphan",
+    )

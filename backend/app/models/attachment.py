@@ -24,13 +24,28 @@ class Document(IDMixin, TimestampMixin, db.Model):
 
 
 class Attachment(IDMixin, TimestampMixin, db.Model):
+    """A file or a link hanging off an item, a bin, or a maintenance task.
+
+    Two shapes share this table, and exactly one of them applies to any row:
+
+    * a **file** — ``document_id`` points at a Document on disk;
+    * a **link** — ``url`` holds an external address and there is no Document.
+
+    ``document_id`` is nullable for the link case. The one-parent /
+    one-source invariant is enforced in ``services.attachments.validate``
+    rather than by a database constraint, so the error reaches the caller as a
+    422 with a message instead of an IntegrityError.
+    """
+
     __tablename__ = "attachments"
 
-    # type: attachment | manual | warranty | wifi | photo | receipt
+    # type: attachment | manual | warranty | wifi | photo | receipt | video
     type: Mapped[str] = mapped_column(String(50), default="attachment")
     primary: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    # An attachment belongs to either an item or a bin.
+    # An attachment belongs to exactly one of: an item, a bin, or a maintenance
+    # entry. The last lets a how-to video hang off the specific job it explains
+    # rather than off the whole appliance.
     item_id: Mapped[Optional[str]] = mapped_column(
         String(36), ForeignKey("items.id"), nullable=True
     )
@@ -41,5 +56,16 @@ class Attachment(IDMixin, TimestampMixin, db.Model):
     )
     bin = relationship("Bin", back_populates="attachments")
 
-    document_id: Mapped[str] = mapped_column(String(36), ForeignKey("documents.id"))
+    maintenance_entry_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("maintenance_entries.id"), nullable=True, index=True
+    )
+    maintenance_entry = relationship("MaintenanceEntry", back_populates="attachments")
+
+    # Nullable: a linked video has no file on disk.
+    document_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("documents.id"), nullable=True
+    )
     document = relationship("Document", back_populates="attachment")
+
+    # Set for a link; empty for a file. 2048 is the practical URL ceiling.
+    url: Mapped[str] = mapped_column(String(2048), default="", server_default="")

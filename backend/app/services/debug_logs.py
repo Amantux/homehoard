@@ -94,15 +94,19 @@ def read_recent(
                 continue
             if request_id and rec["request_id"] != request_id:
                 continue
-            if needle and needle not in raw.lower():
+            # Redact BEFORE matching. Filtering on the raw line turned
+            # `contains=` into an oracle: a caller could search for "hunter1"
+            # then "hunter2" and read a redacted secret out one character at a
+            # time, which voids the redaction entirely for anyone who can call
+            # this with a search term.
+            rec["message"] = redact(rec["message"])
+            if needle and needle not in rec["message"].lower():
                 continue
             rec["process"] = name.split(".")[0]
             parsed.append(rec)
 
     parsed.sort(key=lambda r: r["ts"])
     out = parsed[-limit:]
-    for rec in out:
-        rec["message"] = redact(rec["message"])
     return {"lines": out, "files": len(names), "truncated": len(parsed) > len(out)}
 
 

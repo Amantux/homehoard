@@ -11,6 +11,7 @@ import os
 import pytest
 
 from app.logging_setup import (
+    BACKUPS,
     MAX_BYTES,
     RedactingFilter,
     _prune_dead_process_logs,
@@ -19,6 +20,12 @@ from app.logging_setup import (
 from app.logsafe import mask_email, redact, scrub
 
 GOOD_SECRET = "u7Qf2xR9mKpL3vNwZaB5cDeF8gHjT1sYoP4iU6rE0nX"
+
+# Resolved from this file, not a cwd-relative string: pointing at a path that
+# does not exist made fileConfig a no-op and the regression test below passed
+# for the wrong reason.
+ALEMBIC_INI = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                           "alembic.ini")
 
 
 class _Settings:
@@ -131,14 +138,21 @@ def test_a_database_password_in_a_traceback_is_redacted(tmp_path, restore_loggin
     assert "hunter2" not in open(path).read()
 
 
-@pytest.mark.parametrize("secret", [
-    "sk-abcdefghijklmnop",
-    "Bearer abcdefghijklmnop",
-    "api_key=abcdefghijklmnop",
-    "postgresql://user:swordfish@host/db",
+@pytest.mark.parametrize("secret,value", [
+    ("sk-abcdefghijklmnop", "abcdefghijklmnop"),
+    ("Bearer abcdefghijklmnop", "abcdefghijklmnop"),
+    ("api_key=abcdefghijklmnop", "abcdefghijklmnop"),
+    ("password=hunter2seekrit", "hunter2seekrit"),
+    ("client_secret=abcdefghijklmnop", "abcdefghijklmnop"),
+    ("postgresql://user:swordfish@host/db", "swordfish"),
 ])
-def test_generic_credential_shapes_are_redacted(secret):
-    assert "[redacted]" in redact(f"failure: {secret}")
+def test_generic_credential_shapes_are_redacted(secret, value):
+    """Asserts the SECRET IS GONE, not merely that "[redacted]" appears
+    somewhere: a partial match (the pattern stopping at a space and leaving the
+    token behind) would satisfy the weaker assertion."""
+    out = redact(f"failure: {secret}")
+
+    assert value not in out
 
 
 def test_redact_removes_the_longest_match_first():
@@ -183,12 +197,20 @@ def test_the_log_file_is_size_capped(tmp_path, restore_logging):
     path = configure(_Settings(tmp_path), process="test", force=True)
     log = logging.getLogger("homehoard.test")
 
-    for _ in range(4000):
-        log.warning("x" * 500)
+    # Words, not one long token: a 500-character blob matches the redactor's
+    # \b[A-Za-z0-9_-]{40,}\b catch-all and collapses to "[redacted]", so the
+    # first version of this test wrote ~60-byte lines and never came near the
+    # cap — it passed with rotation disabled entirely.
+    payload = " ".join(["lorem ipsum dolor sit amet"] * 20)
+    written = 0
+    while written < MAX_BYTES * 4:
+        log.warning(payload)
+        written += len(payload)
 
     log_dir = os.path.dirname(path)
     total = sum(os.path.getsize(os.path.join(log_dir, f)) for f in os.listdir(log_dir))
-    assert total <= MAX_BYTES * 3  # maxBytes * (backupCount + 1), plus slack
+    assert written > MAX_BYTES * 3          # we really did exceed the cap...
+    assert total <= MAX_BYTES * (BACKUPS + 1) + 65536   # ...and it held
 
 
 def test_logs_from_dead_processes_are_pruned(tmp_path):
@@ -291,23 +313,143 @@ def test_status_needs_no_credential_and_stays_minimal(client):
 def test_migrations_do_not_detach_the_apps_log_handlers(tmp_path, restore_logging):
     """Alembic's fileConfig REPLACES the root handlers, and startup runs
     migrations in-process — so it was silently detaching the app's stdout and
-    file handlers a moment after they were installed. Everything logged after
-    boot went to Alembic's handler instead: the per-process log files held the
-    startup lines and nothing else, and the MCP audit trail recorded nothing.
-    """
-    path = configure(_Settings(tmp_path), process="test", force=True)
-    ours = set(logging.getLogger().handlers)
+    file handlers a moment after they were installed.
 
-    # What create_app does: run migrations, which import and run alembic's env.
+    This drives the REAL guard: it calls fileConfig exactly the way
+    migrations/env.py does (guarded by is_configured()). The first version of
+    this test asserted is_configured() and then wrapped the fileConfig call in
+    `if not is_configured()`, which could never run — so it stayed green even
+    with the fix reverted, which is the one thing a regression test must not do.
+    """
     from logging.config import fileConfig
 
     from app import logging_setup
 
-    assert logging_setup.is_configured()
-    if not logging_setup.is_configured():  # pragma: no cover - guard the guard
-        fileConfig("migrations/alembic.ini", disable_existing_loggers=False)
+    path = configure(_Settings(tmp_path), process="test", force=True)
+    ours = set(logging.getLogger().handlers)
+
+    # Exactly the condition in migrations/env.py. With the fix reverted (an
+    # unconditional call) this replaces the handlers and the asserts below fail.
+    if not logging_setup.is_configured():
+        fileConfig(ALEMBIC_INI, disable_existing_loggers=False)
 
     logging.getLogger("homehoard.after").warning("emitted after migrations")
 
     assert set(logging.getLogger().handlers) == ours
     assert "emitted after migrations" in open(path).read()
+
+
+def test_alembic_fileconfig_would_detach_handlers_without_the_guard(tmp_path, restore_logging):
+    """The other half: prove fileConfig really is destructive, so the guard
+    above is protecting against something real rather than a theory."""
+    from logging.config import fileConfig
+
+    configure(_Settings(tmp_path), process="test", force=True)
+    ours = set(logging.getLogger().handlers)
+
+    fileConfig(ALEMBIC_INI, disable_existing_loggers=False)
+
+    assert set(logging.getLogger().handlers) != ours
+
+
+# --------------------------------------------------------------------------
+# Log forgery — the audit trail must not be writable by the thing it audits
+# --------------------------------------------------------------------------
+
+def test_a_newline_in_a_recorded_value_cannot_forge_a_log_entry(tmp_path, restore_logging):
+    """An MCP tool name comes straight from the caller's JSON-RPC body. A
+    newline in it wrote a second, fully-formed line — with any level, logger and
+    request id the attacker chose. A forged FUTURE timestamp also pushes real
+    audit lines out of the tail that debug_recent_logs returns.
+    """
+    from app.services.metrics import record
+
+    path = configure(_Settings(tmp_path), process="test", force=True)
+    forged = ("x\n2026-12-31T23:59:59.000Z ERROR homehoard.auth [attacker] "
+              "all clear, nothing to see")
+
+    record("mcp_tool", name=forged, outcome="allowed")
+
+    contents = open(path).read()
+    assert "all clear" in contents          # the text is still there...
+    assert contents.count("\n") == 1        # ...but on ONE line, not two
+    assert "homehoard.auth" not in contents.split(" ")[2:4]
+
+
+def test_a_recorded_value_cannot_flood_the_log(tmp_path, restore_logging):
+    from app.services.metrics import record
+
+    path = configure(_Settings(tmp_path), process="test", force=True)
+
+    record("mcp_tool", name="A" * 10000, outcome="allowed")
+
+    assert len(open(path).read()) < 1000
+
+
+# --------------------------------------------------------------------------
+# Redaction must cover BOTH sinks, not just the file
+# --------------------------------------------------------------------------
+
+def test_a_traceback_secret_is_redacted_on_stdout_too(tmp_path, restore_logging, capsys):
+    """record.exc_text is None when filters run — Formatter.format() populates
+    it — so redacting in a Filter left the FIRST handler to format the record
+    (stdout, the add-on log tab and `docker logs`) emitting the raw traceback.
+    """
+    configure(_Settings(tmp_path), process="test", force=True)
+
+    try:
+        raise RuntimeError("connect failed: postgresql+psycopg://hh:hunter2@db/hh")
+    except RuntimeError:
+        logging.getLogger("homehoard.test").exception("job failed")
+
+    assert "hunter2" not in capsys.readouterr().err
+
+
+def test_redaction_still_applies_with_no_file_sink(restore_logging, capsys):
+    """With no data_dir there is no file handler at all; stdout must still be
+    redacted rather than relying on the file handler's filter."""
+    configure(_Settings(""), process="test", force=True)
+
+    logging.getLogger("homehoard.test").warning("token=abcdefghijklmnopqrst")
+
+    assert "abcdefghijklmnopqrst" not in capsys.readouterr().err
+
+
+def test_the_contains_filter_cannot_be_used_as_a_secret_oracle(tmp_path, restore_logging):
+    """Filtering on the RAW line let a caller search for "hunter1" then
+    "hunter2" and read a redacted secret out one character at a time.
+
+    Write-time redaction stops a secret reaching the file in the first place, so
+    the line here is planted directly — which is exactly the case that matters:
+    a log file written by an OLDER build, before the redactor existed, and still
+    on disk after an upgrade. Read-time redaction is the defence for that file,
+    and it has to happen before the search, not after.
+    """
+    from app.services.debug_logs import read_recent
+
+    configure(_Settings(tmp_path), process="test", force=True)
+    (tmp_path / "logs" / "legacy-1.log").write_text(
+        "2026-08-02T10:00:00.000Z WARNING old.build [-] "
+        "connect failed: password=hunter2 host=db\n")
+
+    def hits(needle):
+        return len(read_recent(str(tmp_path), contains=needle, limit=10)["lines"])
+
+    assert hits("hunter2") == 0      # the secret is not searchable...
+    assert hits("hunter") == 0
+    assert hits("connect failed") == 1   # ...but the line is still findable
+
+
+def test_a_secret_in_a_pre_upgrade_log_file_is_redacted_on_the_way_out(tmp_path,
+                                                                       restore_logging):
+    """Same scenario, checking the returned text rather than the search."""
+    from app.services.debug_logs import read_recent
+
+    configure(_Settings(tmp_path), process="test", force=True)
+    (tmp_path / "logs" / "legacy-1.log").write_text(
+        "2026-08-02T10:00:00.000Z ERROR old.build [-] "
+        "boom postgresql://u:hunter2@h/db\n")
+
+    out = read_recent(str(tmp_path), level="INFO", limit=10)
+
+    assert "hunter2" not in str(out)

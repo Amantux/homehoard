@@ -284,3 +284,59 @@ def test_debug_scope_is_accepted_by_the_tokens_api(auth_client):
 
     assert r.status_code in (200, 201)
     assert r.get_json()["scope"] == "debug"
+
+
+# ---- The method-bypass blocker ---------------------------------------------
+#
+# FastMCP mounts the message endpoint with Starlette's Mount, which matches on
+# PATH ONLY, and handle_post_message never checks the method either — so PUT,
+# GET and DELETE are processed exactly like POST. Gating the guard on
+# method == "POST" meant it saw no tool names and applied no rule at all: an
+# unauthenticated caller could open /sse (open by design on the HA network),
+# take the session id, and PUT a tools/call for a debug tool.
+
+@pytest.mark.parametrize("method", ["PUT", "GET", "DELETE", "PATCH"])
+def test_a_debug_tool_cannot_be_reached_with_a_non_post_method(app, monkeypatch, method):
+    monkeypatch.setattr(mcp_server, "_app", app)
+
+    sent = _drive([], method=method, path="/messages/",
+                  body=_call("debug_recent_logs"), external=False)
+
+    assert sent[0]["status"] == 403
+
+
+@pytest.mark.parametrize("method", ["PUT", "GET"])
+def test_a_debug_key_cannot_reach_a_domain_tool_with_a_non_post_method(
+        app, auth_client, monkeypatch, method):
+    monkeypatch.setattr(mcp_server, "_app", app)
+    debug_raw = _mint(auth_client, "debug")
+
+    sent = _drive([(b"authorization", f"Bearer {debug_raw}".encode())],
+                  method=method, path="/messages/", body=_call("where_is"),
+                  external=False)
+
+    assert sent[0]["status"] == 403
+
+
+def test_a_read_only_key_cannot_write_with_a_non_post_method(app, auth_client, monkeypatch):
+    """Pre-existing hole in the read-only gate, which was also POST-only."""
+    monkeypatch.setattr(mcp_server, "_app", app)
+    read_raw = _mint(auth_client, "mcp", access="read")
+
+    sent = _drive([(b"authorization", f"Bearer {read_raw}".encode())],
+                  method="PUT", path="/messages/", body=_call("create_item"),
+                  external=True)
+
+    assert sent[0]["status"] == 403
+
+
+def test_a_malformed_params_list_does_not_500(app, monkeypatch):
+    """`params` may legitimately be a list; .get on it raised, turning an
+    unauthenticated request into a 500."""
+    monkeypatch.setattr(mcp_server, "_app", app)
+    body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                       "params": []}).encode()
+
+    sent = _drive([], method="POST", path="/messages/", body=body, external=False)
+
+    assert sent[0]["status"] in (200, 401, 403)

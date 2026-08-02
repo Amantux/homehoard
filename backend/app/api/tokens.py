@@ -47,6 +47,16 @@ def create_token_endpoint():
     scope = (data.get("scope") or "full").strip().lower()
     if scope not in TOKEN_SCOPES:
         return jsonify({"error": f"scope must be one of {', '.join(TOKEN_SCOPES)}"}), 400
+    if scope == "debug":
+        # owner_required only proves ownership of the caller's OWN group, and a
+        # debug key reads the whole INSTANCE's logs — every household's request
+        # paths, item names and (masked but identifiable) sign-in addresses.
+        # Restrict minting one to the founding household's owner, the same bar
+        # the shared AI-provider config uses.
+        from .misc import _instance_admin_or_403
+        denied = _instance_admin_or_403()
+        if denied:
+            return denied
     access = (data.get("access") or "write").strip().lower()
     if access not in TOKEN_ACCESS:
         return jsonify({"error": f"access must be one of {', '.join(TOKEN_ACCESS)}"}), 400
