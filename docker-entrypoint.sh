@@ -41,7 +41,17 @@ mkdir -p "$HBOX_DATA_DIR"
 # (e.g. some runtimes), RUN_AS is empty and we just run directly.
 RUN_AS=""
 if [ "$(id -u)" = "0" ]; then
+  # A root-owned /data from a previous release is fixed here (root can always
+  # chown). The failure case is a read-only or non-chownable mount (ro bind,
+  # some SMB/NFS-backed setups): the chown no-ops, we drop to uid 1000, and the
+  # first request dies with "unable to open database file" hours later with no
+  # explanation. So verify writability AS the app user and fail loudly now.
   chown -R app:app "$HBOX_DATA_DIR" 2>/dev/null || true
+  if ! gosu app test -w "$HBOX_DATA_DIR"; then
+    echo "HomeHoard: $HBOX_DATA_DIR is not writable by the 'app' user (uid 1000)." >&2
+    echo "           The data directory must be writable by the container's app user." >&2
+    exit 1
+  fi
   RUN_AS="gosu app"
 fi
 
