@@ -99,6 +99,19 @@ def render_env_example() -> str:
                            "(Docker secrets)")
             out.append(f"#{f.env_var}={_shown_default(f)}")
             out.append("")
+    # Compose-only knobs are NOT application settings — no Python reads them, so
+    # they are deliberately absent from FIELDS. They still belong here: dropping
+    # them when this file became generated would silently lose documentation the
+    # docker-compose deployment depends on.
+    out += [
+        "# --- docker-compose only " + "-" * 39,
+        "# Host address the MCP port is published on. Not read by the app: it is",
+        "# consumed by docker-compose.yml when mapping the port. 127.0.0.1 keeps",
+        "# MCP reachable only from this host; 0.0.0.0 exposes it on the LAN, which",
+        "# requires HBOX_MCP_SERVER_TOKEN to be set.",
+        "#HBOX_MCP_BIND=127.0.0.1",
+        "",
+    ]
     return "\n".join(out).rstrip() + "\n"
 
 
