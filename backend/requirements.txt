@@ -4,7 +4,7 @@ Flask-SQLAlchemy==3.1.1
 # >=5.0.0 for CVE-2024-6221 (ACL Private-Network) and related CORS fixes.
 Flask-Cors>=5.0.0
 Flask-Limiter>=3.8.0
-SQLAlchemy==2.0.32
+SQLAlchemy==2.0.51
 # Schema migrations (SQLite + Postgres). Replaces the old create_all/_migrate.
 alembic>=1.13
 # Postgres driver (optional backend). psycopg 3 bundles libpq via [binary];
