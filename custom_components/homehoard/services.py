@@ -60,9 +60,31 @@ def speak(query: str, results: list[dict]) -> str:
     return sentence
 
 
+def speak_candidates(status: dict) -> str:
+    """Read an ambiguous match back as a question, not a guess.
+
+    Spoken aloud, "the drill" may be three things. Each option is named with
+    where it lives, because that is what actually tells them apart out loud.
+    """
+    cands = status.get("candidates") or []
+    listed = [
+        f"{c.get('name')}{' in ' + c['where'] if c.get('where') else ''}"
+        for c in cands[:5]
+    ]
+    if not listed:
+        return "I found more than one match. Which one did you mean?"
+    if len(listed) == 1:
+        return f"Did you mean {listed[0]}?"
+    return (f"I found {len(listed)}: {', '.join(listed[:-1])}, or {listed[-1]}. "
+            "Which one did you mean?")
+
+
 def speak_action(status: dict) -> str:
     """Turn a coordinator check-out/in result into a spoken sentence."""
     name = status.get("name", "that")
+    if status.get("status") == "needs_clarification":
+        # Nothing was changed — ask rather than acting on a coin-flip.
+        return speak_candidates(status)
     return {
         "checked_out": f"Okay, I've checked out {name}.",
         "already_out": f"{name} is already checked out.",

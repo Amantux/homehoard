@@ -61,23 +61,56 @@ def _patch(path: str, json: dict | None = None):
     return r.json()
 
 
-def _resolve_named(kind: str, name: str):
-    """First bin/location result matching ``name`` (or None)."""
-    res = _get("/search", {"q": name, "types": kind}).get("results", [])
-    hits = [r for r in res if r["type"] == kind]
-    return hits[0] if hits else None
+def _resolve(name_or_id: str, kind: str = "item"):
+    """``(match, candidates)`` — resolve a name/id, never guessing.
 
-
-def _resolve_item(name_or_id: str):
-    """Find a single item by id or name (first search match)."""
+    Delegates to ``/resolve``, which ranks matches by name, labels, description
+    and notes and returns a confidence. A confident hit comes back as
+    ``(match, [])``; anything ambiguous comes back as ``(None, candidates)`` so
+    the caller asks which was meant instead of acting on a coin-flip. Both this
+    server and the Home Assistant integration use that one endpoint, so the
+    policy can't drift between them.
+    """
     try:
-        return _get(f"/items/{name_or_id}")
+        data = _get("/resolve", {"q": name_or_id, "type": kind})
     except httpx.HTTPStatusError:
-        pass
-    res = _get("/search", {"q": name_or_id, "types": "item"}).get("results", [])
-    if not res:
-        return None
-    return _get(f"/items/{res[0]['id']}")
+        return None, []
+    if data.get("confidence") == "high":
+        return data.get("match"), []
+    return None, data.get("candidates") or []
+
+
+def _describe_candidate(c: dict) -> str:
+    """One candidate as a line a user can actually choose between."""
+    bits = [f"{c.get('name')} (id {c.get('id')})"]
+    if c.get("where"):
+        bits.append(f"in {c['where']}")
+    labels = [lbl for lbl in (c.get("labels") or []) if lbl]
+    if labels:
+        bits.append(f"labels: {', '.join(labels[:4])}")
+    if c.get("description"):
+        bits.append(str(c["description"]))
+    if c.get("matchedOn") and c["matchedOn"] != "name":
+        bits.append(f"matched on {c['matchedOn']}")
+    return " — ".join(bits)
+
+
+def _clarify(name_or_id: str, candidates: list[dict], kind: str = "item") -> str:
+    """Ask which was meant. Returned INSTEAD of acting, so nothing is changed."""
+    listed = "; ".join(_describe_candidate(c) for c in candidates)
+    return (f"'{name_or_id}' matches several {kind}s: {listed}. "
+            f"Nothing was changed — show these to the user, ask which one they "
+            f"mean, then call again with that {kind}'s id.")
+
+
+def _clarify_dict(name_or_id: str, candidates: list[dict], kind: str = "item") -> dict:
+    """The same clarification for tools that return structured data."""
+    return {
+        "needsClarification": True,
+        "question": f"Which {kind} did you mean by '{name_or_id}'?",
+        "candidates": candidates,
+        "hint": f"Call again with the id of the intended {kind}.",
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -113,7 +146,9 @@ def search_inventory(query: str) -> list[dict]:
 @mcp.tool()
 def get_item(name_or_id: str) -> dict:
     """Get full details for a single item (by name or id)."""
-    item = _resolve_item(name_or_id)
+    item, candidates = _resolve(name_or_id)
+    if candidates:
+        return _clarify_dict(name_or_id, candidates)
     if not item:
         return {"error": f"No item matching '{name_or_id}'."}
     return {
@@ -139,11 +174,11 @@ def get_item(name_or_id: str) -> dict:
 @mcp.tool()
 def get_bin_contents(name: str) -> dict:
     """List what's inside a bin (by name)."""
-    res = _get("/search", {"q": name, "types": "bin"}).get("results", [])
-    bins = [r for r in res if r["type"] == "bin"]
-    if not bins:
+    b, candidates = _resolve(name, "bin")
+    if candidates:
+        return _clarify_dict(name, candidates, "bin")
+    if not b:
         return {"error": f"No bin matching '{name}'."}
-    b = _get(f"/bins/{bins[0]['id']}")
     return {"bin": b["name"],
             "items": [{"name": i["name"], "quantity": i.get("quantityHere")}
                       for i in b.get("items", [])]}
@@ -152,11 +187,11 @@ def get_bin_contents(name: str) -> dict:
 @mcp.tool()
 def get_location_contents(name: str) -> dict:
     """List items and bins in a location (by name)."""
-    res = _get("/search", {"q": name, "types": "location"}).get("results", [])
-    locs = [r for r in res if r["type"] == "location"]
-    if not locs:
+    loc, candidates = _resolve(name, "location")
+    if candidates:
+        return _clarify_dict(name, candidates, "location")
+    if not loc:
         return {"error": f"No location matching '{name}'."}
-    loc = _get(f"/locations/{locs[0]['id']}")
     return {
         "location": loc["name"],
         "items": [{"name": i["name"], "quantity": i.get("quantityHere")}
@@ -171,17 +206,23 @@ def add_item_placement(name_or_id: str, to_bin: str = "", to_location: str = "",
     """Stock some of an item in ANOTHER bin/location (multi-location quantities) —
     e.g. 'add 12 AA batteries to the garage bin' when 8 are already in a drawer.
     Adds to the running total; use move_item to relocate the whole thing."""
-    item = _resolve_item(name_or_id)
+    item, candidates = _resolve(name_or_id)
+    if candidates:
+        return _clarify(name_or_id, candidates)
     if not item:
         return f"No item matching '{name_or_id}'."
     payload: dict = {"quantity": quantity}
     if to_bin:
-        b = _resolve_named("bin", to_bin)
+        b, cands = _resolve(to_bin, "bin")
+        if cands:
+            return _clarify(to_bin, cands, "bin")
         if not b:
             return f"No bin matching '{to_bin}'."
         payload["binId"] = b["id"]
     elif to_location:
-        loc = _resolve_named("location", to_location)
+        loc, cands = _resolve(to_location, "location")
+        if cands:
+            return _clarify(to_location, cands, "location")
         if not loc:
             return f"No location matching '{to_location}'."
         payload["locationId"] = loc["id"]
@@ -205,7 +246,9 @@ def list_checkouts() -> list[dict]:
 @mcp.tool()
 def check_out_item(name: str, person: str = "", due: str = "") -> str:
     """Check an item out (mark it as not here). Optionally note who has it."""
-    item = _resolve_item(name)
+    item, candidates = _resolve(name)
+    if candidates:
+        return _clarify(name, candidates)
     if not item:
         return f"No item matching '{name}'."
     if item.get("checkedOut"):
@@ -218,7 +261,9 @@ def check_out_item(name: str, person: str = "", due: str = "") -> str:
 @mcp.tool()
 def check_in_item(name: str) -> str:
     """Check an item back in (mark it as here)."""
-    item = _resolve_item(name)
+    item, candidates = _resolve(name)
+    if candidates:
+        return _clarify(name, candidates)
     if not item:
         return f"No item matching '{name}'."
     if not item.get("checkedOut"):
@@ -243,7 +288,9 @@ def update_item(
     add_item_placement / move_item), so a `quantity` sent here is ignored.
     Cannot create or delete items — those stay in the HomeHoard app.
     """
-    item = _resolve_item(name_or_id)
+    item, candidates = _resolve(name_or_id)
+    if candidates:
+        return _clarify(name_or_id, candidates)
     if not item:
         return f"No item matching '{name_or_id}'."
     payload: dict = {}
@@ -266,17 +313,23 @@ def update_item(
 @mcp.tool()
 def move_item(name_or_id: str, to_bin: str = "", to_location: str = "") -> str:
     """Move an item into a bin or a location (by name)."""
-    item = _resolve_item(name_or_id)
+    item, candidates = _resolve(name_or_id)
+    if candidates:
+        return _clarify(name_or_id, candidates)
     if not item:
         return f"No item matching '{name_or_id}'."
     if to_bin:
-        b = _resolve_named("bin", to_bin)
+        b, cands = _resolve(to_bin, "bin")
+        if cands:
+            return _clarify(to_bin, cands, "bin")
         if not b:
             return f"No bin matching '{to_bin}'."
         _patch(f"/items/{item['id']}", {"binId": b["id"]})
         return f"Moved {item['name']} into bin {b['name']}."
     if to_location:
-        loc = _resolve_named("location", to_location)
+        loc, cands = _resolve(to_location, "location")
+        if cands:
+            return _clarify(to_location, cands, "location")
         if not loc:
             return f"No location matching '{to_location}'."
         _patch(f"/items/{item['id']}", {"locationId": loc["id"], "binId": None})
@@ -287,7 +340,9 @@ def move_item(name_or_id: str, to_bin: str = "", to_location: str = "") -> str:
 @mcp.tool()
 def set_checkout_details(name_or_id: str, person: str = "", due: str = "") -> str:
     """Set who has a checked-out item and/or when it's due (it must be checked out)."""
-    item = _resolve_item(name_or_id)
+    item, candidates = _resolve(name_or_id)
+    if candidates:
+        return _clarify(name_or_id, candidates)
     if not item:
         return f"No item matching '{name_or_id}'."
     if not item.get("checkedOut"):
@@ -378,7 +433,9 @@ def describe_item(name_or_id: str) -> str:
     """Look an item up online (web search) and store a short searchable description,
     so future searches find it by what it actually is (e.g. a model number → the
     product). Requires a configured Ollama search key."""
-    item = _resolve_item(name_or_id)
+    item, candidates = _resolve(name_or_id)
+    if candidates:
+        return _clarify(name_or_id, candidates)
     if not item:
         return f"No item matching '{name_or_id}'."
     try:

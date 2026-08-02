@@ -9,7 +9,8 @@ from sqlalchemy.orm import selectinload
 from ..extensions import db
 from ..models import Item, Bin, Location, QrTag, Label
 from ..auth import login_required, current_group
-from ..schemas.serializers import item_summary, bin_out, location_out
+from ..schemas.serializers import item_summary, item_out, bin_out, location_out
+from ..services import resolve
 
 bp = Blueprint("lookup", __name__)
 
@@ -71,6 +72,31 @@ def barcode_lookup(code):
     )
 
 
+# Ranking happens in Python, so the SQL fetch is capped rather than unbounded:
+# without a ceiling an empty query would load the whole inventory just to sort
+# rows that all tie at zero. The pool is far larger than any limit a caller
+# asks for, so the top matches are still found — we just stop reading at a sane
+# depth on huge inventories.
+_RANK_POOL = 500
+
+
+def _rank(rows, q, limit):
+    """Order matches by relevance and record WHY each matched.
+
+    The filter above already accepts a row that matched only on a label or in
+    the description, but ordering by name alone threw that signal away — an
+    exact name hit sorted no better than an incidental description mention. The
+    shared scorer restores it, and ``matchedOn`` lets a caller explain the
+    choice ("matched on label: power tools").
+    """
+    ranked = resolve.rank(rows, q)
+    out = []
+    for row, _score, matched_on in ranked[:limit]:
+        row["matchedOn"] = matched_on
+        out.append(row)
+    return out
+
+
 def _search_items(gid, q, limit):
     query = db.session.query(Item).filter_by(group_id=gid)
     if q:
@@ -88,22 +114,29 @@ def _search_items(gid, q, limit):
                 Item.labels.any(Label.name.ilike(like)),
             )
         )
-    return [
+    rows = [
         {
             "type": "item",
             "id": i.id,
             "name": i.name,
             "where": item_where(i),
             "quantity": i.quantity,
+            # Ranking + disambiguation metadata: what a user needs to tell two
+            # similarly-named things apart.
+            "labels": [lbl.name for lbl in i.labels],
+            "description": i.description or "",
+            "notes": i.notes or "",
             "imageId": next((a.document_id for a in i.attachments if a.primary), None),
         }
         for i in query.options(
             selectinload(Item.attachments),
+            selectinload(Item.labels),
             selectinload(Item.location),
             selectinload(Item.bin).selectinload(Bin.location),
             selectinload(Item.bin).selectinload(Bin.attachments),
-        ).order_by(Item.name.asc()).limit(limit).all()
+        ).order_by(Item.name.asc()).limit(_RANK_POOL).all()
     ]
+    return _rank(rows, q, limit)
 
 
 def _search_bins(gid, q, limit):
@@ -111,16 +144,18 @@ def _search_bins(gid, q, limit):
     if q:
         like = f"%{q}%"
         query = query.filter(db.or_(Bin.name.ilike(like), Bin.description.ilike(like)))
-    return [
+    rows = [
         {
             "type": "bin",
             "id": b.id,
             "name": b.name,
             "where": location_path_str(b.location) if b.location else "",
             "count": len(b.items),
+            "description": b.description or "",
         }
-        for b in query.order_by(Bin.name.asc()).limit(limit).all()
+        for b in query.order_by(Bin.name.asc()).limit(_RANK_POOL).all()
     ]
+    return _rank(rows, q, limit)
 
 
 def _search_locations(gid, q, limit):
@@ -130,16 +165,18 @@ def _search_locations(gid, q, limit):
         query = query.filter(
             db.or_(Location.name.ilike(like), Location.description.ilike(like))
         )
-    return [
+    rows = [
         {
             "type": "location",
             "id": loc.id,
             "name": loc.name,
             "where": location_path_str(loc.parent) if loc.parent else "",
             "count": len(loc.items),
+            "description": loc.description or "",
         }
-        for loc in query.order_by(Location.name.asc()).limit(limit).all()
+        for loc in query.order_by(Location.name.asc()).limit(_RANK_POOL).all()
     ]
+    return _rank(rows, q, limit)
 
 
 @bp.get("/search")
@@ -159,3 +196,55 @@ def search():
     if "location" in types:
         results += _search_locations(gid, q, limit)
     return jsonify({"results": results, "total": len(results)})
+
+
+@bp.get("/resolve")
+@login_required
+def resolve_one():
+    """Resolve a name/id to ONE thing, or to the candidates worth asking about.
+
+    The single source of truth for "did the user mean this item?", shared by the
+    MCP server and the Home Assistant integration (both separate processes, so
+    they consume it over HTTP rather than importing the helper). That is what
+    keeps a name resolving the same way by voice, by service call, and in chat.
+
+    ``?q=`` the name/id, ``?type=`` item (default), bin, or location.
+
+    ``{"confidence": "high", "match": {...}, "matchedOn": ...}`` — safe to act.
+    ``{"confidence": "low", "candidates": [...]}``  — ask which; do NOT act.
+    ``{"confidence": "none"}`` — nothing matched.
+    """
+    q = (request.args.get("q") or "").strip()
+    kind = (request.args.get("type") or "item").strip().lower()
+    if kind not in ("item", "bin", "location"):
+        return jsonify({"confidence": "none", "candidates": [],
+                        "error": f"Unknown type '{kind}'."}), 400
+    if not q:
+        return jsonify({"confidence": "none", "candidates": [],
+                        "error": "No name or id given."}), 400
+    gid = current_group().id
+
+    # An id is an unambiguous handle — never a fuzzy match.
+    model = {"item": Item, "bin": Bin, "location": Location}[kind]
+    direct = db.session.get(model, q)
+    if direct is not None and direct.group_id == gid:
+        return jsonify({"confidence": "high", "matchedOn": "id",
+                        "match": _resolved_out(kind, direct)})
+
+    finder = {"item": _search_items, "bin": _search_bins,
+              "location": _search_locations}[kind]
+    decision = resolve.decide(finder(gid, q, 100), q)
+    if decision["confidence"] == "high":
+        row = decision["match"]
+        obj = db.session.get(model, row["id"])
+        return jsonify({"confidence": "high",
+                        "matchedOn": decision.get("matchedOn"),
+                        "match": _resolved_out(kind, obj)})
+    return jsonify(decision)
+
+
+def _resolved_out(kind: str, obj):
+    """Full detail for a confident hit, so callers skip a follow-up GET."""
+    if kind == "item":
+        return item_out(obj)
+    return bin_out(obj) if kind == "bin" else location_out(obj)
