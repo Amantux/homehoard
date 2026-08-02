@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuth } from './stores/auth'
 import { useUI } from './stores/ui'
@@ -20,6 +20,13 @@ const showScanner = ref(false)
 const showSearch = ref(false)
 const showUserMenu = ref(false)
 const showReport = ref(false)
+
+// Mobile nav drawer. The sidebar is off-canvas below 720px; this toggles it.
+// Previously the sidebar was simply display:none there, so no page except the
+// dashboard was reachable on a phone.
+const menuOpen = ref(false)
+// Close the drawer whenever the route changes (i.e. a nav link was tapped).
+watch(() => route.fullPath, () => { menuOpen.value = false })
 
 onMounted(() => {
   ui.applyTheme()
@@ -48,7 +55,9 @@ const nav = [
 <template>
   <template v-if="!bare">
     <div class="app-shell">
-      <aside class="sidebar">
+      <!-- Scrim behind the mobile drawer; tap to close. -->
+      <div v-if="menuOpen" class="nav-scrim only-mobile" @click="menuOpen = false"></div>
+      <aside class="sidebar" :class="{ 'mobile-open': menuOpen }">
         <div class="brand">
           <span class="logo">📦</span> HomeHoard
         </div>
@@ -71,6 +80,11 @@ const nav = [
 
       <div class="main">
         <header class="topbar">
+          <button
+            class="secondary icon-btn only-mobile"
+            aria-label="Open menu"
+            @click="menuOpen = true"
+          >☰</button>
           <div class="search" @click="showSearch = true">
             <span class="search-ico">🔍</span>
             <input placeholder="Find where something is…  ( / )" readonly

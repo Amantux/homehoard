@@ -1,16 +1,17 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api'
 import { useUI } from '../stores/ui'
 import EmptyState from '../components/EmptyState.vue'
 import LocationTreeNode from '../components/LocationTreeNode.vue'
+import ErrorState from '../components/ErrorState.vue'
+import { useLoader } from '../components/useLoader'
 import { buildTree, indexById, pathString } from '../locationTree'
 
 const router = useRouter()
 const ui = useUI()
 const locations = ref([])
-const loading = ref(true)
 const q = ref('')
 const showCreate = ref(false)
 const form = ref({ name: '', description: '', parentId: '' })
@@ -37,12 +38,10 @@ const matches = computed(() => {
     .sort((a, b) => a.path.localeCompare(b.path))
 })
 
-async function load() {
-  loading.value = true
+// useLoader gives this view the standard skeleton -> error+retry -> content flow.
+const { loading, error, reload: load } = useLoader(async () => {
   locations.value = await api.get('/locations')
-  loading.value = false
-}
-onMounted(load)
+})
 
 async function create() {
   if (busy.value) return
@@ -81,6 +80,8 @@ async function create() {
   <div v-if="loading" class="card">
     <div v-for="i in 5" :key="i" class="skeleton" style="height:34px;margin:6px 0"></div>
   </div>
+
+  <ErrorState v-else-if="error" :message="error" @retry="load" />
 
   <!-- Search results: flat, path-qualified -->
   <div v-else-if="q.trim()" class="card card-flush">

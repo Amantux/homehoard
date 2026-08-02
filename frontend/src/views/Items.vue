@@ -1,11 +1,13 @@
 <script setup>
-import { ref, onMounted, watch, computed } from 'vue'
+import { ref, watch, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '../api'
 import { money } from '../format'
 import { useUI } from '../stores/ui'
 import ItemCard from '../components/ItemCard.vue'
 import EmptyState from '../components/EmptyState.vue'
+import ErrorState from '../components/ErrorState.vue'
+import { useLoader } from '../components/useLoader'
 
 const route = useRoute()
 const router = useRouter()
@@ -13,7 +15,6 @@ const ui = useUI()
 
 const items = ref([])
 const total = ref(0)
-const loading = ref(true)
 const locations = ref([])
 const bins = ref([])
 const labels = ref([])
@@ -76,8 +77,7 @@ function resetFilters() {
   includeArchived.value = false
 }
 
-async function load() {
-  loading.value = true
+async function fetchItems() {
   const params = new URLSearchParams()
   if (q.value) params.set('q', q.value)
   if (locationFilter.value) params.set('locations', locationFilter.value)
@@ -90,8 +90,24 @@ async function load() {
   items.value = res.items
   total.value = res.total
   clearSelection()
-  loading.value = false
 }
+
+// Filter options are fetched once; item pages refetch on every filter/page change.
+let facetsLoaded = false
+
+// useLoader gives this view the standard skeleton -> error+retry -> content flow.
+// A failed fetch used to leave the skeleton up forever with no way to retry.
+const { loading, error, reload: load } = useLoader(async () => {
+  if (!facetsLoaded) {
+    ;[locations.value, labels.value, bins.value] = await Promise.all([
+      api.get('/locations'),
+      api.get('/labels'),
+      api.get('/bins'),
+    ])
+    facetsLoaded = true
+  }
+  await fetchItems()
+})
 
 // --- Bulk actions ---------------------------------------------------------
 // The API has no batch endpoint; at home-inventory scale a handful of
@@ -168,14 +184,6 @@ watch([q, locationFilter, labelFilter, orderBy, includeArchived], () => {
 watch(page, load)
 watch(() => route.query.q, (v) => { if (v !== q.value) { q.value = v || '' } })
 
-onMounted(async () => {
-  ;[locations.value, labels.value, bins.value] = await Promise.all([
-    api.get('/locations'),
-    api.get('/labels'),
-    api.get('/bins'),
-  ])
-  await load()
-})
 </script>
 
 <template>
@@ -244,6 +252,8 @@ onMounted(async () => {
   <div v-if="loading" class="card-grid">
     <div v-for="i in 8" :key="i" class="skeleton" style="height:190px"></div>
   </div>
+
+  <ErrorState v-else-if="error" :message="error" @retry="load" />
 
   <template v-else-if="items.length">
     <!-- Select-all affordance -->

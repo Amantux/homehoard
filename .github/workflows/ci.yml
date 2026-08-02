@@ -130,9 +130,25 @@ jobs:
           curl -fsS http://127.0.0.1:7745/api/v1/status | tee smoke-status.json
           echo; curl -fsS http://127.0.0.1:7745/api/v1/ready | tee smoke-ready.json
           echo
-          # Main process (pid 1 = gunicorn via gosu) must be non-root (uid 1000).
-          uid=$(docker exec hh-ci sh -c "awk '/^Uid:/{print \$2}' /proc/1/status")
-          echo "pid1 uid=$uid"; test "$uid" = "1000"
+          # Every SERVER process must be non-root (uid 1000). pid 1 is now the
+          # supervising shell, which stays root on purpose so it can chown the
+          # Supervisor-managed /data and forward signals — so assert on the
+          # children (gunicorn, mcp_server), not on pid 1.
+          # Gate on /proc/*/comm, not the cmdline: a cmdline match would also
+          # match this very scanning shell (its own command text contains the
+          # pattern) and report a spurious root process.
+          servers=$(docker exec hh-ci sh -c 'for d in /proc/[0-9]*; do
+              comm=$(cat $d/comm 2>/dev/null)
+              case "$comm" in
+                gunicorn) ;;
+                python3) tr "\0" " " < $d/cmdline 2>/dev/null | grep -q mcp_server || continue ;;
+                *) continue ;;
+              esac
+              awk "/^Uid:/{print \$2}" $d/status 2>/dev/null
+            done' | sort -u)
+          echo "server uids: $servers"
+          test -n "$servers"           # something must be running
+          test "$servers" = "1000"     # sort -u collapses to exactly one value
           # MCP server must be listening on 7766 inside the container.
           docker exec hh-ci python3 -c "import socket;s=socket.socket();s.settimeout(3);s.connect(('127.0.0.1',7766));print('mcp listening')"
       - name: Clean shutdown within grace period

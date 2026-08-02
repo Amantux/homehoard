@@ -4,6 +4,8 @@ HomeHoard is a Python (Flask) port of homebox. Configuration is driven by
 environment variables so it can run standalone or as a Home Assistant add-on.
 """
 import os
+import secrets
+import stat
 from datetime import timedelta
 
 
@@ -67,7 +69,11 @@ class Config:
     BARCODE_DB_KEY = os.environ.get("HBOX_BARCODE_DB_KEY", "")
 
     # --- Security --------------------------------------------------------
-    SECRET_KEY = os.environ.get("HBOX_SECRET_KEY", "change-me-in-production")
+    # Blank means "not supplied" — create_app then reads (or generates once and
+    # persists) a key under DATA_DIR. It is deliberately NOT defaulted to a
+    # placeholder here: a placeholder that reached this attribute could not be
+    # told apart from an operator explicitly setting one, which must fail closed.
+    SECRET_KEY = os.environ.get("HBOX_SECRET_KEY", "")
     JWT_EXPIRES = timedelta(hours=int(os.environ.get("HBOX_JWT_HOURS", "72")))
 
     # Ship-defaults that must never sign real tokens. The app fails closed when
@@ -164,3 +170,36 @@ class Config:
         path = os.path.join(cls.DATA_DIR, "attachments")
         os.makedirs(path, exist_ok=True)
         return path
+
+
+def ensure_secret_key(supplied: str, data_dir: str) -> tuple[str, bool]:
+    """Return (secret, was_generated), persisting a generated one.
+
+    A signing key regenerated on every restart logs every user out and voids
+    every issued API token — including MCP keys — which looks like data loss
+    rather than a config problem. The entrypoint used to default HBOX_SECRET_KEY
+    to `head -c 32 /dev/urandom`, so that happened on EVERY container start. If
+    the operator does not supply one we now generate it ONCE and persist it
+    beside the database, so restarts are non-events.
+
+    A supplied value is returned untouched — including a known placeholder, so
+    create_app's fail-closed check still sees (and rejects) it.
+    """
+    if supplied:
+        return supplied, False
+
+    path = os.path.join(data_dir, ".secret_key")
+    try:
+        with open(path) as fh:
+            existing = fh.read().strip()
+    except OSError:
+        existing = ""
+    if existing:
+        return existing, False
+
+    generated = secrets.token_urlsafe(48)
+    os.makedirs(data_dir, exist_ok=True)
+    with open(path, "w") as fh:
+        fh.write(generated)
+    os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)  # 0600 — owner only
+    return generated, True

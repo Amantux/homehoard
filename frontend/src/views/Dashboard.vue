@@ -1,18 +1,21 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api'
 import { money, loadCurrency } from '../format'
 import ItemCard from '../components/ItemCard.vue'
 import EmptyState from '../components/EmptyState.vue'
+import ErrorState from '../components/ErrorState.vue'
+import { useLoader } from '../components/useLoader'
 
 const router = useRouter()
 const stats = ref(null)
 const recent = ref([])
 const locations = ref([])
-const loading = ref(true)
-
-onMounted(async () => {
+// useLoader gives this view the standard skeleton -> error+retry -> content flow.
+// The dashboard is the landing page, so a silent failure here reads as "the app
+// is broken" rather than "one request failed".
+const { loading, error, reload: load } = useLoader(async () => {
   await loadCurrency()
   const [s, r, l] = await Promise.all([
     api.get('/groups/statistics'),
@@ -22,7 +25,6 @@ onMounted(async () => {
   stats.value = s
   recent.value = r.items
   locations.value = l
-  loading.value = false
 })
 
 const tiles = () => [
@@ -42,6 +44,8 @@ const tiles = () => [
   <div v-if="loading" class="stat-grid">
     <div v-for="i in 5" :key="i" class="skeleton" style="height:110px"></div>
   </div>
+
+  <ErrorState v-else-if="error" :message="error" @retry="load" />
 
   <template v-else>
     <div class="stat-grid">

@@ -1,22 +1,25 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { api, apiUrl } from '../api'
 import { useUI } from '../stores/ui'
 import EmptyState from '../components/EmptyState.vue'
+import ErrorState from '../components/ErrorState.vue'
+import { useLoader } from '../components/useLoader'
 
 const router = useRouter()
 const ui = useUI()
 const bins = ref([])
 const locations = ref([])
-const loading = ref(true)
 const showCreate = ref(false)
 const form = ref({ name: '', description: '', locationId: '' })
 
-async function load() { bins.value = await api.get('/bins'); loading.value = false }
-onMounted(async () => {
-  locations.value = await api.get('/locations')
-  await load()
+// useLoader gives this view the standard skeleton -> error+retry -> content flow.
+const { loading, error, reload: load } = useLoader(async () => {
+  ;[bins.value, locations.value] = await Promise.all([
+    api.get('/bins'),
+    api.get('/locations'),
+  ])
 })
 function locName(id) { return locations.value.find((l) => l.id === id)?.name || 'No location' }
 
@@ -37,6 +40,8 @@ async function create() {
   </div>
 
   <div v-if="loading" class="card-grid"><div v-for="i in 4" :key="i" class="skeleton" style="height:120px"></div></div>
+
+  <ErrorState v-else-if="error" :message="error" @retry="load" />
   <div v-else-if="bins.length" class="card-grid">
     <div v-for="b in bins" :key="b.id" class="item-card" @click="router.push('/bins/' + b.id)">
       <div class="thumb">

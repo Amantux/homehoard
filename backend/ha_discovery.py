@@ -18,16 +18,60 @@ TOKEN = os.environ.get("SUPERVISOR_TOKEN", "")
 PORT = int(os.environ.get("HBOX_PORT", "7745"))
 
 
+def _supervisor_self_info():
+    """``/addons/self/info`` data, or None when the Supervisor can't be reached.
+
+    Readable with the default ``hassio_role``; no ``manager`` needed for *self*.
+    """
+    if not TOKEN:
+        return None
+    try:
+        req = urllib.request.Request(
+            f"{SUPERVISOR_API}/addons/self/info",
+            headers={"Authorization": f"Bearer {TOKEN}"},
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read() or b"{}").get("data", {})
+    except Exception as exc:  # noqa: BLE001 - best effort; caller falls back
+        print(f"HomeHoard: could not read add-on hostname from Supervisor ({exc}).")
+        return None
+
+
+def resolve_host():
+    """The address HA Core should use to reach us, plus where it came from.
+
+    The DNS name other containers resolve is the Supervisor-assigned add-on
+    hostname (``local-<slug>`` / ``<repo>-<slug>``), which the Supervisor knows
+    but the container itself does NOT. ``$HOSTNAME`` is this container's Docker
+    id — it is not resolvable by HA Core, so a payload built from it points
+    nowhere and zero-config setup silently fails. Ask the Supervisor.
+
+    Precedence: explicit operator override -> Supervisor -> container hostname
+    (last-resort, and only correct outside HA).
+    """
+    override = os.environ.get("HBOX_DISCOVERY_HOST", "").strip()
+    if override:
+        return override, "HBOX_DISCOVERY_HOST"
+    info = _supervisor_self_info() or {}
+    hostname = (info.get("hostname") or "").strip()
+    if hostname:
+        return hostname, "supervisor"
+    return (os.environ.get("HOSTNAME") or socket.gethostname()), "container-id (not resolvable by HA Core)"
+
+
+def build_payload(host: str) -> dict:
+    """The Supervisor discovery message the companion integration consumes."""
+    return {"service": "homehoard", "config": {"host": host, "port": PORT}}
+
+
 def main() -> int:
     if not TOKEN:
         print("SUPERVISOR_TOKEN not set — skipping HA discovery (fine outside HA).")
         return 0
 
-    # Other containers (HA core) reach an add-on by its container hostname.
-    host = os.environ.get("HOSTNAME") or socket.gethostname()
-    payload = json.dumps(
-        {"service": "homehoard", "config": {"host": host, "port": PORT}}
-    ).encode()
+    host, source = resolve_host()
+    print(f"HomeHoard: advertising host {host!r} (source: {source}).")
+    payload = json.dumps(build_payload(host)).encode()
 
     req = urllib.request.Request(
         f"{SUPERVISOR_API}/discovery",

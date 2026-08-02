@@ -330,12 +330,38 @@ tbody tr.clickable:hover td { background: var(--accent-soft); }
 .select-wrap.selected .item-card { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
 tbody tr.row-selected td { background: var(--accent-soft); }
 
+/* Mobile-only chrome (hamburger, drawer scrim): hidden on desktop where the
+   sidebar is always visible. */
+.only-mobile { display: none; }
+
 @media (max-width: 720px) {
-  .sidebar { display: none; }
+  /* The sidebar becomes an off-canvas drawer instead of vanishing — it used to
+     be display:none with no replacement, so no page except the dashboard was
+     reachable on a phone. */
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 70;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+    box-shadow: var(--shadow-lg);
+  }
+  .sidebar.mobile-open { transform: translateX(0); }
+  .nav-scrim {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 65;
+  }
+  .only-mobile { display: inline-flex; align-items: center; }
   /* Checkbox is always visible on touch — there is no hover to reveal it. */
   .select-wrap .select-check { opacity: 1; }
   .content { padding: 18px 14px; }
-  .topbar { padding: 0 14px; }
+  .topbar { padding: 0 14px; gap: 8px; }
+  /* Let page headers with action buttons wrap instead of overflowing. */
+  .page-head { flex-wrap: wrap; }
   .topbar .search { min-width: 0; }
   .kv { grid-template-columns: 1fr; gap: 2px 0; }
   .kv dd { margin-bottom: 8px; }
@@ -349,6 +375,18 @@ tbody tr.row-selected td { background: var(--accent-soft); }
 }
 
 /* Print: strip the app chrome so a report prints clean (used by /report). */
+@media (prefers-reduced-motion: reduce) {
+  /* Honour reduced-motion everywhere: no transitions, transforms, or animated
+     hovers. Belt-and-braces over the per-component rules. */
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .sidebar { transition: none; }
+}
+
 @media print {
   .sidebar, .topbar, .no-print { display: none !important; }
   .app-shell { display: block !important; }

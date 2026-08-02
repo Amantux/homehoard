@@ -12,7 +12,7 @@ from flask_cors import CORS
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import safe_join
 
-from .config import Config
+from .config import Config, ensure_secret_key
 from .extensions import db, limiter
 
 _LOGGER = logging.getLogger("homehoard")
@@ -30,6 +30,18 @@ def create_app(config_object=Config):
     _db_uri = app.config["SQLALCHEMY_DATABASE_URI"]
     _LOGGER.info("HomeHoard storage backend: %s",
                  "sqlite" if _db_uri.startswith("sqlite") else _db_uri.split("://", 1)[0])
+
+    # Resolve the signing key BEFORE the fail-closed check below: an operator
+    # value wins, otherwise reuse (or generate once and persist) a key under
+    # DATA_DIR so restarts don't invalidate every session and API token.
+    secret, generated = ensure_secret_key(
+        app.config.get("SECRET_KEY") or "", app.config["DATA_DIR"])
+    app.config["SECRET_KEY"] = secret
+    if generated:
+        _LOGGER.warning(
+            "No HBOX_SECRET_KEY was supplied; generated one and persisted it to "
+            "%s so sessions and API tokens survive restarts. Back this file up "
+            "with your data.", os.path.join(app.config["DATA_DIR"], ".secret_key"))
 
     # Fail closed: never sign real tokens with a shipped default or a weak
     # (too-short) secret when authentication is enabled.

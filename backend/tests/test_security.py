@@ -1,8 +1,10 @@
 """Regression tests for the security remediation batch (see SECURITY-REVIEW.md)."""
+import os
+
 import pytest
 
 from app import create_app
-from app.config import Config
+from app.config import Config, ensure_secret_key
 from app.extensions import db
 
 
@@ -43,6 +45,51 @@ def test_default_secret_allowed_when_auth_disabled(tmp_path):
     assert app is not None
     with app.app_context():
         db.drop_all()
+
+
+# --- C1b: the generated signing key must survive a restart ------------------
+def test_generated_secret_persists_across_restarts(tmp_path):
+    """The bug this prevents: the entrypoint minted a fresh random key on every
+    container start, silently logging every user out and voiding every issued
+    API token (including MCP keys) on each restart."""
+    first, generated = ensure_secret_key("", str(tmp_path))
+    assert generated is True and len(first) >= 32
+
+    second, generated_again = ensure_secret_key("", str(tmp_path))
+    assert second == first and generated_again is False
+
+
+def test_generated_secret_file_is_owner_only(tmp_path):
+    ensure_secret_key("", str(tmp_path))
+    mode = os.stat(tmp_path / ".secret_key").st_mode & 0o777
+    assert mode == 0o600
+
+
+def test_supplied_secret_is_never_overwritten_by_generation(tmp_path):
+    """An operator-pinned key wins, and nothing is written to disk."""
+    supplied = "a-real-operator-supplied-secret-key-32b"
+    value, generated = ensure_secret_key(supplied, str(tmp_path))
+    assert value == supplied and generated is False
+    assert not os.path.exists(tmp_path / ".secret_key")
+
+
+def test_boot_generates_and_reuses_a_secret_when_none_supplied(tmp_path):
+    """End-to-end: two create_app cycles with auth ON share one signing key,
+    so tokens minted by the first are still valid after the second."""
+    class GenConfig(Config):
+        DATA_DIR = str(tmp_path)
+        DATABASE_URL = f"sqlite:///{tmp_path}/g.db"
+        DISABLE_AUTH = False
+        SECRET_KEY = ""          # nothing supplied — must be generated once
+        RATELIMIT_ENABLED = False
+
+    first = create_app(GenConfig)
+    second = create_app(GenConfig)
+    assert first.config["SECRET_KEY"] == second.config["SECRET_KEY"]
+    assert len(first.config["SECRET_KEY"]) >= 32
+    for app in (first, second):
+        with app.app_context():
+            db.drop_all()
 
 
 # --- M1: security headers --------------------------------------------------
