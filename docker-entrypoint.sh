@@ -61,23 +61,38 @@ cd /app/backend
 # database (writes the DSN to /data/.database_url, which the app reads). Runs
 # before schema init so migrations target the right database. Best-effort — it
 # self-selects SQLite if anything is missing, so it never blocks startup.
+# pg_provision logs its own reason on every fall-back-to-SQLite path and exits 0,
+# so this `||` fires only when the module crashed — say that, rather than
+# "skipped", which reads as a normal outcome.
 $RUN_AS python3 -m app.pg_provision \
-  || echo "HomeHoard: shared-PostgreSQL provisioning skipped."
+  || echo "HomeHoard: pg_provision failed unexpectedly; continuing on SQLite." >&2
 
 # Initialize / migrate the database ONCE, before starting workers. Otherwise
 # each of gunicorn's workers races to run create_all()/_migrate() on a fresh DB
 # and one crashes with "table already exists". After this, the per-worker
 # create_all() is a safe no-op.
 echo "Initializing database schema…"
-$RUN_AS python3 -c "from app import create_app; create_app()"
+# Also report which backend the app actually booted against. Every "why is my
+# data missing / why didn't the migration take" question starts here. /status
+# and /diagnostics report it too, but the log is what an operator pastes into an
+# issue — and it is the only one available if the app fails to serve at all.
+$RUN_AS python3 -c "from app import create_app
+app = create_app()
+uri = app.config['SQLALCHEMY_DATABASE_URI']
+print('HomeHoard: database backend =', 'sqlite' if uri.startswith('sqlite') else 'postgresql')"
 
 # Best-effort Home Assistant discovery. Runs AFTER schema init and as the app
 # user, matching the sibling add-ons: anything discovery needs to read (data
 # dir, future minted credentials) must already exist and be owned by `app`.
 # Failure is logged, not silenced with `|| true`: discovery is a convenience,
 # but a silent failure is a mystery.
+#
+# ha_discovery.py returns 0 on EVERY path and prints its own reason (no token /
+# registered / failed non-fatally), so this branch fires only if the script
+# itself crashed. It used to claim "not running under Supervisor", which is the
+# one thing that cannot be true here — that case exits 0 with its own message.
 $RUN_AS python3 ha_discovery.py \
-  || echo "HomeHoard: HA discovery registration skipped (not running under Supervisor)."
+  || echo "HomeHoard: ha_discovery.py failed to run; HA discovery not attempted." >&2
 
 # ---------------------------------------------------------------------------
 # MCP server. Previously backgrounded and then orphaned by `exec gunicorn`, so a

@@ -131,7 +131,12 @@ def main() -> int:
     if os.path.isfile(dsn_path):
         with open(dsn_path) as fh:
             if fh.read().strip():
-                return 0  # already provisioned — stable across restarts
+                # Steady state on shared PostgreSQL. Logged because this was the
+                # one path that returned silently: an operator reading the log
+                # could not tell "using the provisioned database" apart from
+                # "provisioning never ran".
+                _log("using the previously provisioned shared PostgreSQL")
+                return 0
 
     # Don't strand existing data: if a populated SQLite DB is present and the
     # operator hasn't also asked to migrate it, provisioning a fresh empty
