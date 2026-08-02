@@ -127,7 +127,7 @@ if [ "${RESOLVED_MCP_ENABLED}" = "true" ]; then
   # key lookups — it must NOT start a second AI-job worker (the main app runs it).
   # mcp_server.py resolves everything else (host, port, tokens, external
   # exposure) from the registry itself, so nothing is passed twice.
-  HBOX_WORKER_ENABLED=false HBOX_PROC=mcp \
+  HBOX_WORKER_ENABLED=false \
     $RUN_AS python3 mcp_server.py &
   MCP_PID=$!
   echo "HomeHoard: MCP server started (pid $MCP_PID) on :${RESOLVED_MCP_PORT}/sse"

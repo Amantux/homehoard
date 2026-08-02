@@ -68,7 +68,7 @@ def create_app(config_object=Config):
     # Before anything else logs: until this release HomeHoard configured logging
     # nowhere, so every INFO line was discarded and the only handler present had
     # been installed as a side effect of Alembic's fileConfig.
-    configure_logging(settings, process=os.environ.get("HBOX_PROC", "app"))
+    configure_logging(settings, process="app")
 
     app.config.update(settings.values)
     app.config["SETTINGS"] = settings
