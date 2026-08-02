@@ -21,7 +21,17 @@ TOKEN_PREFIX = "hh_"
 # Per-key access scope. `full` reaches everything (default for legacy keys); `rest`
 # is REST-only (no MCP); `mcp` is issued for the MCP transport alone and is REJECTED
 # at the REST API (see auth._user_from_api_token).
-TOKEN_SCOPES = ("full", "rest", "mcp")
+# scope = WHERE a key works, access = WHAT it may do (two orthogonal dimensions).
+#   full  — REST + MCP domain tools
+#   rest  — REST only
+#   mcp   — MCP domain tools only
+#   debug — the MCP debug tools ONLY: reads this instance's own logs, metrics and
+#           diagnostics, and nothing else. Rejected at REST, and rejected on the
+#           domain tools, so it is "debug only" in both directions. Logs carry
+#           login emails and tracebacks that can contain a database password, so
+#           this is a strictly separate class rather than an extra power granted
+#           to a full key.
+TOKEN_SCOPES = ("full", "rest", "mcp", "debug")
 
 # Per-key access class, orthogonal to scope: `write` (default) can read AND mutate;
 # `read` is read-only — the REST API rejects non-GET/HEAD requests and the MCP guard

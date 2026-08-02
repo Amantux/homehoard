@@ -140,6 +140,15 @@ def _prune_dead_process_logs(log_dir: str) -> None:
             continue  # alive but not ours, or unreadable — leave it
 
 
+def is_configured() -> bool:
+    """Whether this process's logging is ours.
+
+    Alembic's env.py asks, because ``fileConfig`` replaces the root handlers and
+    startup runs migrations in-process — it must not undo the app's setup.
+    """
+    return _configured
+
+
 def configure(settings=None, process: str = "app", force: bool = False) -> str | None:
     """Install handlers. Idempotent; returns the log file path (or None).
 

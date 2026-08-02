@@ -42,7 +42,9 @@ async function create() {
   try {
     const t = await api.post('/tokens', {
       name: newName.value.trim() || 'Home Assistant', scope: newScope.value,
-      access: newAccess.value,
+      // A debug key only ever reads; don't let the form offer to mint a
+      // write-capable one.
+      access: newScope.value === 'debug' ? 'read' : newAccess.value,
     })
     revealed.value = t
     newName.value = ''
@@ -172,17 +174,26 @@ const mcpUrl = computed(() => {
           <option value="full">Full (REST + MCP)</option>
           <option value="rest">REST only</option>
           <option value="mcp">MCP only</option>
+          <option value="debug">Debug only (reads logs)</option>
         </select>
       </label>
       <label class="field" style="margin:0;max-width:170px">
         <span>Access</span>
-        <select v-model="newAccess">
+        <select v-model="newAccess" :disabled="newScope === 'debug'">
           <option value="write">Read &amp; write</option>
           <option value="read">Read only</option>
         </select>
       </label>
       <button :disabled="creating" @click="create">Generate token</button>
     </div>
+
+    <p v-if="newScope === 'debug'" class="muted" style="margin:0 0 12px">
+      A debug key reads this add-on’s own logs, recent errors and timings — and
+      nothing else. It can’t reach the API or the voice-assistant tools. Logs can
+      include sign-in email addresses and error details, so treat it like a
+      password and delete it when you’re done. Turn on <code>mcp_debug_tools</code>
+      in the add-on configuration for it to do anything.
+    </p>
 
     <div v-if="loading" class="skeleton" style="height:80px"></div>
 

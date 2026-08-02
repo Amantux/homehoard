@@ -7,6 +7,8 @@ key exists. These test the guard functions directly (no uvicorn / network).
 import asyncio
 import json
 
+import pytest
+
 import mcp_server
 
 
@@ -51,13 +53,22 @@ def test_authorized_bearer_and_static_token(app, auth_client, monkeypatch):
     assert mcp_server._authorized("Bearer wrong", "s3cr3t") is False
 
 
-def _drive_guard(headers):
-    """Run _guard_external against a passthrough ASGI app; return the sent messages."""
+def _drive_guard(headers, external=True):
+    """Run the real _guard against a passthrough ASGI app; return sent messages.
+
+    Drives _guard, not the old _guard_external: that wrapper is gone, and a test
+    exercising a code path the server no longer installs proves nothing.
+    """
     async def downstream(scope, receive, send):
         await send({"type": "http.response.start", "status": 200, "headers": []})
         await send({"type": "http.response.body", "body": b"ok"})
 
-    guard = mcp_server._guard_external(downstream, "")
+    _prev = mcp_server._expose_external
+    mcp_server._expose_external = lambda: external
+    try:
+        guard = mcp_server._guard(downstream, "")
+    finally:
+        mcp_server._expose_external = _prev
     sent = []
 
     async def send(m):
@@ -87,13 +98,18 @@ def test_guard_blocks_without_key_and_passes_with_mcp_key(app, auth_client, monk
 
 # ---- Read-only access class -------------------------------------------------
 
-def _drive(headers, method="GET", path="/sse", body=b""):
-    """Drive _guard_external with a method/path/body so read-only tool gating runs."""
+def _drive(headers, method="GET", path="/sse", body=b"", external=True):
+    """Drive the real _guard with a method/path/body so tool gating runs."""
     async def downstream(scope, receive, send):
         await send({"type": "http.response.start", "status": 200, "headers": []})
         await send({"type": "http.response.body", "body": b"ok"})
 
-    guard = mcp_server._guard_external(downstream, "")
+    _prev = mcp_server._expose_external
+    mcp_server._expose_external = lambda: external
+    try:
+        guard = mcp_server._guard(downstream, "")
+    finally:
+        mcp_server._expose_external = _prev
     sent, state = [], {"sent_body": False}
 
     async def send(m):
@@ -164,3 +180,107 @@ def test_read_only_token_blocks_writes_on_rest(app, auth_client):
 def test_bad_access_value_rejected(auth_client):
     r = auth_client.post("/api/v1/tokens", json={"name": "k", "access": "bogus"})
     assert r.status_code == 400
+
+
+# ---- The debug scope --------------------------------------------------------
+#
+# A debug key reads this instance's own logs, which carry login emails and
+# tracebacks that can include a database password. It is therefore a separate
+# key class, denied at REST and denied on the domain tools — and the debug tools
+# are denied to every other key, on every network.
+
+def _call(tool):
+    return json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                       "params": {"name": tool}}).encode()
+
+
+def test_a_debug_key_is_rejected_at_the_rest_api(app, auth_client, client):
+    debug_raw = _mint(auth_client, "debug")
+
+    client.environ_base["HTTP_AUTHORIZATION"] = f"Bearer {debug_raw}"
+
+    assert client.get("/api/v1/items").status_code == 401
+
+
+def test_a_debug_key_may_call_a_debug_tool(app, auth_client, monkeypatch):
+    monkeypatch.setattr(mcp_server, "_app", app)
+    debug_raw = _mint(auth_client, "debug")
+
+    sent = _drive([(b"authorization", f"Bearer {debug_raw}".encode())],
+                  method="POST", path="/messages", body=_call("debug_recent_logs"),
+                  external=False)
+
+    assert sent[0]["status"] == 200
+
+
+def test_a_debug_key_may_not_call_a_domain_tool(app, auth_client, monkeypatch):
+    monkeypatch.setattr(mcp_server, "_app", app)
+    debug_raw = _mint(auth_client, "debug")
+
+    sent = _drive([(b"authorization", f"Bearer {debug_raw}".encode())],
+                  method="POST", path="/messages", body=_call("where_is"),
+                  external=False)
+
+    assert sent[0]["status"] == 403
+
+
+@pytest.mark.parametrize("scope", ["full", "mcp"])
+def test_a_normal_key_may_not_call_a_debug_tool(app, auth_client, monkeypatch, scope):
+    """Least privilege in both directions — otherwise the 'debug only' label is
+    a lie and any Assist key could read the logs."""
+    monkeypatch.setattr(mcp_server, "_app", app)
+    raw = _mint(auth_client, scope)
+
+    sent = _drive([(b"authorization", f"Bearer {raw}".encode())],
+                  method="POST", path="/messages", body=_call("debug_recent_logs"),
+                  external=False)
+
+    assert sent[0]["status"] == 403
+
+
+def test_an_unauthenticated_caller_may_not_call_a_debug_tool_even_internally(app, monkeypatch):
+    """The case that motivated always installing the guard: with external
+    exposure off, HomeHoard previously installed NO guard at all, so this
+    request would have reached the tool with no credential."""
+    monkeypatch.setattr(mcp_server, "_app", app)
+
+    sent = _drive([], method="POST", path="/messages",
+                  body=_call("debug_recent_logs"), external=False)
+
+    assert sent[0]["status"] == 403
+
+
+def test_domain_tools_stay_open_internally(app, monkeypatch):
+    """Voice control must keep working without setup on the HA network."""
+    monkeypatch.setattr(mcp_server, "_app", app)
+
+    sent = _drive([], method="POST", path="/messages",
+                  body=_call("where_is"), external=False)
+
+    assert sent[0]["status"] == 200
+
+
+def test_a_batch_cannot_smuggle_a_domain_tool_past_a_debug_key(app, auth_client, monkeypatch):
+    """JSON-RPC batches are checked element-wise: pairing a debug tool with a
+    domain tool must not let the domain one through."""
+    monkeypatch.setattr(mcp_server, "_app", app)
+    debug_raw = _mint(auth_client, "debug")
+    batch = json.dumps([
+        {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+         "params": {"name": "debug_recent_logs"}},
+        {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+         "params": {"name": "create_item"}},
+    ]).encode()
+
+    sent = _drive([(b"authorization", f"Bearer {debug_raw}".encode())],
+                  method="POST", path="/messages", body=batch, external=False)
+
+    assert sent[0]["status"] == 403
+
+
+def test_debug_scope_is_accepted_by_the_tokens_api(auth_client):
+    r = auth_client.post("/api/v1/tokens",
+                         json={"name": "d", "scope": "debug", "access": "read"})
+
+    assert r.status_code in (200, 201)
+    assert r.get_json()["scope"] == "debug"

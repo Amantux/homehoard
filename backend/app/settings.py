@@ -389,6 +389,16 @@ FIELDS: tuple[Field, ...] = (
           "must also map the MCP port in the add-on's Network tab.",
           ha_option="mcp_expose_external"),
 
+    Field("MCP_DEBUG_TOOLS", parse_bool, False,
+          "Expose read-only debugging tools over MCP (recent logs, error "
+          "summary, metrics, diagnostics) so an AI client can investigate a "
+          "problem. Off by default. When on, those tools require an API key "
+          "with the 'debug' scope — ALWAYS, including on the Home Assistant "
+          "network, because logs contain login emails and tracebacks that can "
+          "carry a database password. No debug key exists = the tools are not "
+          "served at all.",
+          ha_option="mcp_debug_tools"),
+
     # --- misc ---
     Field("MAX_UPLOAD_MB", int_between(1, 1024), 50, "Maximum upload size in MB."),
     Field("FRONTEND_DIST", as_str, "",

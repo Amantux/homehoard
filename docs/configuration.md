@@ -108,6 +108,7 @@ docker compose run --rm app python3 -m app.config_check
 | `HBOX_MCP_API_TOKEN` | string | `_(empty)_` | **yes** | — | Token the MCP server uses when app auth is enabled. Supports `HBOX_MCP_API_TOKEN_FILE`. |
 | `HBOX_MCP_SERVER_TOKEN` | string | `_(empty)_` | **yes** | — | Bearer token Home Assistant must present to reach the MCP server. Blank leaves it unauthenticated (only safe on a trusted network). Supports `HBOX_MCP_SERVER_TOKEN_FILE`. |
 | `HBOX_MCP_EXPOSE_EXTERNAL` | boolean | `false` | no | `mcp_expose_external` | Reach the MCP server from OUTSIDE Home Assistant. When on, every request must present a Full- or MCP-scoped API key, and the server refuses to start until such a key exists — so it is never open. You must also map the MCP port in the add-on's Network tab. |
+| `HBOX_MCP_DEBUG_TOOLS` | boolean | `false` | no | `mcp_debug_tools` | Expose read-only debugging tools over MCP (recent logs, error summary, metrics, diagnostics) so an AI client can investigate a problem. Off by default. When on, those tools require an API key with the 'debug' scope — ALWAYS, including on the Home Assistant network, because logs contain login emails and tracebacks that can carry a database password. No debug key exists = the tools are not served at all. |
 
 ### Serving & misc
 

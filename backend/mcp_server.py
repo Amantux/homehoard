@@ -543,6 +543,40 @@ def _key_access(raw: str):
         return None
 
 
+def _key_scope(raw: str):
+    """Scope of a live ApiToken ('full'|'rest'|'mcp'|'debug'), or None.
+
+    Separate from _key_access because the debug tools gate on scope, not on the
+    read/write class. Fail-closed (None) on any DB error.
+    """
+    if not raw:
+        return None
+    try:
+        app = _get_app()
+        from app.extensions import db
+        from app.models import ApiToken, hash_token
+        with app.app_context():
+            rec = db.session.query(ApiToken).filter_by(token_hash=hash_token(raw)).first()
+            scope = (rec.scope or "full") if rec is not None else None
+            db.session.remove()
+            return scope
+    except Exception as exc:  # noqa: BLE001 — fail closed
+        print(f"homehoard-mcp: scope check failed: {exc}", file=sys.stderr)
+        return None
+
+
+def _debug_key_exists() -> bool:
+    """True if a 'debug'-scoped key exists. Raises on a DB error (fail closed)."""
+    app = _get_app()
+    from app.extensions import db
+    from app.models import ApiToken
+    with app.app_context():
+        exists = (db.session.query(ApiToken.id)
+                  .filter(ApiToken.scope == "debug").first() is not None)
+        db.session.remove()
+        return exists
+
+
 def _request_access(header_value: str, server_token: str):
     """The access class for an authenticated request ('write'|'read'), or None if
     unauthenticated. The static server token grants full ('write')."""
@@ -580,30 +614,73 @@ def _replay(messages):
     return receive
 
 
-async def _read_only_gate(scope, receive, send):
-    """For a read-only key: pass the request through unless it is a `tools/call` POST
-    for a tool NOT in READ_TOOLS. Returns a receive callable to use downstream, or
-    None if it already sent a 403 (caller must stop)."""
-    if scope.get("method") != "POST" or "/messages" not in scope.get("path", ""):
-        return receive  # GET /sse, initialize, tools/list, ping, etc. — always allowed
-    body, messages = await _buffer_body(receive)
-    try:
-        parsed = json.loads(body or b"{}")
-    except Exception:  # noqa: BLE001 — let the MCP layer return its own parse error
-        return _replay(messages)
-    calls = parsed if isinstance(parsed, list) else [parsed]  # JSON-RPC may batch
+# ---------------------------------------------------------------------------
+# Debug tools. Registered only when MCP_DEBUG_TOOLS is on, and callable only by
+# a `debug`-scoped key — see _guard. They read this instance's own logs and
+# metrics so an AI client can investigate a problem without an operator having
+# to copy log text around by hand.
+# ---------------------------------------------------------------------------
+DEBUG_TOOLS = frozenset({
+    "debug_recent_logs", "debug_error_summary", "debug_metrics",
+    "debug_diagnostics",
+})
 
-    def _is_write(m):
-        return (isinstance(m, dict) and m.get("method") == "tools/call"
-                and (m.get("params") or {}).get("name") not in READ_TOOLS)
 
-    if any(_is_write(m) for m in calls):
-        await send({"type": "http.response.start", "status": 403,
-                    "headers": [(b"content-type", b"text/plain")]})
-        await send({"type": "http.response.body",
-                    "body": b"read-only API key: this tool mutates data"})
-        return None
-    return _replay(messages)
+def _register_debug_tools() -> None:
+    from app.services import debug_logs, metrics
+
+    data_dir = _SETTINGS.data_dir
+
+    @mcp.tool()
+    def debug_recent_logs(level: str = "INFO", contains: str = "",
+                          request_id: str = "", since: str = "",
+                          limit: int = 100) -> dict:
+        """Recent log lines from this HomeHoard instance, newest last.
+
+        level: minimum severity (DEBUG|INFO|WARNING|ERROR). contains: plain
+        substring filter, not a regex. request_id: show one request's lines,
+        using the id from an error response or the X-Request-Id header. since:
+        an ISO-8601 UTC timestamp; only later lines are returned. Credentials
+        are redacted; timestamps are UTC.
+        """
+        return debug_logs.read_recent(data_dir, level=level, contains=contains,
+                                      request_id=request_id, since=since, limit=limit)
+
+    @mcp.tool()
+    def debug_error_summary(limit: int = 20) -> dict:
+        """Recent warnings and errors grouped by message shape, most frequent
+        first — "what is going wrong repeatedly", rather than a raw line dump.
+        Each group carries the last request id, to look that request up."""
+        return debug_logs.error_summary(data_dir, limit=limit)
+
+    @mcp.tool()
+    def debug_metrics(kind: str = "") -> dict:
+        """Recent timing samples (background jobs, MCP tool calls) from THIS
+        process. The MCP server and each web worker keep separate rings, so
+        treat these as a sample; the log lines (kind=metric) are the complete
+        record and are visible via debug_recent_logs."""
+        kinds = [kind] if kind else ["job", "mcp_tool"]
+        return {"summaries": [metrics.summary(k) for k in kinds],
+                "recent": metrics.recent(kind or None, limit=50)}
+
+    @mcp.tool()
+    def debug_diagnostics() -> dict:
+        """Coarse runtime facts: database backend, configured providers, which
+        settings are non-default and where each came from. Secrets are
+        redacted — this is the same information the config check prints."""
+        settings = _SETTINGS
+        uri = settings.sqlalchemy_uri
+        redacted = settings.redacted()
+        return {
+            "app": "HomeHoard",
+            "dbBackend": "sqlite" if uri.startswith("sqlite") else "postgresql",
+            "aiProvider": settings.AI_PROVIDER or "none",
+            "authDisabled": bool(settings.DISABLE_AUTH),
+            "nonDefault": {name: redacted.get(name)
+                           for name, src in sorted(settings.sources.items())
+                           if src != "default"},
+            "sources": {k: v for k, v in sorted(settings.sources.items()) if v != "default"},
+        }
 
 
 def _mcp_key_exists() -> bool:
@@ -628,25 +705,116 @@ def _authorized(header_value: str, server_token: str) -> bool:
     return False
 
 
-def _guard_external(asgi_app, server_token: str):
-    """ASGI gate for external exposure: EVERY http request must present a valid
-    mcp/full API key (or the optional static server token). Fail-closed."""
+def _tool_names(scope, body: bytes) -> list[str]:
+    """Tool names in a JSON-RPC body, or [] if this is not a tools/call POST."""
+    if scope.get("method") != "POST" or "/messages" not in scope.get("path", ""):
+        return []
+    try:
+        parsed = json.loads(body or b"{}")
+    except Exception:  # noqa: BLE001 — let the MCP layer return its own parse error
+        return []
+    calls = parsed if isinstance(parsed, list) else [parsed]  # JSON-RPC may batch
+    return [(m.get("params") or {}).get("name") or ""
+            for m in calls
+            if isinstance(m, dict) and m.get("method") == "tools/call"]
+
+
+async def _deny(send, status: int, message: bytes) -> None:
+    await send({"type": "http.response.start", "status": status,
+                "headers": [(b"content-type", b"text/plain")]})
+    await send({"type": "http.response.body", "body": message})
+
+
+def _guard(asgi_app, server_token: str):
+    """The single ASGI gate, ALWAYS installed.
+
+    Previously a wrapper was chosen once at boot and, with external exposure off
+    and no static token, none was installed at all — so there was nothing to
+    enforce anything with, and the endpoint said so ("UNAUTHENTICATED"). It is
+    now always present; what it *requires* depends on the tool being called:
+
+    * **debug tools** — always require a `debug`-scoped key, on every network.
+      Logs contain login emails and tracebacks that can carry a database
+      password, which is a different sensitivity class from inventory data.
+    * **domain tools** — unchanged: open on the Home Assistant network, and when
+      exposed externally every request needs a valid mcp/full key, with
+      read-only keys held to the READ_TOOLS allowlist.
+
+    Always wrapping also means minting a key takes effect without a restart.
+    """
+    external = _expose_external()
+
     async def wrapper(scope, receive, send):
-        if scope["type"] == "http":
-            header = dict(scope.get("headers") or []).get(b"authorization", b"").decode()
-            access = _request_access(header, server_token)
-            if access is None:
-                await send({"type": "http.response.start", "status": 401,
-                            "headers": [(b"content-type", b"text/plain")]})
-                await send({"type": "http.response.body", "body": b"unauthorized"})
-                return
-            if access == "read":
-                receive = await _read_only_gate(scope, receive, send)
-                if receive is None:
-                    return  # a mutating tool call was rejected (403 already sent)
+        if scope["type"] != "http":
+            return await asgi_app(scope, receive, send)
+
+        header = dict(scope.get("headers") or []).get(b"authorization", b"").decode()
+        raw = header[len("Bearer "):].strip() if header.startswith("Bearer ") else ""
+
+        # Buffer once; every branch below needs to know which tools were asked
+        # for, and the body has to be replayed downstream either way.
+        body, messages = b"", None
+        if scope.get("method") == "POST" and "/messages" in scope.get("path", ""):
+            body, messages = await _buffer_body(receive)
+            receive = _replay(messages)
+        names = _tool_names(scope, body)
+        wants_debug = any(n in DEBUG_TOOLS for n in names)
+        wants_domain = any(n and n not in DEBUG_TOOLS for n in names)
+
+        if wants_debug:
+            key_scope = _key_scope(raw)
+            if key_scope != "debug":
+                _audit(names, raw, "denied")
+                return await _deny(
+                    send, 403,
+                    b"the debug tools require an API key with the 'debug' scope")
+            if wants_domain:
+                # A batch mixing both would otherwise let a debug key reach a
+                # domain tool by pairing it with a debug one.
+                _audit(names, raw, "denied")
+                return await _deny(
+                    send, 403, b"a debug key may not call the domain tools")
+        else:
+            if _key_scope(raw) == "debug" and names:
+                _audit(names, raw, "denied")
+                return await _deny(
+                    send, 403, b"a debug key may only call the debug tools")
+            if external:
+                access = _request_access(header, server_token)
+                if access is None:
+                    return await _deny(send, 401, b"unauthorized")
+                if access == "read" and any(n not in READ_TOOLS for n in names):
+                    _audit(names, raw, "denied")
+                    return await _deny(
+                        send, 403, b"read-only API key: this tool mutates data")
+            elif server_token and not _authorized(header, server_token):
+                return await _deny(send, 401, b"unauthorized")
+
+        if names:
+            _audit(names, raw, "allowed")
         await asgi_app(scope, receive, send)
 
     return wrapper
+
+
+def _audit(names, raw: str, outcome: str) -> None:
+    """One line per tool call: which tool, which key, allowed or denied.
+
+    There was no record at all of what ran over MCP — the surface most likely to
+    need an audit trail. Arguments are deliberately NOT logged: they carry
+    inventory contents and personal data.
+    """
+    try:
+        from app.services.metrics import record
+        # NOT `key=`: the log redactor treats `key=<value>` as a credential and
+        # would replace the whole field, erasing which client made the call.
+        hint = f"{raw[:7]}~" if raw else "none"
+        for name in names or ["-"]:
+            record("mcp_tool", name=name or "-", client=hint, outcome=outcome)
+    except Exception as exc:  # noqa: BLE001 - auditing must never break a request
+        # Reported, not swallowed: an audit trail that silently stops recording
+        # is worse than none, because it reads as "nothing happened".
+        print(f"homehoard-mcp: audit logging failed: {exc}", file=sys.stderr)
 
 
 def _expose_external() -> bool:
@@ -665,6 +833,26 @@ if __name__ == "__main__":
     port = _SETTINGS.MCP_PORT
     server_token = _SETTINGS.MCP_SERVER_TOKEN
 
+    if _SETTINGS.MCP_DEBUG_TOOLS:
+        # Fail-closed, mirroring the external-exposure check: serving log-reading
+        # tools that nobody can authenticate to would be worse than not serving
+        # them. A debug key is minted in the app (API tokens, scope 'Debug').
+        try:
+            has_debug_key = _debug_key_exists()
+        except Exception as exc:  # noqa: BLE001
+            print(f"ERROR: homehoard-mcp: could not verify a debug key exists: {exc}. "
+                  "Not registering the debug tools.", file=sys.stderr)
+            has_debug_key = False
+        if has_debug_key:
+            _register_debug_tools()
+            print("homehoard-mcp: debug tools ON — they require an API key with the "
+                  "'debug' scope, on every network.", file=sys.stderr)
+        else:
+            print("WARNING: mcp_debug_tools is on but no 'debug'-scoped API key "
+                  "exists. Mint one in the app (Tools -> API tokens, scope "
+                  "'Debug'), then restart. Not serving the debug tools.",
+                  file=sys.stderr)
+
     if _expose_external():
         # Fail-closed: never serve an externally-reachable endpoint that nobody can
         # authenticate to. Require a deliberately-minted `mcp` key to exist first.
@@ -676,24 +864,21 @@ if __name__ == "__main__":
             sys.exit(1)
         if not has_key:
             print("ERROR: mcp_expose_external is on but no MCP-scoped API key exists. "
-                  "Mint one in the app (Tools → API tokens, scope 'MCP'), then restart. "
+                  "Mint one in the app (Tools -> API tokens, scope 'MCP'), then restart. "
                   "Refusing to serve an unauthenticated external MCP endpoint.",
                   file=sys.stderr)
             sys.exit(1)
-        app = _guard_external(mcp.sse_app(), server_token)
         print("homehoard-mcp: external exposure ON — every request must carry a valid "
               "MCP/Full API key.", file=sys.stderr)
-    else:
-        app = mcp.sse_app()
-        if server_token:
-            app = _require_token(app, server_token)
-        else:
-            print(
-                "WARNING: HBOX_MCP_SERVER_TOKEN is not set — the MCP endpoint is "
-                "UNAUTHENTICATED. Keep port 7766 on a trusted network, or enable "
-                "mcp_expose_external + mint an MCP key to reach it from outside HA.",
-                file=sys.stderr,
-            )
+    elif not server_token:
+        print("NOTE: the MCP endpoint is open to the Home Assistant network so Assist "
+              "works without setup. If you publish port %s in the add-on's Network tab "
+              "it becomes reachable from your LAN too — set mcp_expose_external (and "
+              "mint an MCP key) before doing that." % port, file=sys.stderr)
+
+    # ALWAYS wrapped. What the guard requires depends on the tool: debug tools
+    # always need a debug key; domain tools keep the open-internally behaviour.
+    app = _guard(mcp.sse_app(), server_token)
 
     import uvicorn
     uvicorn.run(app, host=host, port=port)

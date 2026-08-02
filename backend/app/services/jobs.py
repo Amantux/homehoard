@@ -18,6 +18,7 @@ import logging
 from sqlalchemy.exc import IntegrityError
 
 from ..extensions import db
+from .metrics import Timer
 from ..models import Job, utcnow
 
 _LOGGER = logging.getLogger("homehoard.jobs")
@@ -92,21 +93,25 @@ def claim_one() -> Job | None:
 def run_job(job: Job) -> None:
     """Execute a claimed job's handler; record result or error. Never raises."""
     handler = _HANDLERS.get(job.kind)
-    try:
-        if handler is None:
-            raise JobError(f"no handler for kind '{job.kind}'")
-        summary = handler(job) or {}
-        job.result = json.dumps(summary)
-        job.status = "done"
-        job.error = ""
-    except Exception as exc:  # noqa: BLE001 - any failure marks the job errored
-        db.session.rollback()
-        _LOGGER.exception("job %s (%s) failed", job.id, job.kind)
-        job = db.session.get(Job, job.id)  # reattach after rollback
-        if job:
-            job.status = "error"
-            job.error = str(exc)[:500]
-    db.session.commit()
+    # A successful job used to be completely silent and no duration was kept
+    # anywhere, so "the nightly enrichment is slow" was unanswerable.
+    with Timer("job", name=job.kind, id=job.id) as timer:
+        try:
+            if handler is None:
+                raise JobError(f"no handler for kind '{job.kind}'")
+            summary = handler(job) or {}
+            job.result = json.dumps(summary)
+            job.status = "done"
+            job.error = ""
+        except Exception as exc:  # noqa: BLE001 - any failure marks the job errored
+            db.session.rollback()
+            _LOGGER.exception("job %s (%s) failed", job.id, job.kind)
+            timer.set(ok=False)
+            job = db.session.get(Job, job.id)  # reattach after rollback
+            if job:
+                job.status = "error"
+                job.error = str(exc)[:500]
+        db.session.commit()
 
 
 def reap_stale() -> int:

@@ -34,7 +34,7 @@ GROUPS = [
     ("Barcode identification", ["BARCODE_LOOKUP", "BARCODE_DB_URL", "BARCODE_DB_KEY"]),
     ("MCP (Home Assistant Assist)", ["MCP_ENABLED", "MCP_HOST", "MCP_PORT", "MCP_API",
                                      "MCP_API_TOKEN", "MCP_SERVER_TOKEN",
-                                     "MCP_EXPOSE_EXTERNAL"]),
+                                     "MCP_EXPOSE_EXTERNAL", "MCP_DEBUG_TOOLS"]),
     ("Serving & misc", ["WORKER_ENABLED", "MAX_UPLOAD_MB", "FRONTEND_DIST",
                         "DISCOVERY_HOST", "DEBUG"]),
     ("Logging", ["LOG_LEVEL", "SLOW_REQUEST_MS"]),

@@ -286,3 +286,28 @@ def test_status_needs_no_credential_and_stays_minimal(client):
     assert r.status_code == 200
     assert body["health"] is True
     assert set(body) == {"health", "versions", "title", "message", "dbBackend"}
+
+
+def test_migrations_do_not_detach_the_apps_log_handlers(tmp_path, restore_logging):
+    """Alembic's fileConfig REPLACES the root handlers, and startup runs
+    migrations in-process — so it was silently detaching the app's stdout and
+    file handlers a moment after they were installed. Everything logged after
+    boot went to Alembic's handler instead: the per-process log files held the
+    startup lines and nothing else, and the MCP audit trail recorded nothing.
+    """
+    path = configure(_Settings(tmp_path), process="test", force=True)
+    ours = set(logging.getLogger().handlers)
+
+    # What create_app does: run migrations, which import and run alembic's env.
+    from logging.config import fileConfig
+
+    from app import logging_setup
+
+    assert logging_setup.is_configured()
+    if not logging_setup.is_configured():  # pragma: no cover - guard the guard
+        fileConfig("migrations/alembic.ini", disable_existing_loggers=False)
+
+    logging.getLogger("homehoard.after").warning("emitted after migrations")
+
+    assert set(logging.getLogger().handlers) == ours
+    assert "emitted after migrations" in open(path).read()

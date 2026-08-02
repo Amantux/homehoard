@@ -47,6 +47,7 @@ options:
   migrate_from_sqlite: false
   use_shared_postgres: false
   postgres_provision_token: ""
+  mcp_debug_tools: false
   log_level: INFO
 schema:
   disable_auth: bool
@@ -84,6 +85,11 @@ schema:
   # auto-obtain it from the add-on (recommended); set it only if auto-discovery
   # can't reach the add-on's token.
   postgres_provision_token: password?
+  # Let an AI client read this add-on's own logs over MCP to help debug a
+  # problem. Requires an API key with the 'debug' scope even inside Home
+  # Assistant: logs contain login emails and errors that can include database
+  # credentials. Turn it off again when you are done.
+  mcp_debug_tools: bool
   # How much detail goes into this add-on's log. Leave at INFO unless you are
   # chasing a problem: DEBUG is noisy and can include request paths. Raising it
   # to WARNING hides the startup summary that says which database is in use.

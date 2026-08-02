@@ -12,14 +12,21 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 import app.models  # noqa: F401 - registers every table on db.metadata
+from app import logging_setup
 from app.config import Config
 from app.extensions import db
 
 config = context.config
-if config.config_file_name is not None:
-    # disable_existing_loggers=False: don't let Alembic's fileConfig disable the
-    # app's own loggers (e.g. "homehoard") — startup runs migrations in-process, so
-    # the default (True) would silently suppress all app logging after boot.
+if config.config_file_name is not None and not logging_setup.is_configured():
+    # Only when the APP has not configured logging — i.e. the bare `alembic` CLI.
+    #
+    # disable_existing_loggers=False was not enough: fileConfig also REPLACES the
+    # root logger's handlers with the ones from alembic.ini. Startup runs
+    # migrations in-process, so it was detaching the app's stdout and file
+    # handlers a moment after they were installed. Everything logged after boot
+    # then went to Alembic's handler instead — which is why the per-process log
+    # files contained the startup lines and nothing else, and the MCP tool-call
+    # audit trail appeared to record nothing at all.
     fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = db.metadata
