@@ -160,14 +160,98 @@ async function checkIn() {
   ui.toast('Checked in')
 }
 
+
+// --- How-to videos -------------------------------------------------------
+// Two placements: on the ITEM ("how this thing works") and on a single
+// maintenance task ("how to do this job"), so the right clip is in front of you
+// when a job comes due. A video is a link or an uploaded file; the server
+// decides which links may be embedded — the UI never builds an embed URL.
+const newVideoUrl = ref('')
+const newVideoTitle = ref('')
+const videoBusy = ref(false)
+const videoError = ref('')
+// Which maintenance row has its add-a-video form open.
+const videoFor = ref(null)
+
+const itemVideos = computed(() =>
+  (item.value?.attachments || []).filter((a) => a.type === 'video'))
+
+function videoHost(url) {
+  try { return new URL(url).hostname.replace(/^www\./, '') } catch { return 'the web' }
+}
+
+async function addVideo(entryId = null) {
+  const url = newVideoUrl.value.trim()
+  if (!url) return
+  videoBusy.value = true
+  videoError.value = ''
+  const path = entryId
+    ? `/items/${id}/maintenance/${entryId}/videos`
+    : `/items/${id}/videos`
+  try {
+    await api.post(path, { url, title: newVideoTitle.value.trim() })
+    newVideoUrl.value = ''
+    newVideoTitle.value = ''
+    await loadAll()
+    ui.toast('Video added')
+  } catch (e) {
+    // Kept next to the field rather than a toast that vanishes: the message
+    // says which part of the link is wrong.
+    videoError.value = e.message || 'Could not add that video'
+  } finally {
+    videoBusy.value = false
+  }
+}
+
+async function uploadVideo(ev, entryId = null) {
+  const file = ev.target.files?.[0]
+  if (!file) return
+  videoBusy.value = true
+  videoError.value = ''
+  const form = new FormData()
+  form.append('file', file)
+  if (newVideoTitle.value.trim()) form.append('title', newVideoTitle.value.trim())
+  const path = entryId
+    ? `/items/${id}/maintenance/${entryId}/videos`
+    : `/items/${id}/videos`
+  try {
+    await api.upload(path, form)
+    newVideoTitle.value = ''
+    await loadAll()
+    ui.toast('Video uploaded')
+  } catch (e) {
+    videoError.value = e.message || 'Could not upload that video'
+  } finally {
+    videoBusy.value = false
+    ev.target.value = ''
+  }
+}
+
+async function removeVideo(v) {
+  if (!confirm(`Remove “${v.title || 'this video'}”? The item and its history are not affected.`)) return
+  try {
+    await api.del(`/videos/${v.id}`)
+    await loadAll()
+    ui.toast('Video removed')
+  } catch (e) {
+    ui.error(e.message || 'Could not remove that video')
+  }
+}
+
 async function uploadFile(file) {
   if (!file) return
   const form = new FormData()
   form.append('file', file)
   form.append('type', file.type.startsWith('image') ? 'photo' : 'attachment')
   form.append('name', file.name)
-  item.value = await api.upload(`/items/${id}/attachments`, form)
-  ui.toast('Attachment uploaded')
+  try {
+    item.value = await api.upload(`/items/${id}/attachments`, form)
+    ui.toast('Attachment uploaded')
+  } catch (e) {
+    // Previously unhandled: an oversized or rejected upload threw into a void
+    // and the user saw nothing happen at all.
+    ui.error(e.message || 'Could not upload that file')
+  }
 }
 function upload(e) { uploadFile(e.target.files[0]) }
 function onCapture(file) { showCapture.value = false; uploadFile(file) }
@@ -225,6 +309,8 @@ async function addMaint() {
         Attachments <span class="badge" style="margin-left:4px">{{ item.attachments.length }}</span></button>
       <button class="tab" :class="tab==='maintenance'&&'active'" @click="tab='maintenance'">
         Maintenance <span class="badge" style="margin-left:4px">{{ maint.entries.length }}</span></button>
+      <button class="tab" :class="tab==='videos'&&'active'" @click="tab='videos'">
+        Videos <span class="badge" style="margin-left:4px">{{ itemVideos.length }}</span></button>
       <button class="tab" :class="tab==='qr'&&'active'" @click="tab='qr'">QR codes</button>
     </div>
 
@@ -416,7 +502,23 @@ async function addMaint() {
       <table v-if="maint.entries.length">
         <thead><tr><th>Name</th><th>Scheduled</th><th>Completed</th><th>Cost</th></tr></thead>
         <tbody><tr v-for="m in maint.entries" :key="m.id">
-          <td>{{ m.name }}<div class="muted" style="font-size:0.8rem">{{ m.description }}</div></td>
+          <td>{{ m.name }}<div class="muted" style="font-size:0.8rem">{{ m.description }}</div>
+            <div v-if="m.videos && m.videos.length" class="task-videos">
+              <a v-for="v in m.videos" :key="v.id"
+                 :href="v.url || apiUrl(v.streamUrl.replace('/api/v1',''))"
+                 target="_blank" rel="noopener noreferrer" class="badge">▶ {{ v.title }}</a>
+            </div>
+            <button class="secondary sm" style="margin-top:6px"
+                    @click="videoFor = (videoFor === m.id ? null : m.id)">
+              {{ videoFor === m.id ? 'Cancel' : '+ Video' }}</button>
+            <div v-if="videoFor === m.id" class="row wrap" style="gap:6px;margin-top:6px">
+              <input v-model="newVideoUrl" placeholder="https://youtu.be/…" style="min-width:160px" />
+              <button :disabled="videoBusy" @click="addVideo(m.id); videoFor = null">Add</button>
+              <label class="secondary btnlike sm">Upload
+                <input type="file" accept="video/*" hidden :disabled="videoBusy"
+                       @change="uploadVideo($event, m.id); videoFor = null" /></label>
+            </div>
+          </td>
           <td>{{ shortDate(m.scheduledDate) }}</td>
           <td>{{ shortDate(m.completedDate) }}</td>
           <td>{{ money(m.cost) }}</td>
@@ -431,6 +533,51 @@ async function addMaint() {
         <label class="field" style="margin:0"><span>Completed</span><input type="date" v-model="newMaint.completedDate" /></label>
         <button :disabled="!newMaint.name" @click="addMaint">Add</button>
       </div>
+    </div>
+
+    <!-- VIDEOS -->
+    <div v-show="tab==='videos'" class="card">
+      <h2 style="margin:0 0 4px">How it works</h2>
+      <p class="muted" style="margin:0 0 12px;font-size:0.85rem">
+        Videos for the thing itself. For a clip about one job — changing a
+        filter, replacing a belt — add it to that task under Maintenance, so it
+        is in front of you when the job comes due.
+      </p>
+
+      <div v-if="itemVideos.length" class="video-list">
+        <div v-for="v in itemVideos" :key="v.id" class="video">
+          <video v-if="v.streamUrl" :src="apiUrl(v.streamUrl.replace('/api/v1',''))"
+                 controls preload="metadata"></video>
+          <iframe v-else-if="v.embedUrl" :src="v.embedUrl" loading="lazy"
+                  allowfullscreen referrerpolicy="no-referrer" title="How-to video"></iframe>
+          <a v-else :href="v.url" target="_blank" rel="noopener noreferrer" class="video-link">
+            ▶ Watch on {{ videoHost(v.url) }} ↗</a>
+          <div class="video-foot">
+            <span class="fill">{{ v.title }}</span>
+            <button class="secondary sm" @click="removeVideo(v)">Remove</button>
+          </div>
+        </div>
+      </div>
+
+      <p v-else class="muted" style="margin:0 0 12px">
+        No videos yet. Paste a link to a manual walkthrough or teardown — or
+        upload a clip of your own — so you can see how it works without hunting
+        for it again.
+      </p>
+
+      <div class="row wrap" style="align-items:flex-end;gap:10px">
+        <label class="field fill" style="margin:0;min-width:180px"><span>Video link</span>
+          <input v-model="newVideoUrl" placeholder="https://youtu.be/…" @keyup.enter="addVideo()" /></label>
+        <label class="field" style="margin:0;width:170px"><span>Title (optional)</span>
+          <input v-model="newVideoTitle" placeholder="e.g. Filter teardown" /></label>
+        <button :disabled="videoBusy" @click="addVideo()">
+          {{ videoBusy ? 'Adding…' : 'Add link' }}</button>
+        <label class="secondary btnlike">
+          {{ videoBusy ? 'Uploading…' : 'Upload a file' }}
+          <input type="file" accept="video/*" hidden :disabled="videoBusy" @change="uploadVideo($event)" />
+        </label>
+      </div>
+      <p v-if="videoError" class="err" style="margin:8px 0 0">{{ videoError }}</p>
     </div>
 
     <!-- QR -->

@@ -165,6 +165,7 @@ def attachment_out(a):
         "embedUrl": embed_url(a.url) if a.url else None,
         # Whether this file can be played inline, decided by the server's own
         # allowlist rather than by the client sniffing a filename.
+        "title": a.title or (a.document.title if a.document else ""),
         "streamUrl": (f"/api/v1/videos/{a.id}/stream"
                       if a.document and video_mime(a.document.title) else None),
     }

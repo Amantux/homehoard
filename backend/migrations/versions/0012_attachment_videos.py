@@ -71,12 +71,19 @@ def downgrade() -> None:
     # explicit: silently leaving rows that violate the restored constraint
     # would fail the ALTER with a confusing error instead.
     op.execute("DELETE FROM attachments WHERE document_id IS NULL")
+
+    # Everything in ONE batch. A bare DROP COLUMN of maintenance_entry_id fails
+    # on SQLite ("unknown column ... in foreign key definition") because the
+    # column is named by a foreign key: SQLite can only remove it by rebuilding
+    # the table, which is exactly what batch_alter_table does. On Postgres these
+    # are plain ALTERs. Verified by actually running the downgrade, which is how
+    # this was found.
     with op.batch_alter_table("attachments") as batch:
         batch.alter_column("document_id", existing_type=sa.String(length=36),
                            nullable=False)
-    if _has_index("attachments", "ix_attachments_maintenance_entry_id"):
-        op.drop_index("ix_attachments_maintenance_entry_id", table_name="attachments")
-    if _has_column("attachments", "maintenance_entry_id"):
-        op.drop_column("attachments", "maintenance_entry_id")
-    if _has_column("attachments", "url"):
-        op.drop_column("attachments", "url")
+        if _has_index("attachments", "ix_attachments_maintenance_entry_id"):
+            batch.drop_index("ix_attachments_maintenance_entry_id")
+        if _has_column("attachments", "maintenance_entry_id"):
+            batch.drop_column("maintenance_entry_id")
+        if _has_column("attachments", "url"):
+            batch.drop_column("url")

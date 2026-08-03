@@ -200,6 +200,10 @@ def _register_security_headers(app):
         # uses many inline style attributes; scripts stay 'self'.
         csp = (
             "default-src 'self'; "
+            # The ONLY third-party relaxation: the two hosts services/videos.py
+            # will produce an embed URL for. Every other link opens in a new tab
+            # instead of being framed, so no other origin is ever embedded.
+            "frame-src https://www.youtube-nocookie.com https://player.vimeo.com; "
             "img-src 'self' data: blob:; "
             "style-src 'self' 'unsafe-inline'; "
             "script-src 'self'; "
@@ -475,7 +479,14 @@ def _register_errors(app):
 
     @app.errorhandler(413)
     def too_large(e):
-        return jsonify({"error": "upload too large"}), 413
+        # Names the limit and how to change it: "upload too large" with no
+        # number is a dead end, and video hits this far more often than photos.
+        limit = app.config.get("MAX_UPLOAD_MB", 50)
+        return jsonify({
+            "error": f"that file is larger than the {limit} MB upload limit. "
+                     "Link to the video instead, or raise max_upload_mb in the "
+                     "add-on configuration."
+        }), 413
 
     @app.errorhandler(429)
     def rate_limited(e):

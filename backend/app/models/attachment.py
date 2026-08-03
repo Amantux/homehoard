@@ -69,3 +69,8 @@ class Attachment(IDMixin, TimestampMixin, db.Model):
 
     # Set for a link; empty for a file. 2048 is the practical URL ceiling.
     url: Mapped[str] = mapped_column(String(2048), default="", server_default="")
+
+    # Display name. Lives here rather than only on Document because a LINK has
+    # no Document — and giving links a file-less Document row purely to hold a
+    # title made the "file or link, never both" invariant incoherent.
+    title: Mapped[str] = mapped_column(String(255), default="", server_default="")
