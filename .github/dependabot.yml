@@ -9,6 +9,15 @@ updates:
     groups:
       backend-python:
         update-types: ["minor", "patch"]   # majors get their own PR for review
+    ignore:
+      # mcp 2.x REMOVED mcp.server.fastmcp, which the MCP server imports, so a
+      # major bump breaks it outright — verified by installing 2.0.0 in a clean
+      # venv: `from mcp.server.fastmcp import FastMCP` raises ModuleNotFoundError.
+      # requirements.txt pins 1.27.0 and says so, but Dependabot reopened the
+      # same breaking PR anyway (keeping the warning comment above the new pin).
+      # Remove this once the server is ported to the 2.x API.
+      - dependency-name: "mcp"
+        update-types: ["version-update:semver-major"]
 
   # Vue frontend
   - package-ecosystem: "npm"
