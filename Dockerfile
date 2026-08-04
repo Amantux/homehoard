@@ -1,5 +1,5 @@
 # --- Stage 1: build the Vue frontend ---
-FROM node:20-alpine AS frontend
+FROM node:26-alpine AS frontend
 WORKDIR /build
 COPY frontend/package*.json ./
 RUN npm install --no-audit --no-fund
