@@ -1,5 +1,6 @@
 import js from '@eslint/js'
 import vue from 'eslint-plugin-vue'
+import globals from 'globals'
 
 export default [
   { ignores: ['dist/**', 'node_modules/**'] },
@@ -12,19 +13,12 @@ export default [
     languageOptions: {
       ecmaVersion: 2023,
       sourceType: 'module',
+      // The standard browser set, not a hand-kept list. The hand-kept one had
+      // silently drifted — eslint 9 tolerated `location`, `File`, `confirm`,
+      // `requestAnimationFrame` and `cancelAnimationFrame` being absent; eslint
+      // 10 does not, and each would have had to be added by hand as it broke.
       globals: {
-        window: 'readonly',
-        document: 'readonly',
-        localStorage: 'readonly',
-        navigator: 'readonly',
-        fetch: 'readonly',
-        setTimeout: 'readonly',
-        clearTimeout: 'readonly',
-        URL: 'readonly',
-        Blob: 'readonly',
-        FormData: 'readonly',
-        console: 'readonly',
-        TextDecoder: 'readonly',
+        ...globals.browser,
         // Injected at build time by vite.config.js (define).
         __APP_VERSION__: 'readonly',
       },
