@@ -19,7 +19,7 @@ qrcode[pil]==7.4.2
 # >=23.0.0 for CVE-2024-6827 (Transfer-Encoding request smuggling).
 gunicorn>=23.0.0
 # MCP server exposed to Home Assistant (runs alongside the app in the same container)
-mcp==1.27.0  # pin: newer mcp dropped mcp.server.fastmcp (breaks the MCP server + CI)
+mcp==1.28.1  # pin: newer mcp dropped mcp.server.fastmcp (breaks the MCP server + CI)
 uvicorn>=0.29.0
 httpx>=0.27.0
 # AI providers (lazy-imported by services/ai; only loaded when that provider is
