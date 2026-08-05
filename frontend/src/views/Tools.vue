@@ -56,7 +56,8 @@ onMounted(loadChatDefault)
 
 // Async-job AI preference: a provider+model default for background jobs, separate
 // from chat. Blank provider = same as chat. A per-run choice still wins.
-const jobAi = ref({ enrich: { provider: '', model: '' }, organize: { provider: '', model: '' } })
+const blankJobArea = () => ({ provider: '', model: '', baseUrl: '', apiKey: '', apiKeySet: false })
+const jobAi = ref({ enrich: blankJobArea(), organize: blankJobArea() })
 const jobAiSaving = ref(false)
 const JOB_AREAS = [
   { k: 'enrich', l: 'Enrichment (descriptions)' },
@@ -68,9 +69,24 @@ async function loadJobAi() {
 async function saveJobAi() {
   jobAiSaving.value = true
   try {
-    jobAi.value = await api.put('/settings/ai/jobs', jobAi.value)
+    // Send the typed key only when one was typed: blank means "leave the stored
+    // key alone", so posting '' on every save would wipe it.
+    const body = {}
+    for (const a of ['enrich', 'organize']) {
+      const v = jobAi.value[a]
+      body[a] = { provider: v.provider, model: v.model, baseUrl: v.baseUrl }
+      if (v.apiKey) body[a].apiKey = v.apiKey
+      if (v.clearApiKey) body[a].clearApiKey = true
+    }
+    jobAi.value = await api.put('/settings/ai/jobs', body)
     ui.toast('Saved background-task AI')
   } catch (e) { ui.error(e.message || 'Could not save') } finally { jobAiSaving.value = false }
+}
+
+function clearJobKey(area) {
+  jobAi.value[area].apiKey = ''
+  jobAi.value[area].clearApiKey = true
+  jobAi.value[area].apiKeySet = false
 }
 onMounted(loadJobAi)
 
@@ -155,8 +171,13 @@ function copyAiSettings() {
     baseUrl: ai.value.baseUrl || '',
     model: ai.value.model || '',
     stream: !!chatStreamDefault.value,
-    jobEnrich: jobAi.value.enrich || { provider: '', model: '' },
-    jobOrganize: jobAi.value.organize || { provider: '', model: '' },
+    // Named fields ONLY. Spreading the whole area object used to be safe and
+    // stopped being safe the moment it could hold a typed apiKey — that would
+    // have ridden along inside a keyless AICFG1 code. baseUrl is deliberately
+    // excluded too: the async server is specific to this machine, and the code
+    // is meant to be pasted into the app running on a different one.
+    jobEnrich: { provider: jobAi.value.enrich?.provider || '', model: jobAi.value.enrich?.model || '' },
+    jobOrganize: { provider: jobAi.value.organize?.provider || '', model: jobAi.value.organize?.model || '' },
   }
   const withKey = syncIncludeKey.value && !!syncKeyInput.value.trim()
   if (withKey) cfg.apiKey = syncKeyInput.value.trim()
@@ -405,8 +426,11 @@ const actions = [
 
   <div v-if="canEditAi" class="card">
     <h2>AI for background tasks</h2>
-    <p class="muted">Optionally run background jobs on a different model than chat — e.g. a
-      cheap or local model for bulk work. <strong>Same as chat</strong> uses the provider above.
+    <p class="muted">Run background jobs on a different model — and a different
+      <strong>server</strong> — from chat. The usual setup is a fast hosted model for chat
+      and a small local model on your own machine for the slow bulk work, which can take as
+      long as it likes because nobody is waiting on it.
+      <strong>Same as chat</strong> uses the provider above.
       A per-run choice (on <em>AI descriptions</em> / <em>AI organize</em>) still wins.</p>
     <div v-for="area in JOB_AREAS" :key="area.k" style="max-width:520px;margin-bottom:14px">
       <div class="muted" style="font-size:0.85rem;font-weight:600;margin-bottom:4px">{{ area.l }}</div>
@@ -424,6 +448,16 @@ const actions = [
         <input v-else v-model="jobAi[area.k].model" placeholder="model (optional)" style="flex:1" />
         <button type="button" class="secondary sm" :disabled="jobModelsLoading[area.k]"
                 @click="listJobModels(area.k)">{{ jobModelsLoading[area.k] ? '…' : 'List' }}</button>
+      </div>
+      <!-- Its own server + key. Blank = the same one chat uses. -->
+      <div v-if="jobAi[area.k].provider" class="row job-row" style="gap:8px;margin-top:6px">
+        <input v-model="jobAi[area.k].baseUrl" style="flex:2"
+               placeholder="server, e.g. http://192.168.1.50:11434 (blank = same as chat)" />
+        <input v-model="jobAi[area.k].apiKey" type="password" style="flex:1"
+               :placeholder="jobAi[area.k].apiKeySet
+                 ? '•••• (saved — leave blank to keep)' : 'API key (optional)'" />
+        <button v-if="jobAi[area.k].apiKeySet" type="button" class="secondary sm"
+                @click="clearJobKey(area.k)">Clear</button>
       </div>
     </div>
     <div class="row" style="justify-content:flex-end;max-width:520px">

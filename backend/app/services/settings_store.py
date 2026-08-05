@@ -18,11 +18,18 @@ AI_KEYS = (
     "claude_model", "claude_api_key",
     # Chat UX: household default for streaming responses ("true"/"false").
     "chat_streaming",
-    # Async-job AI preference: a provider+model default for background work,
-    # separate from the interactive chat provider. "enrich" = enrichment jobs;
-    # "organize" = the categorize + cluster jobs. Blank provider = same as chat.
-    "enrich_provider", "enrich_model",
-    "organize_provider", "organize_model",
+    # Async-job AI preference: a provider, model, SERVER and key for background
+    # work, separate from the interactive chat provider. "enrich" = enrichment
+    # jobs; "organize" = the categorize + cluster jobs. Blank = same as chat.
+    #
+    # The base URL matters on its own: the usual setup is a fast hosted model for
+    # chat and a small local model on your own box for the slow async work.
+    # Without a per-area host that is only possible when the two happen to be
+    # different PROVIDERS — two Ollama servers would both resolve the one shared
+    # ollama_url. Anything missing from this allowlist is silently dropped by
+    # set_values(), so a new key that is not here looks saved and is not.
+    "enrich_provider", "enrich_model", "enrich_base_url", "enrich_api_key",
+    "organize_provider", "organize_model", "organize_base_url", "organize_api_key",
 )
 
 
