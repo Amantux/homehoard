@@ -93,11 +93,15 @@ def effective(config=None) -> SimpleNamespace:
     return effective_settings(cfg, get_overrides())
 
 
-def effective_for(provider=None, model=None, config=None) -> SimpleNamespace:
-    """The effective config with a one-off provider/model override for a single run
-    (e.g. a background job). Every provider's saved credentials are already resolved
-    on the namespace, so switching the active provider still uses its stored key/URL;
-    ``model`` overrides only the chosen provider's model."""
+def effective_for(provider=None, model=None, config=None,
+                  base_url=None, api_key=None) -> SimpleNamespace:
+    """The effective config with a one-off override for a single run (e.g. a
+    background job). Every provider's saved credentials are already resolved on
+    the namespace, so switching the active provider still uses its stored
+    key/URL; ``model`` overrides only the chosen provider's model.
+
+    ``base_url``/``api_key`` point that run at a DIFFERENT server — a local box
+    doing the slow async work while chat stays on something faster."""
     eff = effective(config)
     if provider:
         eff.AI_PROVIDER = provider.strip().lower()
@@ -106,18 +110,59 @@ def effective_for(provider=None, model=None, config=None) -> SimpleNamespace:
                 "claude": "CLAUDE_MODEL", "ollama_cloud": "OLLAMA_CLOUD_MODEL"}.get(eff.AI_PROVIDER)
         if attr:
             setattr(eff, attr, model.strip())
+    if base_url or api_key:
+        _apply_endpoint_override(eff, base_url, api_key)
     return eff
 
 
+def _apply_endpoint_override(eff, base_url, api_key) -> None:
+    """Point the resolved config at a different server / key.
+
+    Writes the attribute the SELECTED provider actually reads, so an override can
+    never land on the wrong provider's field — the same per-provider namespacing
+    the stored config follows.
+    """
+    p = (getattr(eff, "AI_PROVIDER", "") or "").strip().lower()
+    if p == "ollama":
+        if base_url:
+            eff.OLLAMA_HOST = base_url
+        if api_key:
+            eff.OLLAMA_API_KEY = api_key
+    elif p == "ollama_cloud":
+        # The cloud host is normally fixed; an override still applies, so a
+        # self-hosted gateway speaking the same API can be pointed at.
+        if base_url:
+            eff.OLLAMA_CLOUD_HOST = base_url
+        if api_key:
+            eff.OLLAMA_CLOUD_API_KEY = api_key
+    elif p == "openai":
+        if base_url:
+            eff.OPENAI_BASE_URL = base_url
+        if api_key:
+            eff.OPENAI_API_KEY = api_key
+    elif p == "claude" and api_key:
+        eff.ANTHROPIC_API_KEY = api_key   # Claude has no configurable base URL
+
+
 # --- async-job AI preference ---------------------------------------------
-def job_preference(kind: str) -> tuple[str | None, str | None]:
-    """Stored async default ``(provider, model)`` for a background job. ``enrich``
-    has its own preference; the organize jobs (``categorize`` / ``cluster``) share
-    the ``organize`` preference. Either element is None when unset (→ same as the
-    interactive chat provider)."""
+JOB_AREAS = ("enrich", "organize")
+
+
+def job_override(kind: str) -> dict:
+    """Stored async override for a background job: provider/model/base_url/api_key.
+
+    ``enrich`` has its own preference; the organize jobs (``categorize`` /
+    ``cluster``) share the ``organize`` one. Blank fields mean "same as chat", so
+    an unset area behaves exactly as before.
+    """
     prefix = "enrich" if kind == "enrich" else "organize"
     over = get_overrides()
-    return (over.get(f"{prefix}_provider") or None, over.get(f"{prefix}_model") or None)
+    return {
+        "provider": over.get(f"{prefix}_provider") or None,
+        "model": over.get(f"{prefix}_model") or None,
+        "base_url": over.get(f"{prefix}_base_url") or None,
+        "api_key": over.get(f"{prefix}_api_key") or None,
+    }
 
 
 # --- writes ---------------------------------------------------------------

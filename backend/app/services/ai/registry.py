@@ -55,10 +55,12 @@ def get_provider_or_none(config=None) -> AIProvider | None:
         return None
 
 
-def provider_for(provider=None, model=None) -> AIProvider:
+def provider_for(provider=None, model=None, base_url=None, api_key=None) -> AIProvider:
     """Build a provider for a single run with an optional provider/model override
-    (falls back to the configured one). Raises ProviderError if unavailable."""
-    eff = effective_for(provider, model)
+    (falls back to the configured one). ``base_url``/``api_key`` point the run at
+    a different server — used by background jobs with their own SLM box.
+    Raises ProviderError if unavailable."""
+    eff = effective_for(provider, model, base_url=base_url, api_key=api_key)
     name = _configured_name(eff)
     if not name:
         raise ProviderError("No AI provider configured.")
@@ -76,14 +78,32 @@ def resolve_job_provider(kind: str, opts: dict | None = None) -> AIProvider | No
     provider). Precedence: per-run ``opts`` (provider/model) > the stored async
     preference for this kind. Raises ``ProviderError`` if the chosen provider is
     unavailable."""
-    from .provider_config import job_preference
+    from .provider_config import job_override
+    from .url_guard import llm_url_ok
+
     opts = opts or {}
-    pref_provider, pref_model = job_preference(kind)
-    provider = opts.get("provider") or pref_provider
-    model = opts.get("model") or pref_model
-    if provider or model:
-        return provider_for(provider, model)
-    return None
+    pref = job_override(kind)
+    provider = opts.get("provider") or pref["provider"]
+    model = opts.get("model") or pref["model"]
+    base_url = (opts.get("baseUrl") or pref["base_url"] or "").strip()
+    api_key = opts.get("apiKey") or pref["api_key"]
+    if not (provider or model or base_url or api_key):
+        return None
+    # Validated at the point of USE, not only where it was saved: this value can
+    # also arrive through per-run opts, which never pass the settings guard.
+    if base_url:
+        ok, err = llm_url_ok(base_url)
+        if not ok:
+            raise ProviderError(f"the async AI server URL is not allowed: {err}")
+    # Only pass the endpoint override when there IS one, so the common
+    # provider/model-only call keeps its original shape — the same convention
+    # this module already follows for provider=.
+    extra = {}
+    if base_url:
+        extra["base_url"] = base_url
+    if api_key:
+        extra["api_key"] = api_key
+    return provider_for(provider, model, **extra)
 
 
 def list_providers(config=None) -> list[dict]:

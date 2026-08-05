@@ -153,6 +153,16 @@ def put_chat_settings():
     return jsonify({"stream": stream})
 
 
+def _job_ai_view(o) -> dict:
+    """UI view of the async-job AI settings. Never includes the API key value —
+    only whether one is stored."""
+    return {area: {"provider": o.get(f"{area}_provider", ""),
+                   "model": o.get(f"{area}_model", ""),
+                   "baseUrl": o.get(f"{area}_base_url", ""),
+                   "apiKeySet": bool(o.get(f"{area}_api_key", ""))}
+            for area in ("enrich", "organize")}
+
+
 @bp.get("/settings/ai/jobs")
 @owner_required
 def get_ai_job_settings():
@@ -163,11 +173,7 @@ def get_ai_job_settings():
     if denied:
         return denied
     from ..services.settings_store import get_overrides
-    o = get_overrides()
-    return jsonify({
-        "enrich": {"provider": o.get("enrich_provider", ""), "model": o.get("enrich_model", "")},
-        "organize": {"provider": o.get("organize_provider", ""), "model": o.get("organize_model", "")},
-    })
+    return jsonify(_job_ai_view(get_overrides()))
 
 
 @bp.put("/settings/ai/jobs")
@@ -180,6 +186,7 @@ def put_ai_job_settings():
     if denied:
         return denied
     from ..services.ai import provider_config
+    from ..services.ai.url_guard import llm_url_ok
     from ..services.settings_store import get_overrides, set_values
 
     data = request.get_json(force=True) or {}
@@ -195,13 +202,25 @@ def put_ai_job_settings():
             pairs[f"{area}_provider"] = prov
         if "model" in blk:
             pairs[f"{area}_model"] = str(blk.get("model") or "")[:100]
+        if "baseUrl" in blk:
+            url = str(blk.get("baseUrl") or "").strip()[:300]
+            # Refused here as well as at the point of use: rejecting on save is
+            # what makes the mistake visible while the user is looking at the
+            # field, rather than days later in a failed job.
+            if url:
+                ok, err = llm_url_ok(url)
+                if not ok:
+                    return jsonify({"error": f"{area}: {err}"}), 422
+            pairs[f"{area}_base_url"] = url
+        # Blank means "leave the stored key alone" — the form never receives it
+        # back, so treating blank as a clear would wipe it on every save.
+        if blk.get("clearApiKey"):
+            pairs[f"{area}_api_key"] = ""
+        elif blk.get("apiKey"):
+            pairs[f"{area}_api_key"] = str(blk["apiKey"])
     if pairs:
         set_values(pairs)
-    o = get_overrides()
-    return jsonify({
-        "enrich": {"provider": o.get("enrich_provider", ""), "model": o.get("enrich_model", "")},
-        "organize": {"provider": o.get("organize_provider", ""), "model": o.get("organize_model", "")},
-    })
+    return jsonify(_job_ai_view(get_overrides()))
 
 
 @bp.get("/currency")

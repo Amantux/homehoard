@@ -10,16 +10,18 @@ from app.services.settings_store import set_values
 
 def test_job_preference_unset_is_none(app):
     with app.app_context():
-        assert pc.job_preference("enrich") == (None, None)
-        assert pc.job_preference("categorize") == (None, None)
+        for kind in ("enrich", "categorize"):
+            assert pc.job_override(kind) == {
+                "provider": None, "model": None, "base_url": None, "api_key": None}
 
 
 def test_organize_preference_shared_by_categorize_and_cluster(app):
     with app.app_context():
         set_values({"organize_provider": "ollama", "organize_model": "llama3.1"})
-        assert pc.job_preference("categorize") == ("ollama", "llama3.1")
-        assert pc.job_preference("cluster") == ("ollama", "llama3.1")
-        assert pc.job_preference("enrich") == (None, None)   # enrich is separate
+        for kind in ("categorize", "cluster"):
+            got = pc.job_override(kind)
+            assert (got["provider"], got["model"]) == ("ollama", "llama3.1")
+        assert pc.job_override("enrich")["provider"] is None   # enrich is separate
 
 
 def test_resolve_returns_none_without_pref_or_opts(app):
@@ -45,10 +47,12 @@ def test_per_run_opts_win_over_preference(app):
 
 def test_job_settings_endpoint_roundtrip_and_validation(auth_client):
     r = auth_client.put("/api/v1/settings/ai/jobs", json={
-        "enrich": {"provider": "ollama", "model": "m1"},
+        "enrich": {"provider": "ollama", "model": "m1",
+                                       "baseUrl": "", "apiKeySet": False},
         "organize": {"provider": "", "model": ""}})
     assert r.status_code == 200
-    assert r.get_json()["enrich"] == {"provider": "ollama", "model": "m1"}
+    assert r.get_json()["enrich"] == {"provider": "ollama", "model": "m1",
+                                       "baseUrl": "", "apiKeySet": False}
     assert auth_client.get("/api/v1/settings/ai/jobs").get_json()["enrich"]["provider"] == "ollama"
 
     bad = auth_client.put("/api/v1/settings/ai/jobs", json={"enrich": {"provider": "bogus"}})
