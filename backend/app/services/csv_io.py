@@ -10,6 +10,7 @@ from datetime import datetime
 
 from ..extensions import db
 from ..models import Item, Label, Location, ItemField
+from . import money
 
 HEADERS = [
     "HB.import_ref",
@@ -187,13 +188,13 @@ def import_items(group_id, text: str) -> int:
             barcode=(row.get("HB.barcode") or "").strip()[:64],
             notes=row.get("HB.notes", ""),
             purchase_from=row.get("HB.purchase_from", ""),
-            purchase_price=float(row.get("HB.purchase_price") or 0),
+            purchase_price=money.to_money(row.get("HB.purchase_price")),
             purchase_date=_dt(row.get("HB.purchase_time")),
             lifetime_warranty=_bool(row.get("HB.lifetime_warranty")),
             warranty_expires=_dt(row.get("HB.warranty_expires")),
             warranty_details=row.get("HB.warranty_details", ""),
             sold_to=row.get("HB.sold_to", ""),
-            sold_price=float(row.get("HB.sold_price") or 0),
+            sold_price=money.to_money(row.get("HB.sold_price")),
             sold_date=_dt(row.get("HB.sold_time")),
             sold_notes=row.get("HB.sold_notes", ""),
         )

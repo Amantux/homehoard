@@ -7,6 +7,7 @@ from ..extensions import db
 from ..models import GroupInvitation, Item, Label, Location, User
 from ..auth import login_required, owner_required, current_group
 from ..schemas.serializers import group_out
+from ..services import money
 
 bp = Blueprint("groups", __name__)
 
@@ -54,7 +55,7 @@ def create_invitation():
 def statistics():
     group = current_group()
     items = db.session.query(Item).filter_by(group_id=group.id).all()
-    total_price = sum((i.purchase_price or 0) * (i.quantity or 1) for i in items)
+    total_price = money.total((i.purchase_price, i.quantity) for i in items)
     return jsonify(
         {
             "totalItems": len(items),
@@ -66,7 +67,7 @@ def statistics():
             "totalWithWarranty": sum(
                 1 for i in items if i.lifetime_warranty or i.warranty_expires
             ),
-            "totalItemPrice": total_price,
+            "totalItemPrice": money.out(total_price),
         }
     )
 
@@ -84,10 +85,11 @@ def purchase_price_stats():
     buckets = {}
     for i in items:
         key = i.purchase_date.strftime("%Y-%m")
-        buckets[key] = buckets.get(key, 0) + (i.purchase_price or 0) * (i.quantity or 1)
-    entries = [{"date": k, "value": v} for k, v in sorted(buckets.items())]
-    total = sum(b for b in buckets.values())
-    return jsonify({"total": total, "entries": entries})
+        buckets[key] = buckets.get(key, money.ZERO) + money.line_total(
+            i.purchase_price, i.quantity)
+    entries = [{"date": k, "value": money.out(v)} for k, v in sorted(buckets.items())]
+    total = sum(buckets.values(), money.ZERO)
+    return jsonify({"total": money.out(total), "entries": entries})
 
 
 @bp.get("/groups/statistics/labels")
@@ -100,8 +102,8 @@ def label_stats():
             {
                 "id": lbl.id,
                 "name": lbl.name,
-                "total": sum((i.purchase_price or 0) * (i.quantity or 1)
-                             for i in lbl.items),
+                "total": money.out(money.total(
+                    (i.purchase_price, i.quantity) for i in lbl.items)),
             }
             for lbl in labels
         ]
@@ -118,8 +120,8 @@ def location_stats():
             {
                 "id": loc.id,
                 "name": loc.name,
-                "total": sum((i.purchase_price or 0) * (i.quantity or 1)
-                             for i in loc.items),
+                "total": money.out(money.total(
+                    (i.purchase_price, i.quantity) for i in loc.items)),
             }
             for loc in locs
         ]

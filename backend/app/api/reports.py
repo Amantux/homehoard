@@ -19,6 +19,7 @@ from ..extensions import db
 from ..models import Item
 from ..schemas.serializers import iso
 from ..services.csv_io import _csv_safe
+from ..services import money
 
 bp = Blueprint("reports", __name__)
 
@@ -26,7 +27,7 @@ _EXPIRING_SOON_DAYS = 60
 
 
 def _value(i) -> float:
-    return round((i.purchase_price or 0) * (i.quantity or 1), 2)
+    return money.out(money.line_total(i.purchase_price, i.quantity))
 
 
 def _warranty_status(i, now) -> str:
@@ -62,7 +63,7 @@ def _row(i, now):
         "serialNumber": i.serial_number or "",
         "purchaseFrom": i.purchase_from or "",
         "purchaseDate": iso(i.purchase_date),
-        "purchasePrice": i.purchase_price or 0,
+        "purchasePrice": money.out(i.purchase_price) or 0,
         "quantity": i.quantity or 1,
         "lineValue": _value(i),
         "insured": bool(i.insured),

@@ -1,11 +1,13 @@
 from datetime import datetime
 
+from decimal import Decimal
+
 from sqlalchemy import (String, Text, Boolean, Float, Integer, DateTime, ForeignKey,
                         Index, text)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..extensions import db
-from .base import IDMixin, TimestampMixin
+from .base import MONEY, IDMixin, TimestampMixin
 from .label import item_labels
 
 
@@ -42,12 +44,13 @@ class Item(IDMixin, TimestampMixin, db.Model):
     barcode: Mapped[str] = mapped_column(String(64), default="", index=True)
 
     # Purchase
-    purchase_price: Mapped[float] = mapped_column(Float, default=0.0)
+    # Money is Decimal in the DB, float on the wire (services.money).
+    purchase_price: Mapped[Decimal] = mapped_column(MONEY, default=Decimal("0.00"))
     purchase_from: Mapped[str] = mapped_column(String(255), default="")
     purchase_date: Mapped[datetime] = mapped_column(DateTime, nullable=True)
 
     # Sold
-    sold_price: Mapped[float] = mapped_column(Float, default=0.0)
+    sold_price: Mapped[Decimal] = mapped_column(MONEY, default=Decimal("0.00"))
     sold_to: Mapped[str] = mapped_column(String(255), default="")
     sold_date: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     sold_notes: Mapped[str] = mapped_column(Text, default="")

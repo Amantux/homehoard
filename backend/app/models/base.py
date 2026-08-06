@@ -2,8 +2,14 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import String, DateTime
+from sqlalchemy import String, DateTime, Numeric
 from sqlalchemy.orm import Mapped, mapped_column
+
+
+# Money is Numeric, never Float — one definition so every price column agrees.
+# 12,2 comfortably covers a household item and leaves room for a currency with
+# no decimal subunit being stored as whole numbers.
+MONEY = Numeric(12, 2)
 
 
 def gen_uuid() -> str:

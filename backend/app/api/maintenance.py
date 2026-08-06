@@ -6,6 +6,7 @@ from ..extensions import db
 from ..models import Item, MaintenanceEntry
 from ..auth import login_required, current_group
 from ..schemas.serializers import maintenance_out
+from ..services import money
 
 bp = Blueprint("maintenance", __name__)
 
@@ -59,7 +60,9 @@ def all_maintenance():
     return jsonify(
         {
             "entries": out,
-            "costTotal": sum(e.cost or 0 for e in entries if e.completed_date),
+            "costTotal": money.out(sum(
+                (e.cost or money.ZERO) for e in entries if e.completed_date),
+            ),
         }
     )
 
@@ -74,13 +77,13 @@ def list_entries(item_id):
         reverse=True,
     )
     completed = [e for e in entries if e.completed_date]
-    cost = sum(e.cost or 0 for e in completed)
-    avg = cost / len(completed) if completed else 0
+    cost = sum((e.cost or money.ZERO) for e in completed) or money.ZERO
+    avg = (cost / len(completed)) if completed else money.ZERO
     return jsonify(
         {
             "entries": [maintenance_out(e) for e in entries],
-            "costTotal": cost,
-            "costAverage": avg,
+            "costTotal": money.out(cost),
+            "costAverage": money.out(avg),
         }
     )
 
@@ -93,7 +96,7 @@ def create_entry(item_id):
     entry = MaintenanceEntry(
         name=data.get("name", ""),
         description=data.get("description", ""),
-        cost=data.get("cost", 0) or 0,
+        cost=money.to_money(data.get("cost")),
         scheduled_date=_parse_dt(data.get("scheduledDate")),
         completed_date=_parse_dt(data.get("completedDate")),
         item_id=item.id,
@@ -116,7 +119,7 @@ def update_entry(item_id, entry_id):
     if "description" in data:
         entry.description = data["description"]
     if "cost" in data:
-        entry.cost = data["cost"] or 0
+        entry.cost = money.to_money(data["cost"])
     if "scheduledDate" in data:
         entry.scheduled_date = _parse_dt(data["scheduledDate"])
     if "completedDate" in data:

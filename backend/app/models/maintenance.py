@@ -1,10 +1,11 @@
 from datetime import datetime
+from decimal import Decimal
 
-from sqlalchemy import String, Text, Float, DateTime, ForeignKey
+from sqlalchemy import String, Text, DateTime, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..extensions import db
-from .base import IDMixin, TimestampMixin
+from .base import MONEY, IDMixin, TimestampMixin
 
 
 class MaintenanceEntry(IDMixin, TimestampMixin, db.Model):
@@ -12,7 +13,8 @@ class MaintenanceEntry(IDMixin, TimestampMixin, db.Model):
 
     name: Mapped[str] = mapped_column(String(255))
     description: Mapped[str] = mapped_column(Text, default="")
-    cost: Mapped[float] = mapped_column(Float, default=0.0)
+    # Money is Decimal in the DB, float on the wire (services.money).
+    cost: Mapped[Decimal] = mapped_column(MONEY, default=Decimal("0.00"))
     scheduled_date: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     completed_date: Mapped[datetime] = mapped_column(DateTime, nullable=True)
 

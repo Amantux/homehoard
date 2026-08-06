@@ -11,6 +11,7 @@ from ..auth import login_required, current_group
 from ..schemas.serializers import item_out, item_summary
 from ..services.holdings import ensure_holding, resync_item, primary_holding
 from .lookup import location_path_str
+from ..services import money
 
 bp = Blueprint("items", __name__)
 
@@ -92,9 +93,14 @@ def _apply(item: Item, data: dict):
         "lifetimeWarranty": "lifetime_warranty",
         "warrantyDetails": "warranty_details",
     }
+    # Money fields are quantized to 2dp on the way in rather than assigned raw:
+    # a client sending 19.999 (or "19.99") should be stored as a clean Decimal,
+    # not whatever the driver makes of it.
+    _MONEY_FIELDS = {"purchase_price", "sold_price"}
     for key, attr in simple.items():
         if key in data and data[key] is not None:
-            setattr(item, attr, data[key])
+            value = money.to_money(data[key]) if attr in _MONEY_FIELDS else data[key]
+            setattr(item, attr, value)
     # barcode is String(64); a pasted 2D/QR value would overflow it on Postgres.
     if item.barcode and len(item.barcode) > 64:
         item.barcode = item.barcode[:64]

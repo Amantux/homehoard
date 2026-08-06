@@ -2,6 +2,7 @@
 import json
 from datetime import datetime, date
 from ..services.videos import embed_url, video_mime
+from ..services import money
 
 
 def iso(dt):
@@ -120,8 +121,8 @@ def location_out(loc, with_items=True):
     if with_items:
         data["items"] = [item_summary(h.item) | {"quantityHere": h.quantity}
                          for h in holdings]
-        data["totalPrice"] = sum((h.item.purchase_price or 0) * (h.quantity or 1)
-                                 for h in holdings)
+        data["totalPrice"] = money.out(money.total(
+            (h.item.purchase_price, h.quantity) for h in holdings))
     return data
 
 
@@ -176,7 +177,7 @@ def maintenance_out(m):
         "id": m.id,
         "name": m.name,
         "description": m.description,
-        "cost": m.cost,
+        "cost": money.out(m.cost),
         "scheduledDate": iso(m.scheduled_date),
         "completedDate": iso(m.completed_date),
         "itemId": m.item_id,
@@ -209,7 +210,7 @@ def item_summary(i):
         "insured": i.insured,
         "archived": i.archived,
         "assetId": _fmt_asset(i.asset_id),
-        "purchasePrice": i.purchase_price,
+        "purchasePrice": money.out(i.purchase_price),
         "imageId": primary.document_id if primary else None,
         "location": location_summary(i.location) if i.location else None,
         "bin": bin_summary(i.bin) if i.bin else None,
@@ -233,7 +234,7 @@ def item_out(i):
             "purchaseFrom": i.purchase_from,
             "purchaseDate": iso(i.purchase_date),
             "syncChildLocations": i.sync_child_locations,
-            "soldPrice": i.sold_price,
+            "soldPrice": money.out(i.sold_price),
             "soldTo": i.sold_to,
             "soldDate": iso(i.sold_date),
             "soldNotes": i.sold_notes,
@@ -305,8 +306,8 @@ def bin_out(b):
     data["items"] = [item_summary(h.item) | {"quantityHere": h.quantity}
                      for h in holdings]
     data["itemCount"] = len(holdings)
-    data["totalPrice"] = sum((h.item.purchase_price or 0) * (h.quantity or 1)
-                             for h in holdings)
+    data["totalPrice"] = money.out(money.total(
+        (h.item.purchase_price, h.quantity) for h in holdings))
     data["attachments"] = [attachment_out(a) for a in b.attachments]
     return data
 

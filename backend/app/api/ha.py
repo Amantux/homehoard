@@ -14,6 +14,7 @@ from ..extensions import db
 from ..models import Item, Bin, Label, Location, MaintenanceEntry
 from ..auth import login_required, current_group
 from .lookup import item_where
+from ..services import money
 
 bp = Blueprint("ha", __name__)
 
@@ -61,9 +62,9 @@ def summary():
     now = datetime.utcnow()
     items = db.session.query(Item).filter_by(group_id=gid).all()
 
-    total_value = sum((i.purchase_price or 0) * (i.quantity or 1) for i in items)
-    insured_value = sum(
-        (i.purchase_price or 0) * (i.quantity or 1) for i in items if i.insured
+    total_value = money.total((i.purchase_price, i.quantity) for i in items)
+    insured_value = money.total(
+        (i.purchase_price, i.quantity) for i in items if i.insured
     )
 
     warranty_items = _active_warranty_items(gid)
@@ -116,8 +117,8 @@ def summary():
                 "bins": db.session.query(Bin).filter_by(group_id=gid).count(),
                 "locations": db.session.query(Location).filter_by(group_id=gid).count(),
                 "labels": db.session.query(Label).filter_by(group_id=gid).count(),
-                "value": round(total_value, 2),
-                "insuredValue": round(insured_value, 2),
+                "value": money.out(total_value),
+                "insuredValue": money.out(insured_value),
                 "withWarranty": sum(
                     1 for i in items if i.lifetime_warranty or i.warranty_expires
                 ),
