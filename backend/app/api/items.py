@@ -29,7 +29,11 @@ def _sync_holdings_from_item_form(item, data):
         if primary:
             primary.location_id = item.location_id
             primary.bin_id = item.bin_id
-    if "quantity" in data and len(item.holdings) == 1:
+    # `is not None`, not just `in data`: a JS form serialiser sends null for an
+    # untouched field, and writing None onto the NOT NULL holding either 500s
+    # (SQLite) or (post-resync) zeroes the item. _validate_quantity already
+    # skips None the same way, so an explicit null leaves the quantity as-is.
+    if data.get("quantity") is not None and len(item.holdings) == 1:
         item.holdings[0].quantity = data["quantity"]
     resync_item(item)
 

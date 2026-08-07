@@ -63,14 +63,30 @@ def out(value):
     return float(value)
 
 
+def _to_qty(value) -> Decimal:
+    """Quantity as a Decimal, WITHOUT forcing it to 2dp.
+
+    Quantity is a measure (0.125 kg, 1.5 m), not money — quantizing it to cents
+    silently rounded 0.125 -> 0.12 and drifted every valuation. Coerce to
+    Decimal for exact multiplication; only the PRODUCT is quantized to money.
+    """
+    if value is None or value == "":
+        return Decimal("1")
+    try:
+        result = value if isinstance(value, Decimal) else Decimal(str(value))
+    except InvalidOperation:
+        return Decimal("1")
+    return result if result.is_finite() else Decimal("1")
+
+
 def line_total(price, quantity) -> Decimal:
     """``price × quantity`` as an exact 2dp Decimal.
 
-    Quantity is a float column, and ``Decimal * float`` is a TypeError — so the
-    coercion lives here rather than at each of the half-dozen call sites that
-    would otherwise each get it slightly differently.
+    Only the product is rounded to cents; the quantity keeps full precision
+    (a float column, and ``Decimal * float`` is a TypeError, so it is coerced
+    exactly here rather than at each call site).
     """
-    return (to_money(price) * to_money(quantity, default=Decimal("1"))).quantize(_CENTS)
+    return (to_money(price) * _to_qty(quantity)).quantize(_CENTS)
 
 
 def total(pairs) -> Decimal:
