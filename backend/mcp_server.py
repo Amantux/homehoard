@@ -799,16 +799,25 @@ def _guard(asgi_app, server_token: str):
                 _audit(names, raw, "denied")
                 return await _deny(
                     send, 403, b"a debug key may only call the debug tools")
+            # AUTHENTICATION depends on how the port is exposed.
             if external:
-                access = _request_access(header, server_token)
-                if access is None:
+                if not _authorized(header, server_token):
                     return await _deny(send, 401, b"unauthorized")
-                if access == "read" and any(n not in READ_TOOLS for n in names):
-                    _audit(names, raw, "denied")
-                    return await _deny(
-                        send, 403, b"read-only API key: this tool mutates data")
             elif server_token and not _authorized(header, server_token):
                 return await _deny(send, 401, b"unauthorized")
+
+            # AUTHORIZATION depends only on the KEY, never on the exposure. A
+            # read-only key must not reach a write tool on ANY path — this check
+            # used to live inside `if external:`, so mapping the MCP port to the
+            # LAN and setting a server token granted read-only keys full write.
+            # _request_access returns "write" for the server token and None for
+            # no key (the open path), so only a genuinely read-scoped key hits
+            # this.
+            if (_request_access(header, server_token) == "read"
+                    and any(n not in READ_TOOLS for n in names)):
+                _audit(names, raw, "denied")
+                return await _deny(
+                    send, 403, b"read-only API key: this tool mutates data")
 
         if names:
             _audit(names, raw, "allowed")

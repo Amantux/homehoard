@@ -98,7 +98,8 @@ def test_guard_blocks_without_key_and_passes_with_mcp_key(app, auth_client, monk
 
 # ---- Read-only access class -------------------------------------------------
 
-def _drive(headers, method="GET", path="/sse", body=b"", external=True):
+def _drive(headers, method="GET", path="/sse", body=b"", external=True,
+           server_token=""):
     """Drive the real _guard with a method/path/body so tool gating runs."""
     async def downstream(scope, receive, send):
         await send({"type": "http.response.start", "status": 200, "headers": []})
@@ -107,7 +108,7 @@ def _drive(headers, method="GET", path="/sse", body=b"", external=True):
     _prev = mcp_server._expose_external
     mcp_server._expose_external = lambda: external
     try:
-        guard = mcp_server._guard(downstream, "")
+        guard = mcp_server._guard(downstream, server_token)
     finally:
         mcp_server._expose_external = _prev
     sent, state = [], {"sent_body": False}
@@ -156,6 +157,33 @@ def test_read_only_key_blocks_write_tools_over_mcp(app, auth_client, monkeypatch
     listing = json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}).encode()
     assert _drive(hdr, "POST", "/messages/", listing)[0]["status"] == 200
     assert _drive(hdr, "GET", "/sse")[0]["status"] == 200
+
+
+def test_read_only_key_blocks_write_on_the_internal_token_path(app, auth_client, monkeypatch):
+    """A key's access is a property of the KEY, not the exposure. Mapping the
+    MCP port to the LAN + setting a server token (expose_external off) must not
+    grant a read-only key write — the read/write check used to live inside
+    `if external:`."""
+    monkeypatch.setattr(mcp_server, "_app", app)
+    ro = _mint(auth_client, "mcp", "read")
+    hdr = [(b"authorization", f"Bearer {ro}".encode())]
+    assert _drive(hdr, "POST", "/messages/", _call("add_item_placement"),
+                  external=False, server_token="tok")[0]["status"] == 403
+    # write tool still writes for a write key on the same path
+    rw = _mint(auth_client, "mcp", "write")
+    hdrw = [(b"authorization", f"Bearer {rw}".encode())]
+    assert _drive(hdrw, "POST", "/messages/", _call("add_item_placement"),
+                  external=False, server_token="tok")[0]["status"] == 200
+
+
+def test_read_only_key_blocks_write_on_the_open_internal_path(app, auth_client, monkeypatch):
+    """Even with no server token (HA zero-setup), a presented read-only key is
+    still read-only."""
+    monkeypatch.setattr(mcp_server, "_app", app)
+    ro = _mint(auth_client, "mcp", "read")
+    hdr = [(b"authorization", f"Bearer {ro}".encode())]
+    assert _drive(hdr, "POST", "/messages/", _call("add_item_placement"),
+                  external=False, server_token="")[0]["status"] == 403
 
 
 def test_read_write_key_may_call_write_tools(app, auth_client, monkeypatch):
