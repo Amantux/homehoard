@@ -98,8 +98,25 @@ def test_security_headers_present(client):
     assert r.headers.get("X-Content-Type-Options") == "nosniff"
     assert "default-src 'self'" in r.headers.get("Content-Security-Policy", "")
     assert r.headers.get("Referrer-Policy") == "no-referrer"
-    # auth enabled in the test app -> clickjacking protection asserted
+    # a non-ingress request (auth enabled OR not) -> clickjacking asserted
     assert r.headers.get("X-Frame-Options") == "SAMEORIGIN"
+
+
+def test_frame_headers_omitted_from_the_ingress_peer(client):
+    """HA frames the panel legitimately; asserting anti-clickjacking blanks it.
+    Keyed on the PEER, not auth mode — must hold with auth enabled too."""
+    r = client.get("/api/v1/status",
+                   environ_overrides={"REMOTE_ADDR": "172.30.32.2"})
+    assert "X-Frame-Options" not in r.headers
+    assert "frame-ancestors" not in r.headers.get("Content-Security-Policy", "")
+
+
+def test_frame_headers_present_for_non_ingress_even_with_auth_disabled(noauth_app):
+    """DISABLE_AUTH is NOT a proxy for "behind ingress": a standalone
+    disable_auth deployment behind a non-HA proxy is still clickjackable."""
+    r = noauth_app.test_client().get("/api/v1/status")   # no ingress peer
+    assert r.headers.get("X-Frame-Options") == "SAMEORIGIN"
+    assert "frame-ancestors 'self'" in r.headers.get("Content-Security-Policy", "")
 
 
 # --- L2: password policy ---------------------------------------------------

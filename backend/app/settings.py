@@ -45,7 +45,6 @@ import json
 import os
 import re
 import secrets
-import stat
 from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any, Callable
@@ -799,7 +798,11 @@ def ensure_secret_key(supplied: str, data_dir: str) -> tuple[str, bool]:
 
     generated = secrets.token_urlsafe(48)
     os.makedirs(data_dir, exist_ok=True)
-    with open(path, "w") as fh:
+    # os.open with the mode, not open()+chmod: the latter creates the file
+    # umask-permissioned and briefly world-readable before the chmod lands.
+    # Matches pg_provision.py / integration_token.py; the signing key is the
+    # one secret that most needs it.
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as fh:
         fh.write(generated)
-    os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)  # 0600 — owner only
     return generated, True

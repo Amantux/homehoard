@@ -190,7 +190,7 @@ def _register_request_context(app):
 
 def _register_security_headers(app):
     """Baseline hardening headers on every response."""
-    disable_auth = app.config["DISABLE_AUTH"]
+    from .auth import _request_from_ingress
 
     @app.after_request
     def _set_headers(resp):
@@ -213,8 +213,13 @@ def _register_security_headers(app):
             "object-src 'none'"
         )
         # Under HA ingress the app is legitimately framed by Home Assistant, so
-        # only assert anti-clickjacking when running standalone (auth enabled).
-        if not disable_auth:
+        # anti-clickjacking is asserted only when the request is NOT from the
+        # ingress peer. Keyed on the per-request ingress check, not auth mode:
+        # disable_auth:false behind ingress is supported (ingress identity runs
+        # even with auth on) and keying on auth mode there blanks the HA panel,
+        # while a standalone disable_auth deployment behind a non-HA proxy is
+        # still clickjackable and must get the headers.
+        if not _request_from_ingress():
             csp += "; frame-ancestors 'self'"
             resp.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
         resp.headers.setdefault("Content-Security-Policy", csp)
