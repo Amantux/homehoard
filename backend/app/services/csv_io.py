@@ -38,6 +38,15 @@ HEADERS = [
 ]
 
 
+def _int_or(value, default):
+    """A CSV cell as an int, or the default — a junk quantity should not 500
+    the whole import."""
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return default
+
+
 def _dt(value):
     if not value:
         return None
@@ -180,7 +189,7 @@ def import_items(group_id, text: str) -> int:
             import_ref=(row.get("HB.import_ref") or "").strip(),
             name=name,
             description=row.get("HB.description", ""),
-            quantity=int(row.get("HB.quantity") or 1),
+            quantity=_int_or(row.get("HB.quantity"), 1),
             insured=_bool(row.get("HB.insured")),
             serial_number=row.get("HB.serial_number", ""),
             model_number=row.get("HB.model_number", ""),

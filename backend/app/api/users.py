@@ -190,7 +190,21 @@ def update_self():
 @bp.delete("/users/self")
 @login_required
 def delete_self():
-    db.session.delete(current_user())
+    me = current_user()
+    # Never leave the group ownerless: the sole owner deleting themselves
+    # strands the remaining members with a 403 on every owner-gated surface
+    # and there is no runtime recovery (the owner-backfill only runs for a
+    # pre-Alembic DB at boot). Refuse if this is the last owner.
+    if me.is_owner:
+        other_owners = db.session.query(User).filter(
+            User.group_id == me.group_id,
+            User.is_owner.is_(True),
+            User.id != me.id,
+        ).count()
+        if other_owners == 0:
+            return jsonify({"error": "you are the last owner of this household — "
+                            "make someone else an owner before leaving"}), 409
+    db.session.delete(me)
     db.session.commit()
     return "", 204
 

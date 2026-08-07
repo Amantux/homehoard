@@ -36,7 +36,10 @@ def update_group():
 def create_invitation():
     data = request.get_json(force=True) or {}
     group = current_group()
-    uses = int(data.get("uses", 1))
+    try:
+        uses = int(data.get("uses", 1) or 1)
+    except (TypeError, ValueError):
+        return jsonify({"error": "uses must be an integer"}), 422
     days = int(data.get("expiresAt", 7)) if isinstance(data.get("expiresAt"), int) else 7
     token = secrets.token_urlsafe(24)
     inv = GroupInvitation(

@@ -82,7 +82,7 @@ def test_sqlite_wal_and_foreign_keys_enabled(app):
         assert int(fk) == 1
 
 
-def test_delete_user_with_owned_rows_succeeds_under_fk_enforcement(auth_client):
+def test_delete_user_with_owned_rows_succeeds_under_fk_enforcement(auth_client, app):
     # Regression: foreign_keys=ON must not RESTRICT account deletion when the
     # user owns cascade-able rows (API tokens, notifiers). Would 500 without the
     # ORM cascades on User.api_tokens / User.notifiers.
@@ -90,6 +90,18 @@ def test_delete_user_with_owned_rows_succeeds_under_fk_enforcement(auth_client):
     assert auth_client.post(
         "/api/v1/notifiers", json={"name": "n", "url": "tgram://a/b"}
     ).status_code == 201
+    # Seed a SECOND owner so the deleting user isn't the last one — the
+    # last-owner self-delete guard would otherwise (correctly) 409 here, which
+    # is a different invariant tested in test_self_delete_owner_guard. This test
+    # is about the FK cascade, so keep a co-owner present.
+    from app.models import Group, User
+    from app.auth import hash_password
+    with app.app_context():
+        gid = db.session.query(Group).first().id
+        db.session.add(User(name="Co", email="co@t.com",
+                            password_hash=hash_password("x"),
+                            is_owner=True, group_id=gid))
+        db.session.commit()
     assert auth_client.delete("/api/v1/users/self").status_code == 204
 
 

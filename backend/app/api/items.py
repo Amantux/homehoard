@@ -72,7 +72,26 @@ def _require_owned(model, obj_id, gid):
     return obj_id
 
 
+def _validate_quantity(data: dict) -> None:
+    """Validate/normalise data["quantity"] in place, like the holdings API's
+    _positive_qty. Both the item form (_apply) and create_item wrote it RAW
+    onto item.quantity and the single placement's holding, so a negative
+    produced negative inventory valuations in money.total and a non-numeric
+    value 500'd in resync_item's sum() (and errored the Float column on
+    Postgres). Called on every item write path."""
+    if "quantity" not in data or data["quantity"] is None:
+        return
+    try:
+        q = float(data["quantity"])
+    except (TypeError, ValueError):
+        abort(422, description="quantity must be a number")
+    if q < 0:
+        abort(422, description="quantity must not be negative")
+    data["quantity"] = q
+
+
 def _apply(item: Item, data: dict):
+    _validate_quantity(data)  # normalises in place; _sync sees the clean value
     simple = {
         "name": "name",
         "description": "description",
@@ -238,6 +257,7 @@ def list_items():
 @login_required
 def create_item():
     data = request.get_json(force=True) or {}
+    _validate_quantity(data)
     gid = current_group().id
     bin_id = _require_owned(Bin, data.get("binId"), gid)
     location_id = _require_owned(Location, data.get("locationId"), gid)
