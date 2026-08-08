@@ -11,10 +11,14 @@ from datetime import datetime, timedelta
 from flask import Blueprint, jsonify, request
 
 from ..extensions import db
-from ..models import Item, Bin, Label, Location, MaintenanceEntry
+from ..models import Item, Bin, Label, Location
 from ..auth import login_required, current_group
 from .lookup import item_where
 from ..services import money
+# Shared with the notifier dispatch so the summary sensor and notifications
+# never disagree about what counts as an alert.
+from ..services.alerts import active_warranty_items as _active_warranty_items
+from ..services.alerts import open_maintenance as _open_maintenance
 
 bp = Blueprint("ha", __name__)
 
@@ -26,33 +30,6 @@ def _parse(value):
         return datetime.fromisoformat(str(value).replace("Z", "+00:00").replace("+00:00", ""))
     except ValueError:
         return None
-
-
-def _active_warranty_items(group_id):
-    """Items with a future warranty expiry (excludes lifetime + sold)."""
-    return (
-        db.session.query(Item)
-        .filter(
-            Item.group_id == group_id,
-            Item.sold_date.is_(None),
-            Item.lifetime_warranty.is_(False),
-            Item.warranty_expires.isnot(None),
-        )
-        .all()
-    )
-
-
-def _open_maintenance(group_id):
-    return (
-        db.session.query(MaintenanceEntry)
-        .join(Item, Item.id == MaintenanceEntry.item_id)
-        .filter(
-            Item.group_id == group_id,
-            MaintenanceEntry.completed_date.is_(None),
-            MaintenanceEntry.scheduled_date.isnot(None),
-        )
-        .all()
-    )
 
 
 @bp.get("/ha/summary")

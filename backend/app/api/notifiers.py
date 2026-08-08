@@ -1,59 +1,14 @@
-import ipaddress
-import socket
-from urllib.parse import urlparse
-
 from flask import Blueprint, request, jsonify, abort
 
 from ..extensions import db
 from ..models import Notifier
 from ..auth import login_required, current_group, current_user
 from ..schemas.serializers import notifier_out
+# The SSRF guard lives in the service so the API and the dispatcher share one
+# definition and both validate at the point of use.
+from ..services.notify import url_is_safe as _url_is_safe
 
 bp = Blueprint("notifiers", __name__)
-
-# Schemes that speak to an arbitrary, user-chosen network host (SSRF-relevant):
-# the generic HTTP family plus self-hostable providers (ntfy/mqtt/matrix). For
-# these we resolve the host and reject internal targets. Fixed-endpoint provider
-# schemes (discord://, tgram://, slack://, …) whose "host" is really an ID/token
-# are left alone — but a literal internal IP is blocked for ANY scheme below.
-_HOST_SCHEMES = {
-    "http", "https", "json", "jsons", "xml", "xmls", "form", "forms",
-    "ntfy", "ntfys", "mqtt", "mqtts", "matrix", "matrixs",
-}
-
-
-def _is_blocked_ip(ip) -> bool:
-    return (ip.is_private or ip.is_loopback or ip.is_link_local
-            or ip.is_reserved or ip.is_multicast or ip.is_unspecified)
-
-
-def _url_is_safe(url: str) -> bool:
-    """Reject notifier URLs that would let the server reach internal hosts
-    (SSRF: cloud metadata, RFC1918, loopback, link-local, …)."""
-    try:
-        parsed = urlparse(url)
-    except ValueError:
-        return False
-    if not parsed.scheme:
-        return False
-    host = parsed.hostname
-
-    # A literal internal IP is never allowed, whatever the scheme.
-    if host:
-        try:
-            return not _is_blocked_ip(ipaddress.ip_address(host))
-        except ValueError:
-            pass  # not an IP literal — fall through to hostname handling
-
-    if parsed.scheme.lower() not in _HOST_SCHEMES:
-        return True  # provider scheme with a non-host id/token — leave alone
-    if not host:
-        return False
-    try:
-        infos = socket.getaddrinfo(host, None)
-    except socket.gaierror:
-        return False  # unresolvable http-family host → refuse
-    return all(not _is_blocked_ip(ipaddress.ip_address(i[4][0])) for i in infos)
 
 
 def _get(notifier_id):
@@ -116,6 +71,35 @@ def delete_notifier(notifier_id):
     db.session.delete(_get(notifier_id))
     db.session.commit()
     return "", 204
+
+
+@bp.post("/notifiers/dispatch")
+@login_required
+def dispatch_alerts():
+    """Send the current alert digest (overdue lends, warranties expiring soon,
+    overdue maintenance) to the group's active notifiers.
+
+    The add-on has no scheduler, so this is meant to be called by a Home
+    Assistant automation on a schedule (e.g. daily). By default it sends nothing
+    when there are no alerts — pass ?force=1 to always send (useful for a "test
+    the pipeline" automation). Household-wide: any member's active notifier
+    fires, so a shared install notifies everyone who opted in."""
+    from ..services.alerts import alert_digest
+    from ..services.notify import send_to_notifiers
+
+    gid = current_group().id
+    digest = alert_digest(gid)
+    force = (request.args.get("force") or "").lower() in ("1", "true", "yes")
+    if digest["isEmpty"] and not force:
+        return jsonify({"sent": 0, "skipped": "no alerts", "digest": digest})
+
+    notifiers = (db.session.query(Notifier)
+                 .filter_by(group_id=gid, is_active=True).all())
+    results = send_to_notifiers(notifiers, title="HomeHoard alerts",
+                                body=digest["text"])
+    return jsonify({"sent": sum(1 for r in results if r["ok"]),
+                    "attempted": len(results), "results": results,
+                    "digest": digest})
 
 
 @bp.post("/notifiers/test")
