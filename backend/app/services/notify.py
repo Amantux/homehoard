@@ -35,9 +35,13 @@ def url_is_safe(url: str) -> bool:
     """Reject notifier URLs that would let the server reach internal hosts
     (SSRF: cloud metadata, RFC1918, loopback, link-local, …).
 
-    Residual (documented, not silently claimed solved): Apprise follows HTTP
-    redirects, so a public host under attacker control that 302s to an internal
-    address is not caught here — closing that needs a no-redirect transport."""
+    Residuals (documented, not silently claimed solved): this validates the URL
+    at save/dispatch time, but Apprise resolves + connects again at send time, so
+    (a) a host that 302-redirects to an internal address and (b) DNS rebinding (a
+    public A on our lookup, a private A on Apprise's) both slip past — closing
+    either needs pinning the validated IP and forcing the send to it, or a
+    no-redirect transport. Acceptable here: notifier URLs are operator-set on a
+    trusted household add-on, not arbitrary attacker input."""
     try:
         parsed = urlparse(url)
     except ValueError:

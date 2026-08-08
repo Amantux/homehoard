@@ -90,6 +90,12 @@ def dispatch_alerts():
     gid = current_group().id
     digest = alert_digest(gid)
     force = (request.args.get("force") or "").lower() in ("1", "true", "yes")
+    # `force` sends even with nothing to report — the pure "fan out to every
+    # notifier on demand" lever, so it's owner-only to keep a non-owner member
+    # from spamming the household's endpoints. The normal alert-driven send (what
+    # the HA automation uses) stays open to any authenticated member.
+    if force and not current_user().is_owner:
+        return jsonify({"error": "force requires owner privileges"}), 403
     if digest["isEmpty"] and not force:
         return jsonify({"sent": 0, "skipped": "no alerts", "digest": digest})
 

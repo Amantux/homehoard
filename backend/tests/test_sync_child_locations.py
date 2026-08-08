@@ -36,6 +36,23 @@ def test_moving_a_synced_parent_moves_its_children(auth_client):
     assert _where(auth_client, child["id"]) == b["id"], "child did not follow parent"
 
 
+def test_the_move_is_durable_through_a_later_resync(auth_client):
+    """ItemHolding is the placement source of truth and item.location_id only
+    mirrors the primary holding — so the cascade must move the HOLDING, or the
+    next edit (which resyncs from holdings) reverts the child to its old spot."""
+    a, b = _loc(auth_client, "Garage"), _loc(auth_client, "Attic")
+    parent = _item(auth_client, "Toolbox", a["id"])
+    child = _item(auth_client, "Drill", a["id"])
+    _put(auth_client, parent["id"], syncChildLocations=True)
+    _put(auth_client, child["id"], parentId=parent["id"])
+    _put(auth_client, parent["id"], locationId=b["id"])
+
+    # an unrelated edit on the child triggers resync_item from its holdings
+    _put(auth_client, child["id"], name="Drill 2")
+
+    assert _where(auth_client, child["id"]) == b["id"], "move reverted on resync"
+
+
 def test_grandchildren_follow_when_the_chain_is_synced(auth_client):
     a, b = _loc(auth_client, "L1"), _loc(auth_client, "L2")
     p = _item(auth_client, "P", a["id"])

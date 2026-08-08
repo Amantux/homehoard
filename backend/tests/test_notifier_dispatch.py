@@ -145,3 +145,17 @@ def test_host_addressed_provider_scheme_is_resolved_not_trusted(monkeypatch):
     assert notify.url_is_safe("gotify://public-gotify/tok") is True
     # a genuine token-only scheme still skips resolution (its "host" is a token)
     assert notify.url_is_safe("tgram://bottoken/chatid") is True
+
+
+def test_force_requires_owner_but_normal_dispatch_does_not(auth_client, app):
+    """`?force=1` is the send-regardless amplification lever → owner-only. The
+    normal alert-driven dispatch (what the HA automation calls) stays open."""
+    from app.models import User
+    with app.app_context():
+        db.session.query(User).first().is_owner = False
+        db.session.commit()
+    # non-owner: force refused ...
+    assert auth_client.post("/api/v1/notifiers/dispatch?force=1").status_code == 403
+    # ... but a normal dispatch still works (no alerts → skipped, not 403)
+    r = auth_client.post("/api/v1/notifiers/dispatch")
+    assert r.status_code == 200 and r.get_json()["skipped"] == "no alerts"

@@ -109,6 +109,17 @@ def _cascade_child_locations(parent, seen):
     for child in parent.children:
         child.location_id = parent.location_id
         child.bin_id = parent.bin_id
+        # ItemHolding is the placement source of truth; item.location_id only
+        # mirrors the primary holding. Move the primary holding too and resync,
+        # exactly as a normal item-form move does — otherwise the next resync
+        # reverts the child from its stale holding.
+        ph = primary_holding(child)
+        if ph is None:
+            ensure_holding(child)  # mirrors the placement just set
+        else:
+            ph.location_id = parent.location_id
+            ph.bin_id = parent.bin_id
+        resync_item(child)
         if child.sync_child_locations:
             _cascade_child_locations(child, seen)
 
