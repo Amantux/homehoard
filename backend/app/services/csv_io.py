@@ -9,6 +9,7 @@ import io
 from datetime import datetime
 
 from ..extensions import db
+from .holdings import ensure_holding
 from ..models import Item, Label, Location, ItemField
 from . import money
 
@@ -38,13 +39,16 @@ HEADERS = [
 ]
 
 
-def _int_or(value, default):
-    """A CSV cell as an int, or the default — a junk quantity should not 500
-    the whole import."""
+def _num_or(value, default):
+    """A CSV cell as a float, or the default — a junk quantity should not 500
+    the whole import, and quantity is Float so 2.5 must keep its fraction (the
+    old int(float()) dropped it)."""
     try:
-        return int(float(value))
+        v = float(value)
     except (TypeError, ValueError):
         return default
+    import math
+    return v if math.isfinite(v) and v >= 0 else default
 
 
 def _dt(value):
@@ -189,7 +193,7 @@ def import_items(group_id, text: str) -> int:
             import_ref=(row.get("HB.import_ref") or "").strip(),
             name=name,
             description=row.get("HB.description", ""),
-            quantity=_int_or(row.get("HB.quantity"), 1),
+            quantity=_num_or(row.get("HB.quantity"), 1),
             insured=_bool(row.get("HB.insured")),
             serial_number=row.get("HB.serial_number", ""),
             model_number=row.get("HB.model_number", ""),
@@ -215,6 +219,10 @@ def import_items(group_id, text: str) -> int:
             label = _get_or_create_label(group_id, lname, label_cache)
             if label:
                 item.labels.append(label)
+        # Give the imported item its holding, mirroring its location — else it
+        # has placementCount 0 (invisible on its location page) and the next
+        # holdings action zeroes its quantity via resync.
+        ensure_holding(item)
         for key, value in row.items():
             if key and key.startswith("HB.field.") and value:
                 item.fields.append(

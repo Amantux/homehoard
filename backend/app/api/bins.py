@@ -3,7 +3,7 @@ from flask import Blueprint, request, jsonify, abort
 from ..extensions import db
 from sqlalchemy.orm import selectinload, joinedload
 
-from ..models import Bin, Item, QrTag
+from ..models import Bin, Item, Location, QrTag
 from ..models.qrtag import gen_token
 from ..auth import login_required, current_group
 from ..schemas.serializers import bin_out, bin_summary, item_summary
@@ -31,6 +31,18 @@ def list_bins():
     return jsonify([bin_summary(b) | {"itemCount": len(b.holdings)} for b in q.all()])
 
 
+def _owned_location(loc_id):
+    """Return loc_id only if it names a Location in this group; else 404 —
+    a bin must not reference (and leak the name of) another household's
+    location, and the raw FK would otherwise 500 on a bad id."""
+    if not loc_id:
+        return None
+    row = db.session.get(Location, loc_id)
+    if row is None or row.group_id != current_group().id:
+        abort(404)
+    return loc_id
+
+
 @bp.post("/bins")
 @login_required
 def create_bin():
@@ -46,7 +58,7 @@ def create_bin():
     b = Bin(
         name=data.get("name", ""),
         description=data.get("description", ""),
-        location_id=data.get("locationId") or None,
+        location_id=_owned_location(data.get("locationId")),
         group_id=current_group().id,
     )
     db.session.add(b)
@@ -80,7 +92,7 @@ def update_bin(bin_id):
     if "description" in data:
         b.description = data["description"]
     if "locationId" in data:
-        b.location_id = data["locationId"] or None
+        b.location_id = _owned_location(data["locationId"])
         # Moving a bin carries its contents: every placement in the bin follows
         # it to the new location, and each affected item is resynced.
         resync_bin_holdings(b)

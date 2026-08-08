@@ -184,7 +184,13 @@ def _search_locations(gid, q, limit):
 def search():
     """Find items, bins, and locations and where they are."""
     q = (request.args.get("q") or "").strip()
-    limit = min(int(request.args.get("limit", 25) or 25), 100)
+    # Bound it defensively: a non-numeric ?limit 500'd, and a negative limit
+    # slices ranked[:-n] and silently drops the BEST matches.
+    try:
+        limit = int(request.args.get("limit", 25) or 25)
+    except (TypeError, ValueError):
+        limit = 25
+    limit = max(1, min(limit, 100))
     gid = current_group().id
 
     types = request.args.get("types", "item,bin,location").split(",")

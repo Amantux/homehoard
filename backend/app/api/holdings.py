@@ -2,6 +2,8 @@
 Holdings are the source of truth; item.quantity (total) + item.location/bin
 (primary) are resynced after every change (services/holdings.py). All handlers are
 group-scoped (IDOR-safe)."""
+import math
+
 from flask import Blueprint, request, jsonify, abort
 
 from ..extensions import db
@@ -50,8 +52,10 @@ def _positive_qty(value):
         qty = float(value)
     except (TypeError, ValueError):
         return None, (jsonify({"error": "quantity must be a number"}), 422)
-    if qty <= 0:
-        return None, (jsonify({"error": "quantity must be positive"}), 422)
+    # isfinite: NaN/Infinity pass `<= 0` (both False) and also slip the
+    # over-move check (nan > h.quantity is False), corrupting stock.
+    if not math.isfinite(qty) or qty <= 0:
+        return None, (jsonify({"error": "quantity must be a positive number"}), 422)
     return qty, None
 
 

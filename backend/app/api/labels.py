@@ -22,6 +22,16 @@ def list_labels():
     return jsonify([label_summary(lbl) for lbl in labels])
 
 
+def _owned_parent(parent_id):
+    """A Label parentId in this group, or 404 — no cross-group nesting."""
+    if not parent_id:
+        return None
+    row = db.session.get(Label, parent_id)
+    if row is None or row.group_id != current_group().id:
+        abort(404)
+    return parent_id
+
+
 @bp.post("/labels")
 @login_required
 def create_label():
@@ -31,7 +41,7 @@ def create_label():
         description=data.get("description", ""),
         color=data.get("color", ""),
         icon=data.get("icon", ""),
-        parent_id=data.get("parentId") or None,
+        parent_id=_owned_parent(data.get("parentId")),
         group_id=current_group().id,
     )
     db.session.add(label)
@@ -54,7 +64,7 @@ def update_label(label_id):
         if field in data:
             setattr(label, field, data[field])
     if "parentId" in data:
-        label.parent_id = data["parentId"] or None
+        label.parent_id = _owned_parent(data["parentId"])
     db.session.commit()
     return jsonify(label_out(label))
 

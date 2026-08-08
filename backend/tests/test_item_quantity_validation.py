@@ -33,3 +33,28 @@ def test_a_valid_quantity_still_works(auth_client):
     r = _item(auth_client, name="Fine", quantity=7)
     assert r.status_code in (200, 201)
     assert r.get_json()["quantity"] == 7
+
+
+def _mk(c, **kw):
+    return c.post("/api/v1/items", json={"name": "X", **kw})
+
+
+def test_nan_quantity_is_rejected(auth_client):
+    assert _mk(auth_client, quantity="nan").status_code == 422
+
+
+def test_infinity_quantity_is_rejected(auth_client):
+    r = _mk(auth_client, quantity="inf")
+    assert r.status_code == 422, "Infinity passed → serialized as invalid JSON"
+
+
+def test_nan_quantity_rejected_on_holdings_api(auth_client):
+    it = _mk(auth_client, quantity=3).get_json()
+    r = auth_client.post(f"/api/v1/items/{it['id']}/holdings", json={"quantity": "nan"})
+    assert r.status_code == 422
+
+
+def test_nan_quantity_rejected_on_update(auth_client):
+    it = _mk(auth_client, quantity=3).get_json()
+    assert auth_client.put(f"/api/v1/items/{it['id']}",
+                           json={"quantity": "inf"}).status_code == 422

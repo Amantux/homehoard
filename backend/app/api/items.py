@@ -1,4 +1,5 @@
 import re
+import math
 from datetime import datetime
 
 from flask import Blueprint, request, jsonify, abort, current_app
@@ -89,8 +90,11 @@ def _validate_quantity(data: dict) -> None:
         q = float(data["quantity"])
     except (TypeError, ValueError):
         abort(422, description="quantity must be a number")
-    if q < 0:
-        abort(422, description="quantity must not be negative")
+    # isfinite: NaN/Infinity slip past `< 0` (both comparisons are False) and
+    # then either 500 (NaN -> NULL on the NOT NULL column) or serialize as the
+    # bare token Infinity — invalid JSON that breaks the client parser.
+    if not math.isfinite(q) or q < 0:
+        abort(422, description="quantity must be a finite, non-negative number")
     data["quantity"] = q
 
 
