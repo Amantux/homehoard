@@ -98,8 +98,25 @@ def _validate_quantity(data: dict) -> None:
     data["quantity"] = q
 
 
+def _cascade_child_locations(parent, seen):
+    """Move a synced container's children to wherever it just went, honouring the
+    `sync_child_locations` promise. Recurses through a child only when that child
+    is ALSO synced (its own subtree follows it), cycle-guarded so a malformed
+    parent chain can't loop forever."""
+    if parent.id in seen:
+        return
+    seen.add(parent.id)
+    for child in parent.children:
+        child.location_id = parent.location_id
+        child.bin_id = parent.bin_id
+        if child.sync_child_locations:
+            _cascade_child_locations(child, seen)
+
+
 def _apply(item: Item, data: dict):
     _validate_quantity(data)  # normalises in place; _sync sees the clean value
+    # Remember where the item was, so a synced move can pull its children along.
+    _old_place = (item.location_id, item.bin_id)
     simple = {
         "name": "name",
         "description": "description",
@@ -151,6 +168,10 @@ def _apply(item: Item, data: dict):
         b = db.session.get(Bin, item.bin_id)  # already ownership-checked above
         if b:  # defensive: a dangling bin_id (no FK enforcement on SQLite) → skip
             item.location_id = b.location_id
+    # A synced container that actually moved drags its children (and, through
+    # their own flags, deeper descendants) to the same place.
+    if item.sync_child_locations and (item.location_id, item.bin_id) != _old_place:
+        _cascade_child_locations(item, set())
     if "parentId" in data:
         item.parent_id = _require_owned(Item, data["parentId"], gid)
 
