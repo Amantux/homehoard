@@ -4,6 +4,8 @@ dispatch so the two never disagree about what counts as an alert.
 """
 from datetime import datetime, timedelta
 
+from sqlalchemy.orm import joinedload
+
 from ..extensions import db
 from ..models import Item, MaintenanceEntry
 
@@ -30,6 +32,7 @@ def open_maintenance(group_id):
     return (
         db.session.query(MaintenanceEntry)
         .join(Item, Item.id == MaintenanceEntry.item_id)
+        .options(joinedload(MaintenanceEntry.item))  # digest reads m.item.name
         .filter(
             Item.group_id == group_id,
             MaintenanceEntry.completed_date.is_(None),

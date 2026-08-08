@@ -9,14 +9,20 @@ import ipaddress
 import socket
 from urllib.parse import urlparse
 
-# Schemes that speak to an arbitrary, user-chosen network host (SSRF-relevant):
-# the generic HTTP family plus self-hostable providers (ntfy/mqtt/matrix). For
-# these we resolve the host and reject internal targets. Fixed-endpoint provider
-# schemes (discord://, tgram://, slack://, …) whose "host" is really an ID/token
-# are left alone — but a literal internal IP is blocked for ANY scheme.
-_HOST_SCHEMES = {
-    "http", "https", "json", "jsons", "xml", "xmls", "form", "forms",
-    "ntfy", "ntfys", "mqtt", "mqtts", "matrix", "matrixs",
+# Fail-safe design: the authority of these Apprise schemes is an ID/TOKEN, not a
+# network host, so their "hostname" must NOT be DNS-resolved (it isn't a host).
+# EVERY OTHER scheme is treated as host-addressed and is resolved-and-checked —
+# including self-hostable providers (gotify/mmost/rocket/nextcloud/ntfy/mqtt/
+# matrix, the http family) and any scheme we don't recognise. An earlier
+# allowlist of host-schemes was the wrong default: a host-addressed provider we
+# forgot to list (e.g. gotify://internal-box/token) sailed straight through
+# unresolved. A missing token scheme here only fails CLOSED (its token gets
+# resolved, fails, and the notifier is refused) — never an SSRF.
+_TOKEN_ONLY_SCHEMES = {
+    "discord", "tgram", "telegram", "slack", "join", "pover", "pushover",
+    "pbul", "pushbullet", "prowl", "gitter", "flock", "webexteams", "msteams",
+    "techulus", "pushed", "spush", "twilio", "clicksend", "nexmo", "vonage",
+    "sns", "mailgun", "sendgrid", "ses", "pushjet", "faast", "boxcar",
 }
 
 
@@ -27,7 +33,11 @@ def _is_blocked_ip(ip) -> bool:
 
 def url_is_safe(url: str) -> bool:
     """Reject notifier URLs that would let the server reach internal hosts
-    (SSRF: cloud metadata, RFC1918, loopback, link-local, …)."""
+    (SSRF: cloud metadata, RFC1918, loopback, link-local, …).
+
+    Residual (documented, not silently claimed solved): Apprise follows HTTP
+    redirects, so a public host under attacker control that 302s to an internal
+    address is not caught here — closing that needs a no-redirect transport."""
     try:
         parsed = urlparse(url)
     except ValueError:
@@ -43,14 +53,15 @@ def url_is_safe(url: str) -> bool:
         except ValueError:
             pass  # not an IP literal — fall through to hostname handling
 
-    if parsed.scheme.lower() not in _HOST_SCHEMES:
-        return True  # provider scheme with a non-host id/token — leave alone
+    if parsed.scheme.lower() in _TOKEN_ONLY_SCHEMES:
+        return True  # authority is an id/token, not a network host — don't resolve
+    # Everything else is host-addressed: resolve and reject any internal target.
     if not host:
         return False
     try:
         infos = socket.getaddrinfo(host, None)
     except socket.gaierror:
-        return False  # unresolvable http-family host → refuse
+        return False  # unresolvable host → refuse (fail closed)
     return all(not _is_blocked_ip(ipaddress.ip_address(i[4][0])) for i in infos)
 
 

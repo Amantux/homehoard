@@ -121,3 +121,27 @@ def test_dispatch_only_sends_to_the_callers_group(auth_client, app, client):
     client.environ_base["HTTP_AUTHORIZATION"] = tok
     r = client.post("/api/v1/notifiers/dispatch?force=1")
     assert r.get_json()["attempted"] == 0, "leaked another group's notifier"
+
+
+# ---- SSRF: host-addressed provider schemes must be resolved, not trusted -----
+
+def test_host_addressed_provider_scheme_is_resolved_not_trusted(monkeypatch):
+    """gotify/mmost/rocket/… take an operator-chosen HOST but aren't http-family.
+    The guard must resolve them too, or an internal gotify box is reachable."""
+    import socket
+    import app.services.notify as notify
+
+    # An unresolvable host (.invalid never resolves) must be refused, proving the
+    # scheme is host-checked now instead of blindly trusted.
+    assert notify.url_is_safe("gotify://intranet.invalid/AtokenX") is False
+
+    # Resolves to a private IP → blocked; to a public IP → allowed. Deterministic
+    # without real DNS.
+    def _fake(host, *a, **k):
+        ip = "10.0.0.5" if host == "internal-gotify" else "93.184.216.34"
+        return [(socket.AF_INET, None, None, "", (ip, 0))]
+    monkeypatch.setattr(socket, "getaddrinfo", _fake)
+    assert notify.url_is_safe("gotify://internal-gotify/tok") is False
+    assert notify.url_is_safe("gotify://public-gotify/tok") is True
+    # a genuine token-only scheme still skips resolution (its "host" is a token)
+    assert notify.url_is_safe("tgram://bottoken/chatid") is True
