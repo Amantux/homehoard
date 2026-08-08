@@ -328,12 +328,14 @@ def create_item():
             continue
     else:
         abort(409, description="could not allocate an asset id — please retry")
-    if data.get("labelIds"):
-        item.labels = (
-            db.session.query(Label)
-            .filter(Label.id.in_(data["labelIds"]), Label.group_id == gid)
-            .all()
-        )
+    # Everything else goes through the SAME writer PUT/PATCH use, so create and
+    # update accept an identical field set. Before this, a create that sent
+    # parentId, syncChildLocations, serialNumber, purchasePrice, warranty dates,
+    # labels or custom fields silently dropped them and returned 201 — the caller
+    # believed the data was stored. _apply also owns the ownership checks
+    # (_require_owned) and the money quantization, so none of that is duplicated
+    # here. It runs after the asset-id allocation because it needs a flushed item.
+    _apply(item, data)
     ensure_holding(item)  # start with one placement mirroring this location/bin
     db.session.commit()
     return jsonify(item_out(item)), 201
