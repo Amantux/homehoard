@@ -9,7 +9,7 @@ SQLAlchemy==2.0.51
 alembic>=1.18.5
 # Postgres driver (optional backend). psycopg 3 bundles libpq via [binary];
 # unused when HBOX_DATABASE_URL is blank (SQLite default).
-psycopg[binary]>=3.2
+psycopg[binary]>=3.3.4
 PyJWT>=2.10.1
 passlib==1.7.4
 # passlib 1.7.4 reads bcrypt.__about__ which bcrypt>=4.1 removed; pin below that.
