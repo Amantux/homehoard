@@ -7,12 +7,7 @@ so these tests are deterministic and offline.
 from sqlalchemy import inspect
 
 from app.extensions import db
-from app.models import Item, User
-
-
-def _gid(app):
-    with app.app_context():
-        return db.session.query(User).filter_by(email="t@t.com").first().group_id
+from app.models import Item
 
 
 def _mk_item(app, gid, name="DCD777", search_text=""):
@@ -36,8 +31,8 @@ def test_migration_added_search_text_column(app):
     assert "search_text" in cols
 
 
-def test_describe_stores_text_and_makes_item_findable(app, auth_client, monkeypatch):
-    gid = _gid(app)
+def test_describe_stores_text_and_makes_item_findable(app, auth_client, monkeypatch, gid):
+
     _enable(app, monkeypatch, [{"title": "t", "url": "http://x",
                                 "content": "DeWalt 20V MAX brushless cordless drill"}])
     iid = _mk_item(app, gid)
@@ -51,15 +46,15 @@ def test_describe_stores_text_and_makes_item_findable(app, auth_client, monkeypa
     assert "DCD777" in [i["name"] for i in found["items"]]
 
 
-def test_describe_409_when_not_configured(app, auth_client):
-    gid = _gid(app)
+def test_describe_409_when_not_configured(app, auth_client, gid):
+
     app.config["OLLAMA_SEARCH_KEY"] = ""
     iid = _mk_item(app, gid)
     assert auth_client.post(f"/api/v1/items/{iid}/describe").status_code == 409
 
 
-def test_describe_422_when_nothing_found(app, auth_client, monkeypatch):
-    gid = _gid(app)
+def test_describe_422_when_nothing_found(app, auth_client, monkeypatch, gid):
+
     _enable(app, monkeypatch, [])  # web search returns nothing
     iid = _mk_item(app, gid)
     assert auth_client.post(f"/api/v1/items/{iid}/describe").status_code == 422

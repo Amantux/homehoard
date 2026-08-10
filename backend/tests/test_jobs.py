@@ -10,13 +10,8 @@ from app.models import Group, Item, Job, User, utcnow
 from app.services import jobs
 
 
-def _gid(app):
-    with app.app_context():
-        return db.session.query(User).filter_by(email="t@t.com").first().group_id
+def test_enqueue_creates_pending_and_dedups(auth_client, app, gid):
 
-
-def test_enqueue_creates_pending_and_dedups(auth_client, app):
-    gid = _gid(app)
     with app.app_context():
         a = jobs.enqueue("enrich", gid)
         b = jobs.enqueue("enrich", gid)  # active one exists → same job
@@ -33,8 +28,8 @@ def test_enqueue_unknown_kind_raises(app):
             pass
 
 
-def test_claim_is_atomic_no_double_run(auth_client, app):
-    gid = _gid(app)
+def test_claim_is_atomic_no_double_run(auth_client, app, gid):
+
     with app.app_context():
         jobs.enqueue("enrich", gid)
         first = jobs.claim_one()
@@ -43,8 +38,8 @@ def test_claim_is_atomic_no_double_run(auth_client, app):
         assert second is None
 
 
-def test_enrich_job_describes_missing_items(auth_client, app, monkeypatch):
-    gid = _gid(app)
+def test_enrich_job_describes_missing_items(auth_client, app, monkeypatch, gid):
+
     with app.app_context():
         db.session.add_all([Item(name="Drill", group_id=gid),
                             Item(name="Ladder", group_id=gid, search_text="already")])
@@ -66,8 +61,8 @@ def test_enrich_job_describes_missing_items(auth_client, app, monkeypatch):
         assert "power tool" in drill.search_text
 
 
-def test_enrich_job_errors_when_not_configured(auth_client, app, monkeypatch):
-    gid = _gid(app)
+def test_enrich_job_errors_when_not_configured(auth_client, app, monkeypatch, gid):
+
     with app.app_context():
         monkeypatch.setattr("app.services.enrich.enabled", lambda: False)
         job = jobs.enqueue("enrich", gid)
@@ -75,8 +70,8 @@ def test_enrich_job_errors_when_not_configured(auth_client, app, monkeypatch):
         assert db.session.get(Job, job.id).status == "error"
 
 
-def test_reap_stale_requeues_dead_running_job(auth_client, app):
-    gid = _gid(app)
+def test_reap_stale_requeues_dead_running_job(auth_client, app, gid):
+
     with app.app_context():
         j = Job(kind="enrich", group_id=gid, status="running",
                 started_at=utcnow() - timedelta(hours=1))
@@ -86,10 +81,10 @@ def test_reap_stale_requeues_dead_running_job(auth_client, app):
         assert db.session.get(Job, j.id).status == "pending"
 
 
-def test_reap_stale_spares_a_live_heartbeated_job(auth_client, app):
+def test_reap_stale_spares_a_live_heartbeated_job(auth_client, app, gid):
     # A long-but-live job heartbeats started_at via bump(); it must NOT be reaped
     # (that was the double-run BLOCKER — a sibling worker requeuing a running job).
-    gid = _gid(app)
+
     with app.app_context():
         j = Job(kind="enrich", group_id=gid, status="running", started_at=utcnow())
         db.session.add(j)
@@ -98,9 +93,9 @@ def test_reap_stale_spares_a_live_heartbeated_job(auth_client, app):
         assert db.session.get(Job, j.id).status == "running"
 
 
-def test_only_one_active_job_per_group_kind_is_enforced(auth_client, app):
+def test_only_one_active_job_per_group_kind_is_enforced(auth_client, app, gid):
     from sqlalchemy.exc import IntegrityError
-    gid = _gid(app)
+
     with app.app_context():
         db.session.add(Job(kind="enrich", group_id=gid, status="pending"))
         db.session.commit()
@@ -140,16 +135,16 @@ def test_create_job_unknown_kind_404(auth_client):
     assert auth_client.post("/api/v1/jobs/bogus").status_code == 404
 
 
-def test_enqueue_stores_params(auth_client, app):
+def test_enqueue_stores_params(auth_client, app, gid):
     import json
-    gid = _gid(app)
+
     with app.app_context():
         job = jobs.enqueue("enrich", gid, {"note": "camping", "provider": "openai"})
         assert json.loads(job.params) == {"note": "camping", "provider": "openai"}
 
 
-def test_enrich_job_passes_note_and_provider_override(auth_client, app, monkeypatch):
-    gid = _gid(app)
+def test_enrich_job_passes_note_and_provider_override(auth_client, app, monkeypatch, gid):
+
     captured = {}
     with app.app_context():
         db.session.add(Item(name="Tent", group_id=gid))
@@ -181,8 +176,8 @@ def test_create_job_non_dict_body_does_not_500(auth_client):
     assert auth_client.post("/api/v1/jobs/enrich", json=[1, 2, 3]).status_code == 202
 
 
-def test_enrich_job_model_only_override_still_applies(auth_client, app, monkeypatch):
-    gid = _gid(app)
+def test_enrich_job_model_only_override_still_applies(auth_client, app, monkeypatch, gid):
+
     seen = {}
     with app.app_context():
         db.session.add(Item(name="Rope", group_id=gid))

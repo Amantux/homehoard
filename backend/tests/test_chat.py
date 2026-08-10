@@ -4,7 +4,7 @@ Uses a fake provider (no live vendor call). The fake returns one tool call, then
 final answer — exercising the real execute_tool path against the group's data.
 """
 from app.extensions import db
-from app.models import ChatSession, Group, Item, Label, User
+from app.models import ChatSession, Group, Item, Label
 from app.services.ai.base import ChatResult, ProviderError, ToolCall
 
 
@@ -25,19 +25,14 @@ class _FakeProvider:
         return ChatResult(content="Your drill is in the Garage.")
 
 
-def _gid(app):
-    with app.app_context():
-        return db.session.query(User).filter_by(email="t@t.com").first().group_id
-
-
 def _seed_item(app, gid, name="DeWalt drill"):
     with app.app_context():
         db.session.add(Item(name=name, group_id=gid))
         db.session.commit()
 
 
-def test_chat_creates_session_and_runs_tool_loop(auth_client, app, monkeypatch):
-    _seed_item(app, _gid(app))
+def test_chat_creates_session_and_runs_tool_loop(auth_client, app, monkeypatch, gid):
+    _seed_item(app, gid)
     monkeypatch.setattr("app.api.chat.get_provider", lambda: _FakeProvider())
 
     r = auth_client.post("/api/v1/chat", json={"message": "where is my drill?"})
@@ -52,8 +47,8 @@ def test_chat_creates_session_and_runs_tool_loop(auth_client, app, monkeypatch):
     assert convo["messages"][1]["toolTrace"][0]["tool"] == "search_items"
 
 
-def test_chat_continues_existing_session(auth_client, app, monkeypatch):
-    _seed_item(app, _gid(app))
+def test_chat_continues_existing_session(auth_client, app, monkeypatch, gid):
+    _seed_item(app, gid)
     monkeypatch.setattr("app.api.chat.get_provider", lambda: _FakeProvider())
     first = auth_client.post("/api/v1/chat", json={"message": "hi"}).get_json()
     auth_client.post("/api/v1/chat",
@@ -104,9 +99,8 @@ class _WriteThenFailProvider:
         raise ProviderError("upstream down")
 
 
-def test_chat_provider_error_midloop_leaves_no_phantom_or_orphan_write(
-        auth_client, app, monkeypatch):
-    gid = _gid(app)
+def test_chat_provider_error_midloop_leaves_no_phantom_or_orphan_write(auth_client, app, monkeypatch, gid):
+
     with app.app_context():
         db.session.add(Item(name="Drill", group_id=gid))
         db.session.add(Label(name="Tools", group_id=gid))
@@ -140,7 +134,7 @@ class _ToolThenAnswerProvider:
         return ChatResult(content="Done, though a lookup hiccupped.")
 
 
-def test_chat_tool_exception_is_fed_back_not_500(auth_client, monkeypatch):
+def test_chat_tool_exception_is_fed_back_not_500(auth_client, monkeypatch, gid):
     monkeypatch.setattr("app.api.chat.get_provider", lambda: _ToolThenAnswerProvider())
 
     def _boom(gid, name, args):

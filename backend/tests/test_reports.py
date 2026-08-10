@@ -2,16 +2,11 @@
 from datetime import timedelta
 
 from app.extensions import db
-from app.models import Group, Item, Location, User, utcnow
+from app.models import Group, Item, Location, utcnow
 
 
-def _gid(app):
-    with app.app_context():
-        return db.session.query(User).filter_by(email="t@t.com").first().group_id
+def test_inventory_report_totals_and_breakdown(app, auth_client, gid):
 
-
-def test_inventory_report_totals_and_breakdown(app, auth_client):
-    gid = _gid(app)
     with app.app_context():
         loc = Location(name="Garage", group_id=gid)
         db.session.add(loc)
@@ -35,8 +30,8 @@ def test_inventory_report_totals_and_breakdown(app, auth_client):
     assert any(b["name"] == "Garage" and b["value"] == 100.0 for b in r["byLocation"])
 
 
-def test_inventory_report_csv(app, auth_client):
-    gid = _gid(app)
+def test_inventory_report_csv(app, auth_client, gid):
+
     with app.app_context():
         db.session.add(Item(name="Drill", purchase_price=100, quantity=1, group_id=gid))
         db.session.commit()
@@ -52,8 +47,8 @@ def test_report_requires_auth(client):
     assert client.get("/api/v1/reports/inventory").status_code == 401
 
 
-def test_report_is_group_scoped(app, auth_client):
-    gid = _gid(app)
+def test_report_is_group_scoped(app, auth_client, gid):
+
     with app.app_context():
         other = Group(name="Other", currency="usd")
         db.session.add(other)

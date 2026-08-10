@@ -8,13 +8,8 @@ from datetime import datetime
 import httpx
 
 from app.extensions import db
-from app.models import Item, User
+from app.models import Item
 from app.services import barcode
-
-
-def _gid(app):
-    with app.app_context():
-        return db.session.query(User).filter_by(email="t@t.com").first().group_id
 
 
 # --- identify_barcode chain -------------------------------------------------
@@ -111,8 +106,8 @@ def test_rank_results_sinks_aggregators():
 
 # --- scan resolve + identify endpoints --------------------------------------
 
-def test_barcode_resolve_returns_item_by_barcode(app, auth_client):
-    gid = _gid(app)
+def test_barcode_resolve_returns_item_by_barcode(app, auth_client, gid):
+
     with app.app_context():
         db.session.add(Item(name="Drill", barcode="012345678905", group_id=gid))
         db.session.commit()
@@ -182,9 +177,9 @@ def test_create_clamps_overlong_barcode(app, auth_client):
     assert len(created["barcode"]) == 64
 
 
-def test_duplicate_barcode_resolves_deterministically_oldest_first(app, auth_client):
+def test_duplicate_barcode_resolves_deterministically_oldest_first(app, auth_client, gid):
     """Two items sharing a UPC resolve to the same (oldest) one on every scan."""
-    gid = _gid(app)
+
     with app.app_context():
         db.session.add(Item(name="Drill A", barcode="012345678905", group_id=gid,
                             created_at=datetime(2020, 1, 1)))
@@ -211,8 +206,8 @@ def test_update_item_assigns_barcode(app, auth_client):
     assert r["status"] == "item" and r["targetId"] == item_id
 
 
-def test_item_search_matches_barcode(app, auth_client):
-    gid = _gid(app)
+def test_item_search_matches_barcode(app, auth_client, gid):
+
     with app.app_context():
         db.session.add(Item(name="Drill", barcode="012345678905", group_id=gid))
         db.session.commit()

@@ -52,3 +52,18 @@ def noauth_app(tmp_path):
         PROXY_HOPS = 0
 
     return create_app(NoAuthConfig)
+
+
+@pytest.fixture()
+def gid(app, auth_client):
+    """The group the authenticated test client is acting as.
+
+    Resolved through the USER, deliberately: the hand-rolled copies came in two
+    flavours — `User(email=...).group_id` and `Group.first().id` — which agree
+    only while a test has exactly one household. Once a test registers a second,
+    `Group.first()` returns whichever row the DB hands back first, so a
+    cross-tenant assertion can quietly check the wrong household."""
+    from app.models import User
+    with app.app_context():
+        return db.session.query(User).filter_by(
+            email="t@t.com").first().group_id

@@ -2,13 +2,8 @@
 and in-context-learning feedback. No live vendor calls (a fake provider is injected).
 """
 from app.extensions import db
-from app.models import AiSuggestion, Group, Item, Label, User
+from app.models import AiSuggestion, Group, Item, Label
 from app.services import jobs
-
-
-def _gid(app):
-    with app.app_context():
-        return db.session.query(User).filter_by(email="t@t.com").first().group_id
 
 
 class _FakeProvider:
@@ -32,8 +27,8 @@ def _run(kind, gid):
     jobs.run_job(jobs.claim_one())
 
 
-def test_categorize_auto_applies_high_confidence_existing_label(auth_client, app, monkeypatch):
-    gid = _gid(app)
+def test_categorize_auto_applies_high_confidence_existing_label(auth_client, app, monkeypatch, gid):
+
     with app.app_context():
         db.session.add(Label(name="Tools", group_id=gid))
         db.session.add(Item(name="Cordless drill", group_id=gid))
@@ -49,8 +44,8 @@ def test_categorize_auto_applies_high_confidence_existing_label(auth_client, app
         assert len(acc) == 1 and acc[0].kind == "categorize"
 
 
-def test_categorize_queues_low_confidence_or_new_label(auth_client, app, monkeypatch):
-    gid = _gid(app)
+def test_categorize_queues_low_confidence_or_new_label(auth_client, app, monkeypatch, gid):
+
     with app.app_context():
         db.session.add(Item(name="Mystery widget", group_id=gid))
         db.session.commit()
@@ -65,8 +60,8 @@ def test_categorize_queues_low_confidence_or_new_label(auth_client, app, monkeyp
         assert len(pend) == 1 and pend[0].label == "Gadgets"
 
 
-def test_categorize_rerun_does_not_duplicate_pending(auth_client, app, monkeypatch):
-    gid = _gid(app)
+def test_categorize_rerun_does_not_duplicate_pending(auth_client, app, monkeypatch, gid):
+
     with app.app_context():
         db.session.add(Item(name="Widget", group_id=gid))
         db.session.commit()
@@ -76,9 +71,9 @@ def test_categorize_rerun_does_not_duplicate_pending(auth_client, app, monkeypat
         assert db.session.query(AiSuggestion).filter_by(status="pending").count() == 1
 
 
-def test_categorize_new_label_high_confidence_still_queues(auth_client, app, monkeypatch):
+def test_categorize_new_label_high_confidence_still_queues(auth_client, app, monkeypatch, gid):
     # High confidence but the label doesn't exist yet → review, never auto-create.
-    gid = _gid(app)
+
     with app.app_context():
         db.session.add(Item(name="Tent", group_id=gid))
         db.session.commit()
@@ -91,8 +86,8 @@ def test_categorize_new_label_high_confidence_still_queues(auth_client, app, mon
         assert db.session.query(Label).count() == 0  # no label auto-created
 
 
-def test_accept_categorize_suggestion_applies_label(auth_client, app):
-    gid = _gid(app)
+def test_accept_categorize_suggestion_applies_label(auth_client, app, gid):
+
     with app.app_context():
         item = Item(name="Rope", group_id=gid)
         db.session.add(item)
@@ -111,8 +106,8 @@ def test_accept_categorize_suggestion_applies_label(auth_client, app):
         assert db.session.get(AiSuggestion, sid).status == "accepted"
 
 
-def test_reject_suggestion(auth_client, app):
-    gid = _gid(app)
+def test_reject_suggestion(auth_client, app, gid):
+
     with app.app_context():
         s = AiSuggestion(kind="categorize", status="pending", label="Nope",
                          confidence=0.3, group_id=gid)
@@ -124,8 +119,8 @@ def test_reject_suggestion(auth_client, app):
         assert db.session.get(AiSuggestion, sid).status == "rejected"
 
 
-def test_cluster_job_creates_pending_proposals(auth_client, app, monkeypatch):
-    gid = _gid(app)
+def test_cluster_job_creates_pending_proposals(auth_client, app, monkeypatch, gid):
+
     with app.app_context():
         for n in ("Tent", "Sleeping bag", "Frying pan"):
             db.session.add(Item(name=n, group_id=gid))
@@ -139,9 +134,9 @@ def test_cluster_job_creates_pending_proposals(auth_client, app, monkeypatch):
         assert len(pend) == 1 and pend[0].label == "Camping gear"
 
 
-def test_accept_cluster_labels_all_members(auth_client, app):
+def test_accept_cluster_labels_all_members(auth_client, app, gid):
     import json
-    gid = _gid(app)
+
     with app.app_context():
         a = Item(name="Tent", group_id=gid)
         b = Item(name="Sleeping bag", group_id=gid)
@@ -160,9 +155,9 @@ def test_accept_cluster_labels_all_members(auth_client, app):
             assert "Camping" in [lb.name for lb in db.session.get(Item, iid).labels]
 
 
-def test_icl_examples_feed_into_prompt(auth_client, app, monkeypatch):
+def test_icl_examples_feed_into_prompt(auth_client, app, monkeypatch, gid):
     from app.models import utcnow
-    gid = _gid(app)
+
     with app.app_context():
         db.session.add(Item(name="Hatchet", group_id=gid))
         db.session.add(AiSuggestion(kind="categorize", status="accepted", label="Tools",
@@ -178,8 +173,8 @@ def test_icl_examples_feed_into_prompt(auth_client, app, monkeypatch):
         assert any("ACCEPTED" in p and "REJECTED" in p for p in fake.prompts)
 
 
-def test_categorize_job_errors_without_provider(auth_client, app):
-    gid = _gid(app)
+def test_categorize_job_errors_without_provider(auth_client, app, gid):
+
     with app.app_context():
         db.session.add(Item(name="Thing", group_id=gid))
         db.session.commit()
@@ -189,10 +184,10 @@ def test_categorize_job_errors_without_provider(auth_client, app):
         assert db.session.get(Job, job.id).status == "error"  # no AI provider configured
 
 
-def test_delete_item_with_suggestion_succeeds(auth_client, app):
+def test_delete_item_with_suggestion_succeeds(auth_client, app, gid):
     # After auto-categorize, every item has an accepted suggestion pointing at it;
     # deleting the item must cascade the suggestion, not 500 on the FK.
-    gid = _gid(app)
+
     with app.app_context():
         item = Item(name="Disposable", group_id=gid)
         db.session.add(item)
@@ -207,8 +202,8 @@ def test_delete_item_with_suggestion_succeeds(auth_client, app):
         assert db.session.query(AiSuggestion).filter_by(item_id=iid).count() == 0
 
 
-def test_categorize_malformed_confidence_completes(auth_client, app, monkeypatch):
-    gid = _gid(app)
+def test_categorize_malformed_confidence_completes(auth_client, app, monkeypatch, gid):
+
     with app.app_context():
         db.session.add(Item(name="Thing", group_id=gid))
         db.session.commit()
@@ -223,8 +218,8 @@ def test_categorize_malformed_confidence_completes(auth_client, app, monkeypatch
         assert db.session.query(AiSuggestion).filter_by(status="pending").count() == 1
 
 
-def test_categorize_applies_model_override(auth_client, app, monkeypatch):
-    gid = _gid(app)
+def test_categorize_applies_model_override(auth_client, app, monkeypatch, gid):
+
     captured = {}
     with app.app_context():
         db.session.add(Item(name="X", group_id=gid))

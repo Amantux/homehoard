@@ -3,7 +3,7 @@ single-commit persistence as /chat, plus the household streaming-default setting
 import json
 
 from app.extensions import db
-from app.models import Item, User
+from app.models import Item
 from app.services.ai.base import ChatResult, ToolCall
 
 
@@ -31,18 +31,13 @@ class _FakeStreamProvider:
         yield {"type": "final", "result": ChatResult(content="Your drill is in the Garage.")}
 
 
-def _gid(app):
-    with app.app_context():
-        return db.session.query(User).filter_by(email="t@t.com").first().group_id
-
-
 def _lines(resp):
     return [json.loads(ln) for ln in resp.get_data(as_text=True).splitlines() if ln.strip()]
 
 
-def test_chat_stream_emits_deltas_then_terminal_done(auth_client, app, monkeypatch):
+def test_chat_stream_emits_deltas_then_terminal_done(auth_client, app, monkeypatch, gid):
     with app.app_context():
-        db.session.add(Item(name="DeWalt drill", group_id=_gid(app)))
+        db.session.add(Item(name="DeWalt drill", group_id=gid))
         db.session.commit()
     monkeypatch.setattr("app.api.chat.get_provider", lambda: _FakeStreamProvider())
 
