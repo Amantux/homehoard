@@ -389,3 +389,60 @@ def test_notifications_never_name_a_hidden_item_even_when_unlocked(auth_client, 
 
     assert "Secret Telescope" not in digest["text"]
     assert "Secret service" not in digest["text"]
+
+
+# ---- setting the passphrase ------------------------------------------------
+
+def test_first_passphrase_can_be_set_and_then_unlocks(auth_client, app):
+    secret = _item(auth_client, "Secret Telescope")
+    _hide(app, secret["id"])
+
+    r = auth_client.post("/api/v1/vault/passphrase", json={"phrase": "hunter two"})
+
+    assert r.status_code == 200 and r.get_json()["configured"] is True
+    assert auth_client.post("/api/v1/vault/unlock",
+                            json={"phrase": "hunter two"}).status_code == 200
+
+
+def test_changing_it_requires_the_current_one(auth_client):
+    """Otherwise anyone with an open session could silently re-key the vault
+    and lock the owner out of their own items."""
+    auth_client.post("/api/v1/vault/passphrase", json={"phrase": "first"})
+
+    bare = auth_client.post("/api/v1/vault/passphrase", json={"phrase": "second"})
+    wrong = auth_client.post("/api/v1/vault/passphrase",
+                             json={"phrase": "second", "currentPhrase": "nope"})
+    right = auth_client.post("/api/v1/vault/passphrase",
+                             json={"phrase": "second", "currentPhrase": "first"})
+
+    assert bare.status_code == 401 and wrong.status_code == 401
+    assert right.status_code == 200
+    assert auth_client.post("/api/v1/vault/unlock",
+                            json={"phrase": "second"}).status_code == 200
+
+
+def test_a_non_owner_cannot_set_the_passphrase(auth_client, app):
+    """It gates every member's view, so it is household config."""
+    from app.models import User
+    with app.app_context():
+        db.session.query(User).first().is_owner = False
+        db.session.commit()
+
+    r = auth_client.post("/api/v1/vault/passphrase", json={"phrase": "nope"})
+
+    assert r.status_code == 403
+
+
+def test_an_empty_passphrase_is_refused(auth_client):
+    assert auth_client.post("/api/v1/vault/passphrase",
+                            json={"phrase": "   "}).status_code == 422
+
+
+def test_status_tells_the_ui_whether_a_vault_exists_yet(auth_client):
+    """The UI needs this to offer 'set a passphrase' rather than dead-ending on
+    an unlock prompt that can never succeed."""
+    before = auth_client.get("/api/v1/vault/status").get_json()
+    auth_client.post("/api/v1/vault/passphrase", json={"phrase": "x y z"})
+    after = auth_client.get("/api/v1/vault/status").get_json()
+
+    assert before["configured"] is False and after["configured"] is True

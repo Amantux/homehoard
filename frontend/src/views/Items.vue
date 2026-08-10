@@ -181,13 +181,45 @@ async function hideSelected() {
 // The escape hatch: without this a misfired hide would only be recoverable by
 // asking the agent, which is a bad place for the sole recovery path to live.
 async function unlockVault() {
+  // No vault yet? Offer to create one. Without this the flow dead-ends: the
+  // prompt appears, the server answers "no passphrase is set", and there is
+  // nowhere in the app to set one.
+  if (!vault.value.configured) return setVaultPassphrase()
   const phrase = prompt('Vault passphrase — hidden items stay hidden until it matches:')
   if (!phrase) return
   try {
     await api.post('/vault/unlock', { phrase })
     await loadVault(); await load()
   } catch (e) {
-    ui.error(e.status === 401 ? 'That passphrase isn’t right.' : (e.message || 'Could not unlock.'))
+    ui.error(e.status === 401 ? 'That passphrase isn’t right.'
+      : e.status === 429 ? 'Too many attempts — wait a moment.'
+      : (e.message || 'Could not unlock.'))
+  }
+}
+
+async function setVaultPassphrase() {
+  const changing = vault.value.configured
+  const phrase = prompt(changing
+    ? 'New vault passphrase:'
+    : 'Choose a vault passphrase. Hidden items stay hidden until it is entered — there is no recovery if you forget it.')
+  if (!phrase) return
+  if (prompt('Type it again to confirm:') !== phrase) {
+    ui.error('Those didn’t match — nothing was changed.')
+    return
+  }
+  const body = { phrase }
+  if (changing) {
+    // The server requires this too; asking here just gives a clearer failure.
+    body.currentPhrase = prompt('Current passphrase (required to change it):') || ''
+  }
+  try {
+    await api.post('/vault/passphrase', body)
+    await loadVault()
+    ui.success(changing ? 'Vault passphrase changed.' : 'Vault passphrase set.')
+  } catch (e) {
+    ui.error(e.status === 401 ? 'That current passphrase isn’t right.'
+      : e.status === 403 ? 'Only the household owner can set the vault passphrase.'
+      : (e.message || 'Could not set the passphrase.'))
   }
 }
 
@@ -255,11 +287,15 @@ watch(() => route.query.q, (v) => { if (v !== q.value) { q.value = v || '' } })
     </label>
     <!-- Vault: a COUNT only. Showing that hidden items exist is what makes the
          feature discoverable; showing what they are would defeat it. -->
-    <button v-if="vault.hiddenCount || !vault.locked" class="ghost sm"
-            :title="vault.locked ? 'Hidden items are not shown anywhere' : 'Hidden items are visible in this session'"
+    <button v-if="vault.hiddenCount || !vault.locked || vault.configured" class="ghost sm"
+            :title="!vault.configured ? 'Set a passphrase to start using the vault'
+              : vault.locked ? 'Hidden items are not shown anywhere' : 'Hidden items are visible in this session'"
             @click="vault.locked ? unlockVault() : lockVault()">
-      {{ vault.locked ? `🔒 ${vault.hiddenCount} hidden` : '🔓 Hidden shown — lock' }}
+      {{ !vault.configured ? '🔑 Set vault passphrase'
+         : vault.locked ? `🔒 ${vault.hiddenCount} hidden` : '🔓 Hidden shown — lock' }}
     </button>
+    <button v-if="vault.configured" class="ghost sm" title="Change the vault passphrase"
+            @click="setVaultPassphrase">Change phrase</button>
     <button v-if="hasFilters" class="ghost sm" @click="resetFilters">Clear filters</button>
   </div>
 
