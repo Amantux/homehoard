@@ -12,6 +12,7 @@ from ..extensions import db
 from .holdings import ensure_holding
 from ..models import Item, Label, Location, ItemField
 from . import money
+from . import vault
 
 HEADERS = [
     "HB.import_ref",
@@ -97,7 +98,10 @@ def _csv_unescape(value):
 
 
 def export_items(group_id) -> str:
-    items = db.session.query(Item).filter_by(group_id=group_id).all()
+    # Vault: a LOCKED export omits hidden rows (nothing surfaced), an UNLOCKED
+    # one is complete — so a full backup is possible deliberately.
+    items = vault.visible(
+        db.session.query(Item).filter_by(group_id=group_id)).all()
     field_names = sorted(
         {f.name for i in items for f in i.fields}
     )

@@ -16,6 +16,7 @@ from sqlalchemy.orm import selectinload
 
 from ..extensions import db
 from ..models import AiSuggestion, Item, Label, utcnow
+from . import vault
 
 _LOGGER = logging.getLogger("homehoard.tooling")
 _CATEGORIZE_MAX = 200   # items per run
@@ -122,7 +123,7 @@ def run_categorize(job) -> dict:
     pending = (db.session.query(AiSuggestion.item_id)
                .filter(AiSuggestion.group_id == gid, AiSuggestion.kind == "categorize",
                        AiSuggestion.status == "pending", AiSuggestion.item_id.isnot(None)))
-    items = (db.session.query(Item)
+    items = (vault.visible(db.session.query(Item))
              .options(selectinload(Item.labels))  # avoid per-item lazy-load in the loop
              .filter(Item.group_id == gid, Item.archived.is_(False))
              .filter(~Item.labels.any())        # only items with no labels yet
@@ -191,7 +192,7 @@ def run_cluster(job) -> dict:
     opts = json.loads(job.params) if job.params else {}
     note = str(opts.get("note") or "")
     provider = _job_provider(opts)
-    items = (db.session.query(Item)
+    items = (vault.visible(db.session.query(Item))
              .filter(Item.group_id == gid, Item.archived.is_(False))
              .order_by(Item.created_at.asc()).limit(_CLUSTER_ITEMS_MAX).all())
     bump(job, done=0, total=1)

@@ -10,6 +10,11 @@ class Group(IDMixin, TimestampMixin, db.Model):
 
     name: Mapped[str] = mapped_column(String(255))
     currency: Mapped[str] = mapped_column(String(8), default="usd")
+    # bcrypt hash of the vault passphrase, or "" when no vault is configured.
+    # NEVER the phrase itself. AppSetting would be the wrong home: it is
+    # instance-global, and this is one household's secret.
+    vault_passphrase_hash: Mapped[str] = mapped_column(
+        String(255), default="", server_default="", nullable=False)
 
     users = relationship("User", back_populates="group", cascade="all, delete-orphan")
     locations = relationship(

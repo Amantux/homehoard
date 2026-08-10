@@ -29,6 +29,12 @@ class Item(IDMixin, TimestampMixin, db.Model):
     quantity: Mapped[float] = mapped_column(Float, default=1)
     insured: Mapped[bool] = mapped_column(Boolean, default=False)
     archived: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Vault: hidden items are invisible on EVERY read surface until the caller's
+    # session is unlocked with the household passphrase (services/vault.py).
+    # Distinct from `archived`, which means "disposed / long-term storage" and is
+    # merely filtered out of the default list.
+    hidden: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("0"), nullable=False, index=True)
     # When set, moving this item's container moves its children with it.
     sync_child_locations: Mapped[bool] = mapped_column(Boolean, default=False)
 

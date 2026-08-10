@@ -155,7 +155,11 @@ def refresh():
 @bp.post("/users/logout")
 @login_required
 def logout():
-    # Stateless JWT: client discards the token.
+    # Stateless JWT: client discards the token. The vault is NOT stateless
+    # though — close every unlock this user holds, so walking away from a shared
+    # machine doesn't leave hidden items on display for the next person.
+    from ..services import vault
+    vault.lock_all_for_user(current_user().id)
     return jsonify({"message": "logged out"})
 
 

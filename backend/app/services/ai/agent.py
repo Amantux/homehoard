@@ -13,6 +13,7 @@ import json
 from ...extensions import db
 from ...models import Item, Label, Location
 from .base import AIProvider
+from .. import vault
 
 SYSTEM = (
     "You are the HomeHoard assistant, a practical home-inventory helper. Help the "
@@ -41,6 +42,37 @@ TOOLS = [
         "parameters": {"type": "object",
                        "properties": {"query": {"type": "string"}},
                        "required": ["query"]},
+    },
+    {
+        "name": "hide_item",
+        "description": "Hide an item in the vault. It disappears from every "
+        "listing, search, count and export until the vault is unlocked with the "
+        "household passphrase.",
+        "parameters": {"type": "object",
+                       "properties": {"name_or_id": {"type": "string"}},
+                       "required": ["name_or_id"]},
+    },
+    {
+        "name": "unhide_items",
+        "description": "Unlock the vault so hidden items are visible again, and "
+        "stay visible until lock_items is called. Requires the household "
+        "passphrase — if the user hasn't given one, ASK for it; never guess, and "
+        "never retry a rejected phrase with variations.",
+        "parameters": {"type": "object",
+                       "properties": {"phrase": {"type": "string"}},
+                       "required": []},
+    },
+    {
+        "name": "lock_items",
+        "description": "Hide the vault items again. Needs no passphrase — "
+        "locking is never the dangerous direction.",
+        "parameters": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "name": "list_hidden",
+        "description": "List what is in the vault (names only). Works locked or "
+        "unlocked, so a hidden item can always be found and brought back.",
+        "parameters": {"type": "object", "properties": {}, "required": []},
     },
     {
         "name": "get_item",
@@ -79,17 +111,33 @@ TOOLS = [
 ]
 
 # Tools that change data — surfaced to the UI as actions taken this turn.
-_WRITE_TOOLS = {"add_label_to_item"}
+_WRITE_TOOLS = {"add_label_to_item", "hide_item", "unhide_items",
+                "lock_items"}
 
 
-def _find_item(gid, name_or_id):
+def _current_user_or_none():
+    """The authenticated user when there is a request, else None (a background
+    job has no session to attribute an unlock to)."""
+    try:
+        from ...auth import current_user
+        return current_user()
+    except Exception:  # noqa: BLE001 — no request context / not authenticated
+        return None
+
+
+def _find_item(gid, name_or_id, *, include_hidden=None):
+    # The id path is filtered too: fetching by id would otherwise walk straight
+    # past the vault. `include_hidden=True` is only for unhide/list-hidden.
     it = db.session.get(Item, str(name_or_id))
     if it and it.group_id == gid:
-        return it
+        if include_hidden or not it.hidden or vault.is_unlocked():
+            return it
+        return None
     like = f"%{str(name_or_id).strip()}%"
-    return (db.session.query(Item)
-            .filter(Item.group_id == gid, Item.name.ilike(like))
-            .order_by(Item.name.asc()).first())
+    q = (db.session.query(Item)
+         .filter(Item.group_id == gid, Item.name.ilike(like)))
+    return vault.visible(q, include_hidden=include_hidden).order_by(
+        Item.name.asc()).first()
 
 
 def _find_label(gid, name_or_id):
@@ -124,6 +172,42 @@ def execute_tool(gid: str, name: str, args: dict):
     if name == "search_items":
         from ...api.lookup import _search_items  # local: avoid api↔services cycle
         return _search_items(gid, (args.get("query") or "").strip(), 15)
+
+    if name == "hide_item":
+        it = _find_item(gid, args.get("name_or_id", ""))
+        if not it:
+            return {"error": "no matching item"}
+        it.hidden = True
+        db.session.commit()
+        return {"hidden": it.name,
+                "note": "It won't appear anywhere until the vault is unlocked."}
+
+    if name == "unhide_items":
+        from .. import vault
+        group = vault.group_for(gid)
+        phrase = (args.get("phrase") or "").strip()
+        if not vault.configured(group):
+            return {"error": "no vault passphrase has been set yet"}
+        if not phrase:
+            return {"needsPassphrase": True,
+                    "message": "Ask the user for the vault passphrase."}
+        # Pass the real user: a VaultUnlock with a NULL user_id would never be
+        # cleared by the logout auto-lock, quietly outliving the session.
+        if not vault.unlock(group, _current_user_or_none(), phrase):
+            return {"error": "incorrect passphrase", "unlocked": False}
+        return {"unlocked": True, "hiddenCount": vault.hidden_count(gid)}
+
+    if name == "lock_items":
+        from .. import vault
+        vault.lock(vault.group_for(gid))
+        return {"locked": True, "hiddenCount": vault.hidden_count(gid)}
+
+    if name == "list_hidden":
+        from .. import vault
+        rows = (vault.visible(db.session.query(Item), include_hidden=True)
+                .filter(Item.group_id == gid, Item.hidden.is_(True))
+                .order_by(Item.name.asc()).all())
+        return [{"id": i.id, "name": i.name} for i in rows]
 
     if name == "get_item":
         it = _find_item(gid, args.get("name_or_id", ""))

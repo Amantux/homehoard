@@ -24,6 +24,7 @@ const locationFilter = ref('')
 const labelFilter = ref('')
 const orderBy = ref('name')
 const includeArchived = ref(false)
+const vault = ref({ configured: false, locked: true, hiddenCount: 0 })
 const view = ref(localStorage.getItem('easyinv_itemview') || 'grid')
 const page = ref(1)
 const pageSize = 24
@@ -169,6 +170,36 @@ async function archiveSelected() {
   await runBulk('Archived', (it) => api.patch('/items/' + it.id, { archived: true }))
 }
 
+async function hideSelected() {
+  const n = selectedItems.value.length
+  if (!confirm(`Hide ${n} item${n === 1 ? '' : 's'} in the vault? They disappear from every list, search and total until you unlock with the passphrase — not deleted.`))
+    return
+  await runBulk('Hidden', (it) => api.patch('/items/' + it.id, { hidden: true }))
+  await loadVault()
+}
+
+// The escape hatch: without this a misfired hide would only be recoverable by
+// asking the agent, which is a bad place for the sole recovery path to live.
+async function unlockVault() {
+  const phrase = prompt('Vault passphrase — hidden items stay hidden until it matches:')
+  if (!phrase) return
+  try {
+    await api.post('/vault/unlock', { phrase })
+    await loadVault(); await load()
+  } catch (e) {
+    ui.error(e.status === 401 ? 'That passphrase isn’t right.' : (e.message || 'Could not unlock.'))
+  }
+}
+
+async function lockVault() {
+  await api.post('/vault/lock', {})
+  await loadVault(); await load()
+}
+
+async function loadVault() {
+  try { vault.value = await api.get('/vault/status') } catch { /* non-fatal */ }
+}
+
 async function deleteSelected() {
   const n = selectedItems.value.length
   if (!confirm(`Delete ${n} item${n === 1 ? '' : 's'}? This can’t be undone.`)) return
@@ -181,6 +212,7 @@ watch([q, locationFilter, labelFilter, orderBy, includeArchived], () => {
   clearTimeout(timer)
   timer = setTimeout(load, 250)
 })
+loadVault()
 watch(page, load)
 watch(() => route.query.q, (v) => { if (v !== q.value) { q.value = v || '' } })
 
@@ -221,6 +253,13 @@ watch(() => route.query.q, (v) => { if (v !== q.value) { q.value = v || '' } })
     <label class="row" style="gap:6px;font-size:0.85rem">
       <input type="checkbox" v-model="includeArchived" /> Archived
     </label>
+    <!-- Vault: a COUNT only. Showing that hidden items exist is what makes the
+         feature discoverable; showing what they are would defeat it. -->
+    <button v-if="vault.hiddenCount || !vault.locked" class="ghost sm"
+            :title="vault.locked ? 'Hidden items are not shown anywhere' : 'Hidden items are visible in this session'"
+            @click="vault.locked ? unlockVault() : lockVault()">
+      {{ vault.locked ? `🔒 ${vault.hiddenCount} hidden` : '🔓 Hidden shown — lock' }}
+    </button>
     <button v-if="hasFilters" class="ghost sm" @click="resetFilters">Clear filters</button>
   </div>
 
@@ -246,6 +285,7 @@ watch(() => route.query.q, (v) => { if (v !== q.value) { q.value = v || '' } })
       <option v-for="l in labels" :key="l.id" :value="l.id">🏷️ {{ l.name }}</option>
     </select>
     <button class="secondary sm" :disabled="busy" @click="archiveSelected">Archive</button>
+    <button class="secondary sm" :disabled="busy" @click="hideSelected">Hide</button>
     <button class="danger secondary sm" :disabled="busy" @click="deleteSelected">Delete</button>
   </div>
 

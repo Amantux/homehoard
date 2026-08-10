@@ -367,6 +367,65 @@ def set_checkout_details(name_or_id: str, person: str = "", due: str = "") -> st
 
 
 @mcp.tool()
+def hide_item(name_or_id: str) -> str:
+    """Hide an item in the vault: it disappears from every listing, search and
+    total until the vault is unlocked with the household passphrase.
+    If the name matches several items this asks which you meant and changes NOTHING — show the options, then call again with the exact name.
+    """
+    item, candidates = _resolve(name_or_id)
+    if candidates:
+        return _clarify(name_or_id, candidates)
+    if not item:
+        return f"No item matching '{name_or_id}'."
+    _patch(f"/items/{item['id']}", {"hidden": True})
+    return (f"Hidden {item['name']}. It won't appear anywhere until you unhide "
+            f"it with the passphrase.")
+
+
+@mcp.tool()
+def unhide_items(phrase: str = "") -> str:
+    """Unlock the vault so hidden items are visible again, and stay visible
+    until `lock_items` is called.
+
+    Requires the household passphrase. If the user has not supplied one, ASK for
+    it — do not guess, and do not retry a rejected phrase with variations.
+    Unlocking applies to this session only.
+    """
+    if not phrase.strip():
+        return ("What's the passphrase? Hidden items stay hidden until it's "
+                "given.")
+    try:
+        state = _post("/vault/unlock", {"phrase": phrase})
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 401:
+            return "That passphrase isn't right — nothing was unhidden."
+        if exc.response.status_code == 409:
+            return ("No vault passphrase has been set yet — set one in "
+                    "HomeHoard first.")
+        if exc.response.status_code == 429:
+            return "Too many attempts just now; wait a moment and try again."
+        raise
+    return (f"Unlocked — {state.get('hiddenCount', 0)} hidden item(s) are "
+            f"visible again. Say 'lock my items' when you're done.")
+
+
+@mcp.tool()
+def lock_items() -> str:
+    """Hide the vault items again. The opposite of unhide_items; needs no
+    passphrase, because locking is never the dangerous direction."""
+    state = _post("/vault/lock", {})
+    return f"Locked — {state.get('hiddenCount', 0)} item(s) hidden again."
+
+
+@mcp.tool()
+def list_hidden() -> list[dict]:
+    """List what is in the vault. Works whether locked or unlocked, so a hidden
+    item can always be found and brought back."""
+    data = _get("/items", {"onlyHidden": "true", "pageSize": 200})
+    return [{"id": i["id"], "name": i["name"]} for i in data.get("items", [])]
+
+
+@mcp.tool()
 def suggest_placement(item: str, labels: str = "") -> list[dict]:
     """Suggest where to put an item, based on where similar items already live.
 

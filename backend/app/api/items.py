@@ -13,6 +13,7 @@ from ..schemas.serializers import item_out, item_summary
 from ..services.holdings import ensure_holding, resync_item, primary_holding
 from .lookup import location_path_str
 from ..services import money
+from ..services import vault
 
 bp = Blueprint("items", __name__)
 
@@ -135,6 +136,7 @@ def _apply(item: Item, data: dict):
         "quantity": "quantity",
         "insured": "insured",
         "archived": "archived",
+        "hidden": "hidden",
         "syncChildLocations": "sync_child_locations",
         "serialNumber": "serial_number",
         "modelNumber": "model_number",
@@ -227,6 +229,14 @@ def list_items():
     # millions of rows. Non-numeric input falls back to the default (no 500).
     per_page = min(max(1, _int("pageSize", 50)), 1000)
     q = db.session.query(Item).filter_by(group_id=current_group().id)
+    # Vault: hidden items are absent unless this session is unlocked.
+    # ?onlyHidden=true is how anything (agent or UI) lists what is in the vault,
+    # and it must work while locked — a hidden item you cannot list is one you
+    # can never get back.
+    if args.get("onlyHidden", "false").lower() == "true":
+        q = q.filter(Item.hidden.is_(True))
+    else:
+        q = vault.visible(q)
 
     search = args.get("q")
     if search:

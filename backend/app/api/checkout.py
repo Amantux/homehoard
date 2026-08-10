@@ -7,6 +7,7 @@ from ..extensions import db
 from ..models import Item, CheckoutEntry
 from ..auth import login_required, current_group
 from ..schemas.serializers import item_out, item_summary, checkout_out
+from ..services import vault
 
 bp = Blueprint("checkout", __name__)
 
@@ -125,7 +126,7 @@ def history(item_id):
 def all_checked_out():
     """Every item currently checked out — 'who has what'."""
     items = (
-        db.session.query(Item)
+        vault.visible(db.session.query(Item))
         .filter_by(group_id=current_group().id, checked_out=True)
         .order_by(Item.checked_out_at.asc())
         .all()

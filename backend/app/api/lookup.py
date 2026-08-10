@@ -11,6 +11,7 @@ from ..models import Item, Bin, Location, QrTag, Label
 from ..auth import login_required, current_group
 from ..schemas.serializers import item_summary, item_out, bin_out, location_out
 from ..services import resolve
+from ..services import vault
 
 bp = Blueprint("lookup", __name__)
 
@@ -51,7 +52,7 @@ def barcode_lookup(code):
     if not tag or tag.target is None:
         # An item already carrying this product barcode? (Duplicates are allowed —
         # two identical items share a UPC — so resolve deterministically: oldest first.)
-        item = (db.session.query(Item)
+        item = (vault.visible(db.session.query(Item))
                 .filter_by(group_id=gid, barcode=code)
                 .order_by(Item.created_at.asc(), Item.id.asc()).first())
         if item:
@@ -98,7 +99,7 @@ def _rank(rows, q, limit):
 
 
 def _search_items(gid, q, limit):
-    query = db.session.query(Item).filter_by(group_id=gid)
+    query = vault.visible(db.session.query(Item).filter_by(group_id=gid))
     if q:
         like = f"%{q}%"
         query = query.filter(

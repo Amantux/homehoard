@@ -20,6 +20,7 @@ from ..models import Item
 from ..schemas.serializers import iso
 from ..services.csv_io import _csv_safe
 from ..services import money
+from ..services import vault
 
 bp = Blueprint("reports", __name__)
 
@@ -46,7 +47,7 @@ def _warranty_status(i, now) -> str:
 def _items(gid):
     # Eager-load what _row() touches (location, labels, attachments) so the whole-
     # inventory report is a handful of queries, not N+1 across every item.
-    return (db.session.query(Item)
+    return (vault.visible(db.session.query(Item))
             .filter_by(group_id=gid, archived=False)
             .options(selectinload(Item.location),
                      selectinload(Item.labels),

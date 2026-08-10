@@ -446,6 +446,7 @@ def _register_blueprints(app):
     from .api.suggestions import bp as suggestions_bp
     from .api.tokens import bp as tokens_bp
     from .api.users import bp as users_bp
+    from .api.vault import bp as vault_bp
 
     prefix = "/api/v1"
     for bp in (
@@ -469,6 +470,7 @@ def _register_blueprints(app):
         chat_bp,
         jobs_bp,
         suggestions_bp,
+        vault_bp,
     ):
         app.register_blueprint(bp, url_prefix=prefix)
 

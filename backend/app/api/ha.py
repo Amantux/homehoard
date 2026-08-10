@@ -19,6 +19,7 @@ from ..services import money
 # never disagree about what counts as an alert.
 from ..services.alerts import active_warranty_items as _active_warranty_items
 from ..services.alerts import open_maintenance as _open_maintenance
+from ..services import vault
 
 bp = Blueprint("ha", __name__)
 
@@ -37,7 +38,7 @@ def _parse(value):
 def summary():
     gid = current_group().id
     now = datetime.utcnow()
-    items = db.session.query(Item).filter_by(group_id=gid).all()
+    items = vault.visible(db.session.query(Item).filter_by(group_id=gid)).all()
 
     total_value = money.total((i.purchase_price, i.quantity) for i in items)
     insured_value = money.total(
