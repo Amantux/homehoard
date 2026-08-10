@@ -8,6 +8,7 @@ from ..models.qrtag import gen_token
 from ..auth import login_required, current_group
 from ..schemas.serializers import bin_out, bin_summary, item_summary
 from ..services.holdings import resync_item, primary_holding, resync_bin_holdings
+from ..services import vault
 
 bp = Blueprint("bins", __name__)
 
@@ -122,7 +123,7 @@ def delete_bin(bin_id):
 def add_item(bin_id, item_id):
     b = _get(bin_id)
     item = db.session.get(Item, item_id)
-    if not item or item.group_id != current_group().id:
+    if not item or item.group_id != current_group().id or not vault.readable(item):
         abort(404)
     item.bin_id = b.id
     # An item in a bin inherits the bin's location for consistency.

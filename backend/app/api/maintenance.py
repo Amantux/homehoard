@@ -7,6 +7,7 @@ from ..models import Item, MaintenanceEntry
 from ..auth import login_required, current_group
 from ..schemas.serializers import maintenance_out
 from ..services import money
+from ..services import vault
 
 bp = Blueprint("maintenance", __name__)
 
@@ -22,6 +23,8 @@ def _parse_dt(value):
 
 def _get_item(item_id) -> Item:
     item = db.session.get(Item, item_id)
+    if item is not None and not vault.readable(item):
+        item = None  # hidden: indistinguishable from absent
     if not item or item.group_id != current_group().id:
         abort(404)
     return item

@@ -8,6 +8,7 @@ from ..models import GroupInvitation, Item, Label, Location, User
 from ..auth import login_required, owner_required, current_group
 from ..schemas.serializers import group_out
 from ..services import money
+from ..services import vault
 
 bp = Blueprint("groups", __name__)
 
@@ -57,7 +58,7 @@ def create_invitation():
 @login_required
 def statistics():
     group = current_group()
-    items = db.session.query(Item).filter_by(group_id=group.id).all()
+    items = vault.visible(db.session.query(Item).filter_by(group_id=group.id)).all()
     total_price = money.total((i.purchase_price, i.quantity) for i in items)
     return jsonify(
         {
@@ -81,7 +82,7 @@ def purchase_price_stats():
     """Time-series of purchase price. Simplified monthly aggregation."""
     group = current_group()
     items = (
-        db.session.query(Item)
+        vault.visible(db.session.query(Item))
         .filter(Item.group_id == group.id, Item.purchase_date.isnot(None))
         .all()
     )

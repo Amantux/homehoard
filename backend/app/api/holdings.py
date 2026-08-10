@@ -11,12 +11,15 @@ from ..models import Item, ItemHolding, Bin, Location
 from ..auth import login_required, current_group
 from ..schemas.serializers import holding_out, item_out
 from ..services.holdings import resync_item
+from ..services import vault
 
 bp = Blueprint("holdings", __name__)
 
 
 def _item(item_id) -> Item:
     it = db.session.get(Item, item_id)
+    if it is not None and not vault.readable(it):
+        it = None  # hidden: indistinguishable from absent
     if not it or it.group_id != current_group().id:
         abort(404)
     return it
@@ -25,6 +28,10 @@ def _item(item_id) -> Item:
 def _holding(holding_id) -> ItemHolding:
     h = db.session.get(ItemHolding, holding_id)
     if not h or h.group_id != current_group().id:
+        abort(404)
+    # A holding is a window onto its item: reaching one whose item is hidden
+    # would surface the item's placement (and, through it, the item).
+    if not vault.readable(h.item):
         abort(404)
     return h
 

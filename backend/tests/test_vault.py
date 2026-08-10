@@ -237,3 +237,80 @@ def test_logout_relocks_the_vault(auth_client, app):
     auth_client.post("/api/v1/users/logout")
 
     assert "Secret Telescope" not in auth_client.get("/api/v1/items").get_data(as_text=True)
+
+
+# ---- adversarial: the leaks a per-surface list can miss ---------------------
+# Written after reviewing the diff by hand: the parametrised test above walks
+# LIST endpoints, so it cannot catch a fetch that needs the id. Knowing an id is
+# not authorisation — ids appear in old exports, QR tags and old links.
+
+def test_direct_fetch_by_id_does_not_reveal_a_hidden_item(auth_client, app):
+    secret = _item(auth_client, "Secret Telescope")
+    _hide(app, secret["id"])
+
+    r = auth_client.get(f"/api/v1/items/{secret['id']}")
+
+    assert r.status_code == 404, "fetching by id walked straight past the vault"
+    assert "Secret Telescope" not in r.get_data(as_text=True)
+
+
+def test_hidden_item_is_not_in_statistics_totals(auth_client, app):
+    _item(auth_client, "Ordinary Telescope", purchasePrice="10.00")
+    secret = _item(auth_client, "Secret Telescope", purchasePrice="999.00")
+    _hide(app, secret["id"])
+
+    stats = auth_client.get("/api/v1/statistics").get_json()
+
+    assert "999" not in str(stats), f"a hidden item's value leaked into totals: {stats}"
+
+
+def test_hidden_item_is_not_reachable_through_sibling_routes(auth_client, app):
+    """attachments / holdings / maintenance / checkout all fetch by id."""
+    secret = _item(auth_client, "Secret Telescope")
+    _hide(app, secret["id"])
+    sid = secret["id"]
+
+    for label, resp in {
+        "attachments": auth_client.get(f"/api/v1/items/{sid}/attachments"),
+        "holdings": auth_client.get(f"/api/v1/items/{sid}/holdings"),
+        "maintenance": auth_client.get(f"/api/v1/items/{sid}/maintenance"),
+        "checkout": auth_client.post(f"/api/v1/items/{sid}/checkout", json={"to": "x"}),
+    }.items():
+        assert resp.status_code in (404, 405), \
+            f"{label} reached a hidden item ({resp.status_code})"
+
+
+def test_a_holding_does_not_expose_its_hidden_item(auth_client, app):
+    """A holding is a window onto its item — reaching one would surface the
+    item's placement, and through it the item."""
+    secret = _item(auth_client, "Secret Telescope")
+    rows = auth_client.get(f"/api/v1/items/{secret['id']}/holdings").get_json()
+    rows = rows["items"] if isinstance(rows, dict) else rows
+    hid = rows[0]["id"]
+    _hide(app, secret["id"])
+
+    # /holdings/<id>/move is the route that acts on one holding by id.
+    r = auth_client.post(f"/api/v1/holdings/{hid}/move", json={"quantity": 1})
+
+    assert r.status_code == 404, "a holding leaked its hidden item"
+
+
+def test_hidden_item_is_not_in_the_spend_buckets(auth_client, app):
+    secret = _item(auth_client, "Secret Telescope",
+                   purchasePrice="999.00", purchaseDate="2026-01-15")
+    _hide(app, secret["id"])
+
+    body = auth_client.get("/api/v1/statistics/spend").get_data(as_text=True)
+
+    assert "999" not in body, "a hidden item's spend leaked into the buckets"
+
+
+def test_a_hidden_item_cannot_be_added_to_a_bin(auth_client, app):
+    """Accepting the write would confirm the item exists."""
+    b = auth_client.post("/api/v1/bins", json={"name": "Crate"}).get_json()
+    secret = _item(auth_client, "Secret Telescope")
+    _hide(app, secret["id"])
+
+    r = auth_client.put(f"/api/v1/bins/{b['id']}/items/{secret['id']}")
+
+    assert r.status_code == 404, "a hidden item was reachable through a bin write"

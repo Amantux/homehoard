@@ -165,6 +165,16 @@ def visible(query, *, include_hidden=None):
     return query.filter(Item.hidden.is_(False))
 
 
+def readable(item) -> bool:
+    """May this item be surfaced to the caller right now?
+
+    For the by-ID fetches. A list endpoint filters with `visible()`, but
+    `db.session.get(Item, id)` walks straight past it — and knowing an id is not
+    authorisation: ids travel in old exports, QR tags and shared links. Callers
+    abort 404, never 403: "this exists but is hidden" is itself the leak."""
+    return item is not None and (not item.hidden or is_unlocked())
+
+
 def hidden_count(gid) -> int:
     """How many items are hidden — safe to report while locked (a count, not
     the contents), so the UI can show that a vault exists at all."""

@@ -42,7 +42,7 @@ def _sync_holdings_from_item_form(item, data):
 
 def _get(item_id) -> Item:
     item = db.session.get(Item, item_id)
-    if not item or item.group_id != current_group().id:
+    if not item or item.group_id != current_group().id or not vault.readable(item):
         abort(404)
     return item
 
@@ -473,7 +473,7 @@ def _placement_suggestions(gid, name, label_ids, exclude_id, limit):
 
     agg = {}
     if conds:
-        q = db.session.query(Item).filter(Item.group_id == gid)
+        q = vault.visible(db.session.query(Item).filter(Item.group_id == gid))
         if exclude_id:
             q = q.filter(Item.id != exclude_id)
         for item in q.filter(db.or_(*conds)).all():

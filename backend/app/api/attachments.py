@@ -9,12 +9,15 @@ from ..extensions import db
 from ..services import videos
 from ..models import Attachment, Bin, Document, Item, MaintenanceEntry
 from ..schemas.serializers import attachment_out, bin_out, item_out
+from ..services import vault
 
 bp = Blueprint("attachments", __name__)
 
 
 def _get_item(item_id) -> Item:
     item = db.session.get(Item, item_id)
+    if item is not None and not vault.readable(item):
+        item = None  # hidden: indistinguishable from absent
     if not item or item.group_id != current_group().id:
         abort(404)
     return item
