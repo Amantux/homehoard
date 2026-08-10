@@ -113,6 +113,19 @@ def lock(group) -> int:
     return n
 
 
+def clear(group) -> None:
+    """Forget the passphrase and close every open unlock for this household.
+
+    Used by the reset. Closing the unlocks matters: a session that was open
+    BEFORE the reset would otherwise keep reporting an unlocked vault that no
+    longer exists."""
+    group.vault_passphrase_hash = ""
+    db.session.query(VaultUnlock).filter_by(group_id=group.id).delete(
+        synchronize_session=False)
+    if has_request_context():
+        g.__dict__.pop("_vault_unlocked", None)
+
+
 def lock_all_for_user(user_id) -> int:
     """Close every unlock held by a user — called on logout, so a shared machine
     doesn't leave the vault open for the next person."""

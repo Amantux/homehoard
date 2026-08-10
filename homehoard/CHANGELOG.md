@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- **New: a vault for items you'd rather nobody saw.** Mark an item hidden and it
+  disappears from every list, search, count, price total, export, HA sensor,
+  notification and assistant answer until you unlock it with a passphrase you
+  set. Ask the assistant to "unhide my items", give the phrase, and they stay
+  visible until you say "lock" (or log out, or 12 hours pass). Unlocking applies
+  to the session you did it in, so unlocking on a laptop doesn't reveal anything
+  on a phone, and an API token never inherits it.
+- **If you forget the vault passphrase, it cannot be recovered** — it is stored
+  only as a hash. You can reset the vault, but doing so **permanently deletes
+  everything in it**; the reset previews a count first and needs an explicit
+  confirmation. It deletes rather than re-keying deliberately, so that an owner
+  cannot simply re-key their way into reading it.
+- **The vault is access control inside the app, not encryption.** Hidden items
+  are still stored as ordinary rows, so anyone with your database file, a backup
+  or an admin API token can read them regardless. And if you unlock by chatting
+  with the assistant, the passphrase goes to your LLM provider and stays in the
+  chat history — unlock from the UI if that matters to you.
+
 - **HomeHoard now checks its settings before it starts.** If something is wrong
   — a typo in an option, a port already in use by the MCP server, an unusable
   database URL — it says so in the log, lists *every* problem at once, and stops

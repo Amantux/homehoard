@@ -7,10 +7,15 @@ are thin wrappers over these, so the three surfaces cannot drift on what
 from flask import Blueprint, jsonify, request
 
 from ..auth import current_group, current_user, login_required, owner_required
+from ..models import Item
+import logging
+
 from ..extensions import db, limiter
 from ..services import vault
 
 bp = Blueprint("vault", __name__)
+
+_LOGGER = logging.getLogger("homehoard.vault")
 
 # bcrypt already bounds the work, but an unbounded body is still pointless work.
 _MAX_PHRASE = 1024
@@ -79,3 +84,46 @@ def lock():
     group = current_group()
     vault.lock(group)
     return jsonify(vault.status(group))
+
+
+@bp.post("/vault/reset")
+# Destructive and owner-gated, but still rate-limited: a reset is also a way to
+# repeatedly probe how much is hidden.
+@limiter.limit("5/hour")
+@owner_required
+def reset():
+    """Forgot the passphrase: reset the vault, at the price of its contents.
+
+    Two-step, like every destructive operation here — the first call previews
+    and changes nothing, only ``{"confirm": true}`` acts.
+
+    The preview reports a COUNT and never the names. The house rule is that a
+    destructive preview must name exactly what is lost, and this is the one
+    place that rule inverts: naming them would hand the vault's contents to
+    someone who has just demonstrated they cannot open it.
+
+    Wiping is deliberate, not a shortcut. If a reset merely re-keyed the vault,
+    any owner could re-key their way into reading it, and the passphrase would
+    protect nothing from the people most likely to be looking. So the reset
+    returns the vault, never its contents.
+    """
+    group = current_group()
+    hidden = (db.session.query(Item)
+              .filter(Item.group_id == group.id, Item.hidden.is_(True)))
+    count = hidden.count()
+
+    if not (request.get_json(silent=True) or {}).get("confirm"):
+        return jsonify({
+            "willDestroy": count,
+            "confirmed": False,
+            "warning": ("This permanently deletes the hidden items. They cannot "
+                        "be recovered, and their names are not shown here."),
+        })
+
+    for item in hidden.all():
+        db.session.delete(item)          # cascades holdings/attachments/fields
+    vault.clear(group)                   # drop the phrase AND every open unlock
+    db.session.commit()
+    _LOGGER.info("vault reset for group %s: %s item(s) destroyed", group.id, count)
+    return jsonify({"destroyed": count, "confirmed": True,
+                    **vault.status(group)})

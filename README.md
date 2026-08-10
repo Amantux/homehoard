@@ -294,6 +294,10 @@ for the input/script helpers). All examples live under `docs/ha/`.
 - **Multiple QR codes per item, bin, or location** — stick several printed
   codes on one physical object; scanning any of them opens that record. QR
   images and print-ready pages included.
+- **Vault (hidden items)** — mark items hidden and they vanish from every
+  listing, search, count, total, export and agent answer until you unlock with a
+  passphrase. Ask the assistant to "unhide my items", give the phrase, and they
+  stay visible until you say "lock". See [The vault](#-the-vault-hidden-items).
 - **Check in / out** — mark an item as *here* or *checked out* ("yes it's there,
   no it's not"). **One click checks it out immediately**; who has it, a due date,
   and notes are an optional next step. `/checkouts` lists everything currently out
@@ -350,6 +354,92 @@ The Vue 3 SPA is a full homebox-style interface:
   navigates to the record. Scan URLs are **Home Assistant ingress aware** —
   they honor the `X-Ingress-Path` / `X-Forwarded-*` headers so printed codes
   keep working when the app is reached through ingress.
+
+## 🔒 The vault (hidden items)
+
+Some things you own are nobody else's business — presents before a birthday,
+anything you'd rather not have on a screen someone else is looking at. Marking
+an item **hidden** removes it from the app until you unlock the vault.
+
+### What hidden actually means
+
+While the vault is locked, a hidden item appears in **no** listing, search
+result, resolve, barcode scan, bin/label/location page, report, statistic, price
+total, CSV export, HA sensor or calendar entry, notification, or agent answer.
+Not "greyed out" — absent. Its item count doesn't move, its price doesn't appear
+in a total, and fetching it by id returns `404`, because "this exists but is
+hidden" would itself give it away.
+
+Notifications are stricter still: a warranty or maintenance alert **never** names
+a hidden item, even while you're unlocked. An unlock is one browser tab for a few
+hours; a notification sitting on a phone is permanent and visible to whoever
+picks it up.
+
+### Using it
+
+| Action | In the app | To the assistant |
+|---|---|---|
+| Set the passphrase | Items → **🔑 Set vault passphrase** | — (owner-only, deliberately not a chat action) |
+| Hide something | select items → **Hide** | "hide the telescope" |
+| Unlock | click **🔒 N hidden** | "unhide my items" → it asks for the phrase |
+| Lock again | click **🔓 Hidden shown — lock** | "lock my items" |
+| See what's hidden | Items → `?onlyHidden=true` | "what's hidden?" |
+
+Unlocking applies to **that session only** — your phone stays locked when you
+unlock on a laptop, and an API token never inherits your unlock. It re-locks when
+you log out, and after 12 hours idle.
+
+### Forgot the passphrase — the reset
+
+There is no recovery. The passphrase is stored only as a bcrypt hash, so nothing
+in HomeHoard can tell you what it was, and nothing can open the vault without it.
+
+What you *can* do is **reset the vault, which permanently deletes everything in
+it**:
+
+```bash
+# 1. preview — changes nothing, and reports a COUNT only
+curl -X POST http://<host>/api/v1/vault/reset \
+  -H "Authorization: Bearer <owner-token>" -H "Content-Type: application/json" -d '{}'
+# -> {"willDestroy": 3, "confirmed": false, "warning": "..."}
+
+# 2. confirm — irreversible
+curl -X POST http://<host>/api/v1/vault/reset \
+  -H "Authorization: Bearer <owner-token>" -H "Content-Type: application/json" \
+  -d '{"confirm": true}'
+# -> {"destroyed": 3, "configured": false}
+```
+
+Afterwards the vault has no passphrase and no contents; set a new phrase and
+start again.
+
+**Why it deletes rather than just re-keying.** If a reset simply set a new
+passphrase and kept the items, then any household owner could re-key their way
+into reading them — and the vault would protect nothing from exactly the people
+most likely to look. The reset gives you back the vault, never its contents.
+
+**Why the preview won't name them.** Every other destructive action in HomeHoard
+names precisely what it is about to remove. This one reports a number, because
+listing the names would hand the contents to someone who has just demonstrated
+they can't open the vault.
+
+Owner-only, rate-limited, and two-step: the first call always previews.
+
+### What this does and does not protect
+
+This is access control **inside the app**, not encryption:
+
+- Hidden rows sit in the database in **plaintext**. Anyone with the database
+  file, a filesystem backup, or an admin API token can read them regardless of
+  lock state.
+- If you unlock through the chat assistant, the passphrase is an ordinary chat
+  message: it reaches whichever LLM provider you configured and stays in chat
+  history. Unlock from the UI if that matters to you.
+- A locked CSV export omits hidden items; unlock first if you want a complete
+  backup.
+
+It stops someone browsing the app, searching, or asking the assistant. It does
+not stop someone with access to the machine.
 
 ## Project layout
 
@@ -446,6 +536,20 @@ JSON REST API under `/api/v1`, mirroring homebox's routes — e.g.
 `/items`, `/items/{id}` (GET/PUT/PATCH/DELETE), `/items/import`,
 `/items/export`, `/locations`, `/locations/tree`, `/labels`, `/groups/statistics`,
 `/users/login`, `/users/self`, `/notifiers`, `/actions/*`, `/qrcode`, `/status`.
+
+Vault (hidden items):
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/vault/status` | `{configured, locked, hiddenCount}` — a count, never contents |
+| POST | `/vault/passphrase` | Set (`{phrase}`) or change (`+ {currentPhrase}`); owner-only |
+| POST | `/vault/unlock` | `{phrase}` → unlocks **this session**; 401 wrong, 409 if none set |
+| POST | `/vault/lock` | Re-hide immediately |
+| POST | `/vault/reset` | Preview; with `{"confirm": true}` **deletes every hidden item** and clears the passphrase. Owner-only |
+
+An item is hidden with `PATCH /items/{id} {"hidden": true}`, and
+`GET /items?onlyHidden=true` lists the vault (which works while locked, so
+nothing is ever stranded).
 
 Bin & QR extensions:
 

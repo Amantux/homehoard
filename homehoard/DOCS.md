@@ -41,8 +41,35 @@ Data (SQLite database + attachments) is stored under `/share/homehoard`.
   your own tags and items offline; with `barcode_lookup` on, an unknown product
   code is identified online to prefill a new item.
 - **Bins** with photos; items inherit and follow their bin's location.
+- **Vault** — hide items behind a passphrase; they vanish from every list,
+  search, total and notification until you unlock. See below.
 
 ![Find where something is](https://raw.githubusercontent.com/Amantux/homehoard/main/docs/screenshots/search.png)
+
+## The vault (hidden items)
+
+Mark an item **hidden** and it disappears from the whole add-on — listings,
+search, counts, price totals, exports, HA sensors, notifications and anything
+the assistant answers — until you unlock with a passphrase.
+
+- **Set it up:** Items → **🔑 Set vault passphrase** (household owner only).
+- **Hide:** select items → **Hide**, or tell the assistant "hide the telescope".
+- **Unlock:** click **🔒 N hidden**, or say "unhide my items" and give the
+  phrase. It stays open for that session until you lock it, you log out, or 12
+  hours pass.
+
+**Forgot the passphrase?** There is no recovery — it is stored only as a hash.
+You can reset the vault, which **permanently deletes everything inside it**:
+`POST /api/v1/vault/reset` previews a count, and `{"confirm": true}` performs it.
+It deletes rather than simply re-keying on purpose: if an owner could re-key
+their way in, the passphrase would protect nothing from the people most likely
+to look.
+
+**What it is not:** encryption. Hidden rows are plaintext in the database, so
+anyone with the database file, a backup, or an admin token can read them
+whatever the lock state. If you unlock via chat, the passphrase reaches your
+configured LLM provider and stays in chat history — unlock from the UI if that
+matters.
 
 ## AI features
 

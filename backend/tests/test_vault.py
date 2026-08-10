@@ -446,3 +446,82 @@ def test_status_tells_the_ui_whether_a_vault_exists_yet(auth_client):
     after = auth_client.get("/api/v1/vault/status").get_json()
 
     assert before["configured"] is False and after["configured"] is True
+
+
+# ---- forgot the passphrase: reset, at the price of the contents ------------
+
+def test_reset_previews_a_count_and_destroys_nothing_without_confirm(auth_client, app):
+    """The destructive-op rule says a preview must name exactly what is lost —
+    but NAMING it here would defeat the vault. A count is the most that can be
+    told to someone who cannot prove they may see the contents."""
+    a = _item(auth_client, "Secret Telescope")
+    b = _item(auth_client, "Secret Ledger")
+    _item(auth_client, "Ordinary Hammer")
+    _hide(app, a["id"])
+    _hide(app, b["id"])
+    _set_phrase(auth_client, "forgotten")
+
+    r = auth_client.post("/api/v1/vault/reset", json={})
+
+    body = r.get_json()
+    assert r.status_code == 200
+    assert body["willDestroy"] == 2 and body["confirmed"] is False
+    assert "Secret" not in str(body), "the preview named the contents"
+    with app.app_context():
+        assert db.session.get(Item, a["id"]) is not None, "destroyed without confirm"
+
+
+def test_reset_with_confirm_wipes_the_hidden_items_and_clears_the_phrase(auth_client, app):
+    a = _item(auth_client, "Secret Telescope")
+    keep = _item(auth_client, "Ordinary Hammer")
+    _hide(app, a["id"])
+    _set_phrase(auth_client, "forgotten")
+
+    r = auth_client.post("/api/v1/vault/reset", json={"confirm": True})
+
+    assert r.status_code == 200 and r.get_json()["destroyed"] == 1
+    with app.app_context():
+        assert db.session.get(Item, a["id"]) is None, "hidden item survived the reset"
+        assert db.session.get(Item, keep["id"]) is not None, "a visible item was destroyed"
+    # the vault is gone, not merely re-keyed
+    assert auth_client.get("/api/v1/vault/status").get_json()["configured"] is False
+    assert auth_client.post("/api/v1/vault/unlock",
+                            json={"phrase": "forgotten"}).status_code == 409
+
+
+def test_reset_lets_you_start_over(auth_client, app):
+    a = _item(auth_client, "Secret Telescope")
+    _hide(app, a["id"])
+    _set_phrase(auth_client, "forgotten")
+    auth_client.post("/api/v1/vault/reset", json={"confirm": True})
+
+    assert auth_client.post("/api/v1/vault/passphrase",
+                            json={"phrase": "a fresh one"}).status_code == 200
+    assert auth_client.post("/api/v1/vault/unlock",
+                            json={"phrase": "a fresh one"}).status_code == 200
+
+
+def test_reset_is_owner_only(auth_client, app):
+    """It destroys another member's hidden items — household config, not a
+    personal action."""
+    from app.models import User
+    with app.app_context():
+        db.session.query(User).first().is_owner = False
+        db.session.commit()
+
+    r = auth_client.post("/api/v1/vault/reset", json={"confirm": True})
+
+    assert r.status_code == 403
+
+
+def test_reset_also_closes_any_open_unlock(auth_client, app):
+    """Otherwise a session unlocked before the reset keeps seeing a vault that
+    no longer exists."""
+    a = _item(auth_client, "Secret Telescope")
+    _hide(app, a["id"])
+    _set_phrase(auth_client, "forgotten")
+    auth_client.post("/api/v1/vault/unlock", json={"phrase": "forgotten"})
+
+    auth_client.post("/api/v1/vault/reset", json={"confirm": True})
+
+    assert auth_client.get("/api/v1/vault/status").get_json()["locked"] is True
