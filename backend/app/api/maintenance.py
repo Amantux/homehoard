@@ -35,8 +35,8 @@ def _get_item(item_id) -> Item:
 def all_maintenance():
     """Aggregate maintenance across the whole group (for the Maintenance page)."""
     entries = (
-        db.session.query(MaintenanceEntry)
-        .join(Item, Item.id == MaintenanceEntry.item_id)
+        vault.visible(db.session.query(MaintenanceEntry)
+                      .join(Item, Item.id == MaintenanceEntry.item_id))
         .filter(Item.group_id == current_group().id)
         .all()
     )

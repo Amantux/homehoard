@@ -8,6 +8,7 @@ from sqlalchemy.orm import joinedload
 
 from ..extensions import db
 from ..models import Item, MaintenanceEntry
+from . import vault
 
 # Warranties within this window are "expiring soon" for alerting purposes.
 WARRANTY_SOON_DAYS = 30
@@ -16,7 +17,7 @@ WARRANTY_SOON_DAYS = 30
 def active_warranty_items(group_id):
     """Items with a future warranty expiry (excludes lifetime + sold)."""
     return (
-        db.session.query(Item)
+        vault.never_hidden(db.session.query(Item))
         .filter(
             Item.group_id == group_id,
             Item.sold_date.is_(None),
@@ -30,8 +31,8 @@ def active_warranty_items(group_id):
 def open_maintenance(group_id):
     """Scheduled, not-yet-completed maintenance entries for the group's items."""
     return (
-        db.session.query(MaintenanceEntry)
-        .join(Item, Item.id == MaintenanceEntry.item_id)
+        vault.never_hidden(db.session.query(MaintenanceEntry)
+                           .join(Item, Item.id == MaintenanceEntry.item_id))
         .options(joinedload(MaintenanceEntry.item))  # digest reads m.item.name
         .filter(
             Item.group_id == group_id,

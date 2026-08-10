@@ -3,6 +3,7 @@ import json
 from datetime import datetime, date
 from ..services.videos import embed_url, video_mime
 from ..services import money
+from ..services import vault
 
 
 def iso(dt):
@@ -90,7 +91,10 @@ def label_summary(lbl):
 
 def label_out(lbl):
     data = label_summary(lbl)
-    data["items"] = [item_summary(i) for i in lbl.items]
+    # Vault: a label/location/bin reaches its items through a RELATIONSHIP, which
+    # a query-level filter never sees. Counts and totals are filtered too — a
+    # count reveals that something is there, and a total reveals its price.
+    data["items"] = [item_summary(i) for i in vault.readable_items(lbl.items)]
     data["children"] = [label_summary(c) for c in lbl.children]
     return data
 
@@ -110,12 +114,14 @@ def location_out(loc, with_items=True):
     data["parent"] = location_summary(loc.parent) if loc.parent else None
     data["children"] = [location_summary(c) for c in loc.children]
     data["bins"] = [
-        {"id": b.id, "name": b.name, "itemCount": len(b.holdings)} for b in loc.bins
+        {"id": b.id, "name": b.name,
+         "itemCount": len(vault.readable_holdings(b.holdings))} for b in loc.bins
     ]
     # Holding-aware: every placement in this location (directly or in one of its
     # bins), each with the quantity HERE rather than the item's household total.
     holdings = sorted((h for h in loc.holdings if h.item),
                       key=lambda h: (h.item.name or "").lower())
+    holdings = vault.readable_holdings(holdings)
     data["itemCount"] = len(holdings)
     data["childCount"] = len(loc.children)
     if with_items:
@@ -301,8 +307,9 @@ def bin_out(b):
     data = bin_summary(b)
     # Holding-aware: every item stocked in this bin (even if its primary bin is
     # elsewhere), each with the quantity HERE — not its household-wide total.
-    holdings = sorted((h for h in b.holdings if h.item),
-                      key=lambda h: (h.item.name or "").lower())
+    holdings = vault.readable_holdings(
+        sorted((h for h in b.holdings if h.item),
+               key=lambda h: (h.item.name or "").lower()))
     data["items"] = [item_summary(h.item) | {"quantityHere": h.quantity}
                      for h in holdings]
     data["itemCount"] = len(holdings)

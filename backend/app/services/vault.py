@@ -175,6 +175,34 @@ def readable(item) -> bool:
     return item is not None and (not item.hidden or is_unlocked())
 
 
+def never_hidden(query):
+    """Unconditional exclusion — even while unlocked.
+
+    For surfaces that OUTLIVE the session and leave the machine: push
+    notifications, emails, webhooks. An unlock is a temporary state of one
+    browser tab; a notification sitting on a phone or in a Slack channel is
+    permanent and visible to whoever picks it up. So the digest never names a
+    hidden item, whatever the sender's lock state."""
+    return query.filter(Item.hidden.is_(False))
+
+
+def readable_items(items):
+    """Filter an already-loaded collection. The query-level `visible()` never
+    sees a RELATIONSHIP traversal (bin.items, label.items, location.holdings),
+    which is how a hidden item surfaced on the bin, label and location pages."""
+    if is_unlocked():
+        return list(items)
+    return [i for i in items if i is not None and not i.hidden]
+
+
+def readable_holdings(holdings):
+    """Same, for holdings — filtered by the hidden state of the parent ITEM, so
+    counts and price totals computed from them exclude it too."""
+    if is_unlocked():
+        return list(holdings)
+    return [h for h in holdings if h.item is not None and not h.item.hidden]
+
+
 def hidden_count(gid) -> int:
     """How many items are hidden — safe to report while locked (a count, not
     the contents), so the UI can show that a vault exists at all."""

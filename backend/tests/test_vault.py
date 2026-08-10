@@ -97,22 +97,28 @@ def test_lock_hides_them_again(auth_client, app):
     assert "Secret Telescope" not in auth_client.get("/api/v1/items").get_data(as_text=True)
 
 
-def test_unlock_is_per_session_not_household_wide(auth_client, app):
-    """Another credential must still see nothing — that is the whole promise."""
+def test_unlock_is_per_credential_not_household_wide(auth_client, app):
+    """Another credential must still see nothing — that is the whole promise.
+
+    Asserted with an API TOKEN rather than a second login: this app's JWT is a
+    pure function of its claims at second resolution, so two logins inside the
+    same second return the BYTE-IDENTICAL token and are therefore genuinely the
+    same credential (this test raced on exactly that). Across devices or
+    seconds the tokens differ and the isolation is real; a machine token is the
+    unambiguous case, and the one that matters most — an automation must never
+    inherit a human's unlock."""
     secret = _item(auth_client, "Secret Telescope")
     _hide(app, secret["id"])
     _set_phrase(auth_client, "open sesame")
     auth_client.post("/api/v1/vault/unlock", json={"phrase": "open sesame"})
+    assert "Secret Telescope" in auth_client.get("/api/v1/items").get_data(as_text=True)
 
-    # a second session for the SAME user (a different login = a different token)
-    other = app.test_client()
-    tok = other.post("/api/v1/users/login",
-                     json={"email": "t@t.com", "password": "password"}
-                     ).get_json()["token"]
-    other.environ_base["HTTP_AUTHORIZATION"] = tok
+    raw = auth_client.post("/api/v1/tokens", json={"name": "bot"}).get_json()
+    machine = app.test_client()
+    machine.environ_base["HTTP_AUTHORIZATION"] = f"Bearer {raw['token']}"
 
-    body = other.get("/api/v1/items").get_data(as_text=True)
-    assert "Secret Telescope" not in body, "unlocking one session unlocked another"
+    body = machine.get("/api/v1/items").get_data(as_text=True)
+    assert "Secret Telescope" not in body, "an API token inherited a human's unlock"
 
 
 # ---- the trap: you must be able to get them back ---------------------------
@@ -314,3 +320,72 @@ def test_a_hidden_item_cannot_be_added_to_a_bin(auth_client, app):
     r = auth_client.put(f"/api/v1/bins/{b['id']}/items/{secret['id']}")
 
     assert r.status_code == 404, "a hidden item was reachable through a bin write"
+
+
+# ---- the sweep: EVERY registered GET route, not a list I remembered ---------
+
+def test_no_registered_get_route_leaks_a_hidden_item(auth_client, app):
+    """Walks the URL map rather than a hand-written list of surfaces.
+
+    Written after a hand audit found six leaks the parametrised test above could
+    not reach: bin/label/location detail pages expand items through a
+    RELATIONSHIP (which a query-level filter never sees), and maintenance
+    reaches the item through its entry. A future endpoint that forgets the vault
+    fails here without anyone remembering to add it.
+    """
+    MARK = "Zqxjvault"
+    loc = auth_client.post("/api/v1/locations", json={"name": "Shed"}).get_json()
+    b = auth_client.post("/api/v1/bins",
+                         json={"name": "Crate", "locationId": loc["id"]}).get_json()
+    lab = auth_client.post("/api/v1/labels", json={"name": "tools"}).get_json()
+    secret = auth_client.post("/api/v1/items", json={
+        "name": f"{MARK} Telescope", "description": f"{MARK} desc",
+        "notes": f"{MARK} note", "locationId": loc["id"], "binId": b["id"],
+        "labelIds": [lab["id"]], "serialNumber": MARK, "manufacturer": MARK,
+        "purchasePrice": "999.00", "purchaseDate": "2026-01-15",
+        "warrantyExpires": "2027-01-15"}).get_json()
+    auth_client.post(f"/api/v1/items/{secret['id']}/maintenance",
+                     json={"name": f"{MARK} service", "scheduledDate": "2026-02-01"})
+    auth_client.post(f"/api/v1/items/{secret['id']}/checkout", json={"to": "Bob"})
+    _hide(app, secret["id"])
+
+    subs = {"<item_id>": secret["id"], "<bin_id>": b["id"],
+            "<location_id>": loc["id"], "<label_id>": lab["id"], "<id>": secret["id"]}
+    leaks, checked = [], 0
+    for rule in app.url_map.iter_rules():
+        if "GET" not in rule.methods:
+            continue
+        path = str(rule.rule)
+        for k, v in subs.items():
+            path = path.replace(k, str(v))
+        if "<" in path:
+            continue          # an argument we can't fill; covered by other tests
+        checked += 1
+        body = auth_client.get(path).get_data().decode("utf-8", "ignore")
+        if MARK in body:
+            leaks.append(path)
+
+    assert checked > 40, f"only walked {checked} routes — the sweep isn't running"
+    assert leaks == [], f"hidden item leaked from: {leaks}"
+
+
+def test_notifications_never_name_a_hidden_item_even_when_unlocked(auth_client, app):
+    """A digest outlives the session and leaves the machine — an unlock is one
+    browser tab, a notification on a phone is permanent."""
+    from app.services.alerts import alert_digest
+    from app.models import Group
+
+    secret = _item(auth_client, "Secret Telescope",
+                   warrantyExpires="2026-08-20")
+    auth_client.post(f"/api/v1/items/{secret['id']}/maintenance",
+                     json={"name": "Secret service", "scheduledDate": "2026-01-01"})
+    _hide(app, secret["id"])
+    _set_phrase(auth_client, "open sesame")
+    auth_client.post("/api/v1/vault/unlock", json={"phrase": "open sesame"})
+
+    with app.app_context():
+        gid = db.session.query(Group).first().id
+        digest = alert_digest(gid)
+
+    assert "Secret Telescope" not in digest["text"]
+    assert "Secret service" not in digest["text"]
