@@ -12,6 +12,13 @@ const router = useRouter()
 const ui = useUI()
 const id = route.params.id
 const showCapture = ref(false)
+// The camera serves two things on this page — the BIN's own photo and a photo
+// for the item about to be created — so it needs a target, or capturing for a
+// new item would silently replace the bin's picture.
+const captureTarget = ref('bin')
+const newItemPhoto = ref(null)      // staged File, uploaded after the item exists
+const newItemPreview = ref('')      // object URL for the thumbnail
+const creating = ref(false)
 const bin = ref(null)
 const locations = ref([])
 const allItems = ref([])
@@ -38,7 +45,26 @@ async function uploadPhotoFile(file) {
   ui.toast('Photo added')
 }
 async function uploadPhoto(e) { await uploadPhotoFile(e.target.files[0]); e.target.value = '' }
-function onCapture(file) { showCapture.value = false; uploadPhotoFile(file) }
+function onCapture(file) {
+  showCapture.value = false
+  if (captureTarget.value === 'newItem') stageItemPhoto(file)
+  else uploadPhotoFile(file)
+}
+
+// Staged rather than uploaded on capture: an attachment needs an item id, and
+// creating a throwaway item just to hold a photo would litter the bin if the
+// user changed their mind. Shoot first or name first — either order works.
+function stageItemPhoto(file) {
+  if (!file) return
+  if (newItemPreview.value) URL.revokeObjectURL(newItemPreview.value)
+  newItemPhoto.value = file
+  newItemPreview.value = URL.createObjectURL(file)
+}
+function clearItemPhoto() {
+  if (newItemPreview.value) URL.revokeObjectURL(newItemPreview.value)
+  newItemPhoto.value = null
+  newItemPreview.value = ''
+}
 async function removeAttachment(a) {
   await api.del(`/bins/${id}/attachments/${a.id}`)
   await load()
@@ -66,13 +92,43 @@ async function addItem() {
   await load()
 }
 async function createItemHere() {
-  if (!newItemName.value.trim()) return
-  await api.post('/items', {
-    name: newItemName.value.trim(), quantity: Number(newItemQty.value) || 1, binId: id,
-  })
+  if (!newItemName.value.trim() || creating.value) return
+  creating.value = true
+  const name = newItemName.value.trim()
+  let created
+  try {
+    created = await api.post('/items', {
+      name, quantity: Number(newItemQty.value) || 1, binId: id,
+    })
+  } catch (e) {
+    // Values are preserved so the user can retry without retyping.
+    ui.error(e.message || `Could not create “${name}”.`)
+    creating.value = false
+    return
+  }
+
+  // The photo is a SECOND request, so it can fail on its own. Say exactly what
+  // happened rather than a bare error: the item does exist, and the user needs
+  // to know that before they try again and end up with two.
+  let photoFailed = false
+  if (newItemPhoto.value) {
+    const form = new FormData()
+    form.append('file', newItemPhoto.value)
+    form.append('type', 'photo')
+    form.append('name', newItemPhoto.value.name || 'photo.jpg')
+    try {
+      await api.upload(`/items/${created.id}/attachments`, form)
+    } catch (e) {
+      photoFailed = true
+      ui.error(`“${name}” was created, but its photo didn’t upload (${e.message || 'upload failed'}). Open the item to add it.`)
+    }
+  }
+
   newItemName.value = ''
   newItemQty.value = 1
-  ui.toast('Item created in bin')
+  clearItemPhoto()
+  creating.value = false
+  if (!photoFailed) ui.toast(newItemPhoto.value ? 'Item created with photo' : 'Item created in bin')
   await load()
   allItems.value = (await api.get('/items?pageSize=500')).items
 }
@@ -131,10 +187,27 @@ async function remove() {
     <div v-show="tab==='items'">
       <div class="toolbar" style="flex-wrap:wrap;gap:8px">
         <input v-model="newItemName" style="max-width:200px" placeholder="New item name…"
-               @keyup.enter="createItemHere" />
+               aria-label="New item name" @keyup.enter="createItemHere" />
         <input type="number" min="1" v-model.number="newItemQty" style="max-width:76px"
-               title="Quantity" @keyup.enter="createItemHere" />
-        <button :disabled="!newItemName.trim()" @click="createItemHere">＋ Create here</button>
+               title="Quantity" aria-label="Quantity" @keyup.enter="createItemHere" />
+
+        <!-- Photo before the item exists: staged here, uploaded once it does.
+             The camera is the primary path (this is used on a phone, in front
+             of the thing); the file input is the fallback on desktop. -->
+        <button v-if="!newItemPhoto" type="button" class="secondary sm"
+                title="Take a photo for this item" @click="captureTarget = 'newItem'; showCapture = true">
+          📷 Photo
+        </button>
+        <span v-else class="row" style="gap:6px;align-items:center">
+          <img :src="newItemPreview" alt="Photo staged for the new item"
+               style="height:32px;width:32px;object-fit:cover;border-radius:var(--radius)" />
+          <button type="button" class="ghost sm" title="Remove this photo"
+                  @click="clearItemPhoto">✕</button>
+        </span>
+
+        <button :disabled="!newItemName.trim() || creating" @click="createItemHere">
+          {{ creating ? 'Creating…' : (newItemPhoto ? '＋ Create with photo' : '＋ Create here') }}
+        </button>
         <span class="muted" style="align-self:center">or</span>
         <select v-model="addItemId" style="max-width:240px">
           <option value="">Add an existing item…</option>
@@ -175,7 +248,8 @@ async function remove() {
       <div class="divider"></div>
       <div class="row" style="gap:8px;align-items:center;flex-wrap:wrap">
         <input type="file" accept="image/*" @change="uploadPhoto" aria-label="Upload a photo" />
-        <button type="button" class="secondary sm" @click="showCapture = true">📷 Take photo</button>
+        <button type="button" class="secondary sm"
+                @click="captureTarget = 'bin'; showCapture = true">📷 Take photo</button>
       </div>
     </div>
 
