@@ -12,7 +12,13 @@ const tags = ref([])
 const images = ref({})
 const loading = ref(true)
 
-const mode = ref('generate') // generate | own
+// Linking a code you ALREADY have is the default and needs no mode choice —
+// people arrive here holding a pre-printed label or a product barcode, and a
+// hardware scanner types straight into a focused field. Generating a HomeHoard
+// QR is the deliberate path, behind a disclosure.
+const showGenerate = ref(false)
+const linking = ref(false)
+const generating = ref(false)
 const description = ref('')
 const ownCode = ref('')
 const ownFormat = ref('barcode')
@@ -30,14 +36,23 @@ async function loadImage(t) {
 }
 
 async function addGenerated() {
-  await api.post('/qr-tags', { kind: props.kind, targetId: props.targetId, description: description.value })
-  description.value = ''
-  ui.toast('QR code added')
-  await load()
+  if (generating.value) return
+  generating.value = true
+  try {
+    await api.post('/qr-tags', { kind: props.kind, targetId: props.targetId, description: description.value })
+    description.value = ''
+    ui.toast('QR code added')
+    await load()
+  } catch (e) {
+    ui.error(e.message || 'Could not add that QR code.')
+  } finally {
+    generating.value = false
+  }
 }
 
 async function addOwn() {
-  if (!ownCode.value.trim()) return
+  if (!ownCode.value.trim() || linking.value) return
+  linking.value = true
   try {
     await api.post('/qr-tags', {
       kind: props.kind, targetId: props.targetId, source: 'external',
@@ -48,7 +63,12 @@ async function addOwn() {
     ui.toast('Your code was linked')
     await load()
   } catch (e) {
-    ui.error(e.message.includes('already') ? 'That code is already assigned to something.' : e.message)
+    // The value is kept so a rejected code can be corrected, not retyped.
+    ui.error(e.message.includes('already')
+      ? 'That code is already assigned to something else.'
+      : (e.message || 'Could not link that code.'))
+  } finally {
+    linking.value = false
   }
 }
 
@@ -105,34 +125,52 @@ onMounted(load)
 
     <div class="divider"></div>
 
-    <div class="row" style="gap:6px;margin-bottom:12px">
-      <button class="sm" :class="mode==='generate' ? '' : 'secondary'" @click="mode='generate'">Generate QR</button>
-      <button class="sm" :class="mode==='own' ? '' : 'secondary'" @click="mode='own'">Use my own code</button>
-    </div>
-
-    <div v-if="mode==='generate'" class="row">
-      <input v-model="description" placeholder="Label (e.g. lid, side)" @keyup.enter="addGenerated" />
-      <button @click="addGenerated">＋ Add QR code</button>
-    </div>
-
-    <div v-else class="stack">
+    <!-- Your own code, first and unconditional: no mode to pick before you can
+         type or scan. A hardware scanner behaves like a keyboard, so landing in
+         this field is all it takes. -->
+    <div class="stack">
       <div class="row wrap" style="gap:10px">
-        <input v-model="ownCode" style="flex:2;min-width:160px" placeholder="Scan or type the code / barcode number"
-               @keyup.enter="addOwn" />
-        <select v-model="ownFormat" style="width:auto">
-          <option value="barcode">Barcode</option>
-          <option value="ean13">EAN-13</option>
-          <option value="upc">UPC</option>
-          <option value="code128">Code 128</option>
-          <option value="qr">QR</option>
-          <option value="custom">Custom</option>
-        </select>
-        <button :disabled="!ownCode.trim()" @click="addOwn">Link code</button>
+        <label class="field" style="flex:2;min-width:180px">
+          <span>Scan or type your code</span>
+          <input v-model="ownCode" inputmode="text" autocomplete="off"
+                 @keyup.enter="addOwn" />
+        </label>
+        <label class="field" style="width:auto">
+          <span>Format</span>
+          <select v-model="ownFormat">
+            <option value="barcode">Barcode</option>
+            <option value="ean13">EAN-13</option>
+            <option value="upc">UPC</option>
+            <option value="code128">Code 128</option>
+            <option value="qr">QR</option>
+            <option value="custom">Custom</option>
+          </select>
+        </label>
+        <button :disabled="!ownCode.trim() || linking" @click="addOwn">
+          {{ linking ? 'Linking…' : 'Link code' }}
+        </button>
       </div>
       <p class="muted" style="font-size:0.8rem;margin:0">
         Tip: use the <strong>📷 Scan</strong> button in the top bar to capture a code with your
         camera — unknown codes can be assigned to any item, bin, or location on the spot.
       </p>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Generating is the deliberate path: disclose, then add. -->
+    <button v-if="!showGenerate" class="secondary sm" @click="showGenerate = true">
+      Or generate a HomeHoard QR code…
+    </button>
+    <div v-else class="row wrap" style="gap:10px">
+      <label class="field" style="flex:1;min-width:160px">
+        <span>Label (optional, e.g. lid, side)</span>
+        <input v-model="description" @keyup.enter="addGenerated" />
+      </label>
+      <button :disabled="generating" @click="addGenerated">
+        {{ generating ? 'Adding…' : '＋ Add QR code' }}
+      </button>
+      <button class="ghost sm" @click="showGenerate = false">Cancel</button>
     </div>
   </div>
 </template>
