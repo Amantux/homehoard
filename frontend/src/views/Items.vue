@@ -373,7 +373,14 @@ watch(() => route.query.q, (v) => { if (v !== q.value) { q.value = v || '' } })
               <strong>{{ i.name }}</strong>
               <div class="muted" style="font-size:0.8rem">{{ i.description }}</div>
             </td>
-            <td>{{ i.bin ? '🗃️ ' + i.bin.name : (i.location?.name || '—') }}</td>
+            <!-- @click.stop like the checkbox cell: the ROW navigates to the
+                 item, so without it clicking the place would open the item
+                 instead of the place. -->
+            <td @click.stop>
+              <router-link v-if="i.bin" :to="'/bins/' + i.bin.id">🗃️ {{ i.bin.name }}</router-link>
+              <router-link v-else-if="i.location" :to="'/locations/' + i.location.id">{{ i.location.name }}</router-link>
+              <template v-else>—</template>
+            </td>
             <td><span v-for="l in i.labels" :key="l.id" class="chip"
                 :style="l.color ? { background: l.color+'22', color: l.color } : {}">{{ l.name }}</span></td>
             <td>{{ i.quantity }}</td>

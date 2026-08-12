@@ -366,8 +366,15 @@ async function addMaint() {
           <template v-if="!editing">
             <p v-if="item.description">{{ item.description }}</p>
             <dl class="kv">
-              <dt>Location</dt><dd>{{ item.location?.name || '—' }}</dd>
-              <dt>Bin</dt><dd>{{ item.bin?.name || '—' }}</dd>
+              <!-- Linked: "where is it" is the question this app exists to
+                   answer, and the answer was a dead end you had to re-navigate
+                   to by hand. Matches the breadcrumb's existing link style. -->
+              <dt>Location</dt>
+              <dd><router-link v-if="item.location" :to="'/locations/' + item.location.id">{{ item.location.name }}</router-link>
+                  <template v-else>—</template></dd>
+              <dt>Bin</dt>
+              <dd><router-link v-if="item.bin" :to="'/bins/' + item.bin.id">{{ item.bin.name }}</router-link>
+                  <template v-else>—</template></dd>
               <dt>Quantity</dt><dd>{{ item.quantity }}<span v-if="item.placementCount > 1" class="muted"> · in {{ item.placementCount }} places</span></dd>
               <dt>Manufacturer</dt><dd>{{ item.manufacturer || '—' }}</dd>
               <dt>Model #</dt><dd>{{ item.modelNumber || '—' }}</dd>
@@ -396,8 +403,13 @@ async function addMaint() {
             </div>
             <div v-for="h in item.holdings" :key="h.id" class="row"
               style="align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
-              <span style="flex:1">{{ h.bin?.name || h.location?.name || 'Unassigned' }}
-                <span v-if="h.bin && h.location" class="muted sm">· {{ h.location.name }}</span></span>
+              <span style="flex:1">
+                <router-link v-if="h.bin" :to="'/bins/' + h.bin.id">{{ h.bin.name }}</router-link>
+                <router-link v-else-if="h.location" :to="'/locations/' + h.location.id">{{ h.location.name }}</router-link>
+                <template v-else>Unassigned</template>
+                <span v-if="h.bin && h.location" class="muted sm">·
+                  <router-link :to="'/locations/' + h.location.id">{{ h.location.name }}</router-link>
+                </span></span>
               <input type="number" min="0" step="1" style="width:76px" :value="h.quantity"
                 @change="(e) => editHolding(h, e.target.value)" />
               <button class="secondary sm" @click="openMove(h)">Move</button>

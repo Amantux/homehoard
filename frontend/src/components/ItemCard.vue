@@ -22,8 +22,11 @@ function thumb() {
     </div>
     <div class="body">
       <div class="title">{{ item.name }}</div>
-      <div class="sub" v-if="item.location || item.bin">
-        {{ item.bin ? '🗃️ ' + item.bin.name : '📍 ' + item.location.name }}
+      <!-- The whole card navigates to the item, so the place needs @click.stop
+           or clicking it would open the item instead of the place. -->
+      <div class="sub" v-if="item.location || item.bin" @click.stop>
+        <router-link v-if="item.bin" :to="'/bins/' + item.bin.id">🗃️ {{ item.bin.name }}</router-link>
+        <router-link v-else :to="'/locations/' + item.location.id">📍 {{ item.location.name }}</router-link>
       </div>
       <div class="sub" v-if="item.quantityHere !== undefined">
         Qty here: {{ item.quantityHere }}
