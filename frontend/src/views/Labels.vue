@@ -1,18 +1,22 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref } from 'vue'
 import { api } from '../api'
 import { useUI } from '../stores/ui'
 import EmptyState from '../components/EmptyState.vue'
+import ErrorState from '../components/ErrorState.vue'
+import { useLoader } from '../components/useLoader'
 
 const ui = useUI()
 const labels = ref([])
-const loading = ref(true)
 const showModal = ref(false)
 const form = ref({ name: '', description: '', color: '#0d9488' })
 const editing = ref(null)
 
-async function load() { labels.value = await api.get('/labels'); loading.value = false }
-onMounted(load)
+// useLoader: a failed load previously left `loading` true forever — the
+// permanent-skeleton failure the frontend rules exist to prevent.
+const { loading, error, reload: load } = useLoader(async () => {
+  labels.value = await api.get('/labels')
+})
 
 function openNew() { editing.value = null; form.value = { name: '', description: '', color: '#0d9488' }; showModal.value = true }
 function openEdit(l) { editing.value = l.id; form.value = { name: l.name, description: l.description, color: l.color || '#0d9488' }; showModal.value = true }
@@ -36,6 +40,7 @@ async function remove(l) {
   </div>
 
   <div v-if="loading" class="card-grid"><div v-for="i in 4" :key="i" class="skeleton" style="height:90px"></div></div>
+  <ErrorState v-else-if="error" :message="error" @retry="load" />
   <div v-else-if="labels.length" class="card-grid">
     <div v-for="l in labels" :key="l.id" class="card" style="display:flex;flex-direction:column;gap:8px">
       <div class="row">

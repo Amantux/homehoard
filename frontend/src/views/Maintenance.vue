@@ -1,22 +1,23 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api'
 import { money, shortDate, loadCurrency } from '../format'
 import EmptyState from '../components/EmptyState.vue'
+import ErrorState from '../components/ErrorState.vue'
+import { useLoader } from '../components/useLoader'
 
 const router = useRouter()
 const data = ref({ entries: [], costTotal: 0 })
 const filter = ref('both')
-const loading = ref(true)
 
-async function load() {
-  loading.value = true
+// useLoader: a failed load previously left `loading` true forever (the
+// permanent-skeleton failure), and a thrown filter change did the same.
+const { loading, error, reload: load } = useLoader(async () => {
+  await loadCurrency()
   const p = filter.value === 'both' ? '' : '?status=' + filter.value
   data.value = await api.get('/maintenance' + p)
-  loading.value = false
-}
-onMounted(async () => { await loadCurrency(); await load() })
+})
 
 const scheduled = computed(() => data.value.entries.filter((e) => e.status === 'scheduled'))
 </script>
@@ -34,6 +35,7 @@ const scheduled = computed(() => data.value.entries.filter((e) => e.status === '
   </div>
 
   <div v-if="loading" class="card"><div class="skeleton" style="height:200px"></div></div>
+  <ErrorState v-else-if="error" :message="error" @retry="load" />
   <template v-else-if="data.entries.length">
     <div v-if="scheduled.length" class="card" style="margin-bottom:16px">
       <h2>Upcoming</h2>
