@@ -486,6 +486,19 @@ def set_primary_photos():
     return jsonify({"completed": completed})
 
 
+@bp.post("/actions/generate-thumbnails")
+@login_required
+def generate_thumbnails():
+    """Backfill photo thumbnails for photos uploaded before the pipeline existed.
+
+    Idempotent: photos that already have a thumbnail are skipped, so re-running
+    (or running concurrently with fresh uploads) is always safe.
+    """
+    from ..services import thumbnails
+
+    return jsonify(thumbnails.backfill(current_group().id))
+
+
 # --- Assets --------------------------------------------------------------
 @bp.get("/assets/<asset_id>")
 @login_required

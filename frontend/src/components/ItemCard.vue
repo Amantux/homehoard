@@ -1,14 +1,15 @@
 <script setup>
 import { useRouter } from 'vue-router'
-import { apiUrl, getToken } from '../api'
+import { apiUrl } from '../api'
 
 const props = defineProps({ item: { type: Object, required: true } })
 const router = useRouter()
 
 function thumb() {
   if (!props.item.imageId) return null
-  const t = getToken()
-  return apiUrl(`/documents/${props.item.imageId}`) + (t ? '' : '')
+  // ?thumb=1 serves the 400px JPEG; the server falls back to the original
+  // for photos that predate the thumbnail pipeline.
+  return apiUrl(`/documents/${props.item.imageId}?thumb=1`)
 }
 </script>
 

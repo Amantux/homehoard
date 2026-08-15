@@ -6,7 +6,7 @@ from werkzeug.utils import secure_filename
 
 from ..auth import current_group, login_required
 from ..extensions import db
-from ..services import videos
+from ..services import thumbnails, videos
 from ..models import Attachment, Bin, Document, Item, MaintenanceEntry
 from ..schemas.serializers import attachment_out, bin_out, item_out
 from ..services import vault
@@ -36,6 +36,8 @@ def upload(item_id):
     stored = f"{uuid.uuid4()}-{secure_filename(file.filename)}"
     path = os.path.join(current_app.config["attachments_dir"](), stored)
     file.save(path)
+    if atype == "photo":
+        thumbnails.generate(path)  # best-effort; a non-image just gets none
 
     doc = Document(title=name, path=path, group_id=current_group().id)
     db.session.add(doc)
@@ -95,6 +97,8 @@ def delete(item_id, attachment_id):
             # Best-effort: the DB row is the source of truth. A missing/locked
             # file must not block deleting the attachment record.
             pass
+    if att.document:
+        thumbnails.remove(att.document.path)  # don't orphan the sibling thumb
     db.session.delete(att)
     db.session.commit()
     return "", 204
@@ -123,6 +127,8 @@ def bin_upload(bin_id):
     stored = f"{uuid.uuid4()}-{secure_filename(file.filename)}"
     path = os.path.join(current_app.config["attachments_dir"](), stored)
     file.save(path)
+    if atype == "photo":
+        thumbnails.generate(path)  # best-effort; a non-image just gets none
 
     doc = Document(title=name, path=path, group_id=current_group().id)
     db.session.add(doc)
@@ -180,6 +186,8 @@ def bin_delete(bin_id, attachment_id):
             # Best-effort: the DB row is the source of truth. A missing/locked
             # file must not block deleting the attachment record.
             pass
+    if att.document:
+        thumbnails.remove(att.document.path)  # don't orphan the sibling thumb
     db.session.delete(att)
     db.session.commit()
     return "", 204
@@ -192,6 +200,14 @@ def get_document(document_id):
     doc = db.session.get(Document, document_id)
     if not doc or doc.group_id != current_group().id:
         abort(404)
+    if request.args.get("thumb"):
+        # Serve the sibling thumbnail when one exists; pre-pipeline photos and
+        # non-image files fall through to the original, so ?thumb=1 is always
+        # safe for the UI to request.
+        tp = thumbnails.thumb_path(doc.path)
+        if os.path.isfile(tp):
+            return send_file(tp, mimetype="image/jpeg",
+                             download_name=doc.title)
     return send_file(doc.path, download_name=doc.title, as_attachment=True)
 
 

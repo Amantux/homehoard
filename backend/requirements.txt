@@ -16,6 +16,9 @@ passlib==1.7.4
 bcrypt==4.0.1
 python-dotenv>=1.1.0
 qrcode[pil]==7.4.2
+# Photo thumbnails (services/thumbnails.py). Already present transitively via
+# qrcode[pil]; pinned explicitly because the app now imports PIL directly.
+Pillow>=10.0
 # >=23.0.0 for CVE-2024-6827 (Transfer-Encoding request smuggling).
 gunicorn>=23.0.0
 # MCP server exposed to Home Assistant (runs alongside the app in the same container)

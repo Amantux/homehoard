@@ -45,7 +45,7 @@ async function create() {
   <div v-else-if="bins.length" class="card-grid">
     <div v-for="b in bins" :key="b.id" class="item-card" @click="router.push('/bins/' + b.id)">
       <div class="thumb">
-        <img v-if="b.imageId" :src="apiUrl('/documents/' + b.imageId)" alt=""
+        <img v-if="b.imageId" :src="apiUrl('/documents/' + b.imageId + '?thumb=1')" alt=""
              @error="$event.target.style.display='none'" />
         <span v-else>🗃️</span>
       </div>

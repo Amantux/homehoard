@@ -537,6 +537,13 @@ JSON REST API under `/api/v1`, mirroring homebox's routes — e.g.
 `/items/export`, `/locations`, `/locations/tree`, `/labels`, `/groups/statistics`,
 `/users/login`, `/users/self`, `/notifiers`, `/actions/*`, `/qrcode`, `/status`.
 
+Photo thumbnails: uploading a `photo` attachment writes a JPEG thumbnail
+(max 400px long edge) beside the original; `GET /documents/{id}?thumb=1`
+serves it, falling back to the original when none exists (pre-existing
+photos, non-image files). Item and bin cards request `?thumb=1`.
+`POST /actions/generate-thumbnails` backfills thumbnails for photos uploaded
+before this pipeline existed — idempotent, returns `{generated, skipped}`.
+
 Vault (hidden items):
 
 | Method | Path | Description |
