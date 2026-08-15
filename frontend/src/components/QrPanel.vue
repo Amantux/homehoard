@@ -103,7 +103,10 @@ onMounted(load)
 
 <template>
   <div class="card">
-    <h2 style="margin-bottom:6px">Codes <span class="badge">{{ tags.length }}</span></h2>
+    <div class="row" style="gap:8px">
+      <h2 style="margin-bottom:6px">Codes <span class="badge">{{ tags.length }}</span></h2>
+      <router-link to="/labels/print" style="margin-left:auto"><button class="ghost sm" title="Print a sheet of QR labels">🖨️ Print sheet…</button></router-link>
+    </div>
     <p class="muted" style="font-size:0.85rem;margin-top:0">
       Print a HomeHoard QR code, or link your <strong>own</strong> QR labels and product barcodes to this {{ kind }}.
     </p>

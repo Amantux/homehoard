@@ -536,6 +536,13 @@ const actions = [
   </div>
 
   <div class="card">
+    <h2>QR label sheet</h2>
+    <p class="muted">Pick any of your generated QR codes — across items, bins, and locations — and print
+      them as a tidy grid sized for standard 63.5&times;38.1&nbsp;mm label sheets.</p>
+    <router-link to="/labels/print"><button class="secondary">🖨️ Print sheet…</button></router-link>
+  </div>
+
+  <div class="card">
     <h2>Maintenance actions</h2>
     <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(230px,1fr))">
       <div v-for="a in actions" :key="a.p" class="card" style="box-shadow:none">

@@ -9,6 +9,7 @@ import BinDetail from './views/BinDetail.vue'
 import Locations from './views/Locations.vue'
 import LocationDetail from './views/LocationDetail.vue'
 import Labels from './views/Labels.vue'
+import LabelSheet from './views/LabelSheet.vue'
 import Maintenance from './views/Maintenance.vue'
 import Checkouts from './views/Checkouts.vue'
 import Restock from './views/Restock.vue'
@@ -30,6 +31,7 @@ const routes = [
   { path: '/locations', component: Locations },
   { path: '/locations/:id', component: LocationDetail },
   { path: '/labels', component: Labels },
+  { path: '/labels/print', component: LabelSheet },
   { path: '/maintenance', component: Maintenance },
   { path: '/checkouts', component: Checkouts },
   { path: '/restock', component: Restock },
