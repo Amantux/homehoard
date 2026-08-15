@@ -7,7 +7,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
 from ..extensions import db, limiter
-from ..models import Item, ItemField, Label, Location, Bin
+from ..models import (Item, ItemField, ItemHolding, Label, Location, Bin,
+                      Attachment, MaintenanceEntry, CheckoutEntry)
 from ..auth import login_required, current_group
 from ..schemas.serializers import item_out, item_summary
 from ..services.holdings import ensure_holding, resync_item, primary_holding
@@ -64,6 +65,24 @@ def _next_asset_id(group_id) -> int:
         .first()
     )
     return (top[0] if top and top[0] else 0) + 1
+
+
+def _allocate_asset_id(item, gid):
+    """Allocate the per-group asset id with retry: a bare max()+1 races two
+    concurrent creates to the same value, and the partial unique index rejects
+    the loser. add() happens INSIDE the savepoint so a conflict rolls back
+    cleanly, then we re-read the max and try again. Shared by create_item and
+    undo_merge (which recreates a deleted item)."""
+    for _ in range(8):
+        item.asset_id = _next_asset_id(gid)
+        try:
+            with db.session.begin_nested():
+                db.session.add(item)
+                db.session.flush()
+            return
+        except IntegrityError:
+            continue
+    abort(409, description="could not allocate an asset id — please retry")
 
 
 def _require_owned(model, obj_id, gid):
@@ -333,6 +352,35 @@ def merge_items(item_id):
     if source.id == keep.id:
         return jsonify({"error": "cannot merge an item into itself"}), 422
 
+    # Snapshot the source BEFORE anything moves: the merge deletes its row, so
+    # this payload is the only road back. Same shape POST /items accepts (the
+    # vault/versions precedent — restore is "apply this payload", no bespoke
+    # logic), plus the ids of the child rows that are about to MOVE to the
+    # keeper, so undo re-parents those same rows back instead of duplicating.
+    undo = {
+        "keepId": keep.id,
+        "source": {
+            "name": source.name,
+            "description": source.description,
+            "notes": source.notes,
+            "serialNumber": source.serial_number,
+            "modelNumber": source.model_number,
+            "manufacturer": source.manufacturer,
+            "barcode": source.barcode,
+            "minQuantity": source.min_quantity,
+            "targetQuantity": source.target_quantity,
+            "labelIds": [lbl.id for lbl in source.labels],
+            "locationId": source.location_id,
+            "binId": source.bin_id,
+        },
+        "moved": {
+            "holdingIds": [h.id for h in source.holdings],
+            "attachmentIds": [a.id for a in source.attachments],
+            "maintenanceIds": [m.id for m in source.maintenance_entries],
+            "checkoutIds": [ce.id for ce in source.checkout_entries],
+        },
+    }
+
     # Move children through the RELATIONSHIPS, never by mutating item_id: these
     # collections cascade delete-orphan, so a row whose FK was repointed but
     # which still sits in source.<collection> gets DELETED with the source —
@@ -366,7 +414,80 @@ def merge_items(item_id):
     db.session.delete(source)
     resync_item(keep)                          # quantity + primary from holdings
     db.session.commit()
-    return jsonify(item_out(keep))
+    payload = item_out(keep)
+    payload["undo"] = undo
+    return jsonify(payload)
+
+
+@bp.post("/items/undo-merge")
+@login_required
+def undo_merge():
+    """Reverse a merge, from the ``undo`` payload the merge response returned.
+
+    Recreates the source item from its snapshot (through the same _apply writer
+    every create/update uses, so ownership checks and validation are not
+    re-implemented), then re-parents the child rows the merge MOVED back onto
+    it — the same rows, not copies, so history survives. Every moved row must
+    still hang off the keeper; anything missing or already moved means the
+    payload is stale (replayed, or the keeper changed since) and the whole undo
+    is refused with a 409 before anything is touched. A payload naming another
+    household's keeper is a 404 like any other foreign item.
+    """
+    data = request.get_json(force=True) or {}
+    src = data.get("source") or {}
+    moved = data.get("moved") or {}
+    if not data.get("keepId") or not isinstance(src, dict) or not src.get("name"):
+        abort(422, description="not an undo-merge payload")
+
+    keep = db.session.get(Item, str(data["keepId"]))
+    if keep is None:
+        # The keeper itself is gone — the moved rows went with it (delete-orphan),
+        # so there is nothing left to move back. Distinct from cross-group below.
+        return jsonify({"error": "the item this was merged into no longer "
+                                 "exists — nothing to undo"}), 409
+    if keep.group_id != current_group().id or not vault.readable(keep):
+        abort(404)                             # foreign and hidden look identical
+
+    # Verify EVERY moved row still belongs to the keeper before mutating
+    # anything: a replayed undo (rows already back on the recreated source) or
+    # a keeper edited since the merge must refuse cleanly, not half-restore.
+    stale = (jsonify({"error": "this merge was already undone, or the merged "
+                               "item has changed since — nothing to restore"}),
+             409)
+    collected = {}
+    for model, key in ((ItemHolding, "holdingIds"), (Attachment, "attachmentIds"),
+                       (MaintenanceEntry, "maintenanceIds"),
+                       (CheckoutEntry, "checkoutIds")):
+        rows = []
+        for rid in moved.get(key) or []:
+            row = db.session.get(model, str(rid))
+            if row is None or row.item_id != keep.id:
+                return stale
+            rows.append(row)
+        collected[key] = rows
+
+    item = Item(name=src.get("name", ""), group_id=keep.group_id)
+    _allocate_asset_id(item, keep.group_id)    # adds + flushes inside a savepoint
+    # The snapshot is in the exact shape _apply accepts, so restore IS apply.
+    # _apply owns the ownership checks: a snapshot naming another group's
+    # location/bin 404s, foreign labelIds are filtered out.
+    _apply(item, src)
+
+    # Re-parent the moved rows back via the RELATIONSHIP, append ALONE — these
+    # collections cascade delete-orphan (see merge_items above for the scars).
+    for h in collected["holdingIds"]:
+        item.holdings.append(h)
+    for a in collected["attachmentIds"]:
+        item.attachments.append(a)
+    for m_entry in collected["maintenanceIds"]:
+        item.maintenance_entries.append(m_entry)
+    for ce in collected["checkoutIds"]:
+        item.checkout_entries.append(ce)
+
+    resync_item(item)                          # quantity + primary from holdings
+    resync_item(keep)                          # keeper shrinks back
+    db.session.commit()
+    return jsonify(item_out(item)), 201
 
 
 @bp.get("/restock")
@@ -400,21 +521,7 @@ def create_item():
         location_id=location_id,
         bin_id=bin_id,
     )
-    # Allocate the per-group asset id with retry: a bare max()+1 races two concurrent
-    # creates to the same value, and the partial unique index rejects the loser. add()
-    # happens INSIDE the savepoint so a conflict rolls back cleanly, then we re-read
-    # the max and try again.
-    for _ in range(8):
-        item.asset_id = _next_asset_id(gid)
-        try:
-            with db.session.begin_nested():
-                db.session.add(item)
-                db.session.flush()
-            break
-        except IntegrityError:
-            continue
-    else:
-        abort(409, description="could not allocate an asset id — please retry")
+    _allocate_asset_id(item, gid)
     # Everything else goes through the SAME writer PUT/PATCH use, so create and
     # update accept an identical field set. Before this, a create that sent
     # parentId, syncChildLocations, serialNumber, purchasePrice, warranty dates,
