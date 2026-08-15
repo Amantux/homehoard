@@ -35,8 +35,9 @@ const { loading, error, reload: load } = useLoader(async () => {
     overdueLends,
     warranty30: ha.warrantiesExpiring?.days30 || 0,
     maintOverdue: ha.maintenance?.overdue || 0,
+    restock: ha.restock?.count || 0,
     any: overdueLends.length || (ha.warrantiesExpiring?.days30 || 0)
-      || (ha.maintenance?.overdue || 0),
+      || (ha.maintenance?.overdue || 0) || (ha.restock?.count || 0),
   }
 })
 
@@ -73,6 +74,10 @@ const tiles = () => [
         <router-link v-if="attention.maintOverdue" to="/maintenance" class="row" style="gap:8px;align-items:center">
           <span class="badge danger">{{ attention.maintOverdue }}</span>
           <span>maintenance job{{ attention.maintOverdue === 1 ? '' : 's' }} overdue</span>
+        </router-link>
+        <router-link v-if="attention.restock" to="/restock" class="row" style="gap:8px;align-items:center">
+          <span class="badge warn">{{ attention.restock }}</span>
+          <span>consumable{{ attention.restock === 1 ? '' : 's' }} running low</span>
         </router-link>
         <router-link v-if="attention.warranty30" to="/report" class="row" style="gap:8px;align-items:center">
           <span class="badge warn">{{ attention.warranty30 }}</span>

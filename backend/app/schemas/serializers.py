@@ -240,6 +240,8 @@ def item_out(i):
             "purchaseFrom": i.purchase_from,
             "purchaseDate": iso(i.purchase_date),
             "syncChildLocations": i.sync_child_locations,
+            "minQuantity": i.min_quantity,
+            "targetQuantity": i.target_quantity,
             "soldPrice": money.out(i.sold_price),
             "soldTo": i.sold_to,
             "soldDate": iso(i.sold_date),

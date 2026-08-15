@@ -11,6 +11,7 @@ import LocationDetail from './views/LocationDetail.vue'
 import Labels from './views/Labels.vue'
 import Maintenance from './views/Maintenance.vue'
 import Checkouts from './views/Checkouts.vue'
+import Restock from './views/Restock.vue'
 import Tools from './views/Tools.vue'
 import Review from './views/Review.vue'
 import Database from './views/Database.vue'
@@ -31,6 +32,7 @@ const routes = [
   { path: '/labels', component: Labels },
   { path: '/maintenance', component: Maintenance },
   { path: '/checkouts', component: Checkouts },
+  { path: '/restock', component: Restock },
   { path: '/review', component: Review },
   { path: '/tools', component: Tools },
   { path: '/database', component: Database },

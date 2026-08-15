@@ -70,6 +70,10 @@ async function save() {
     purchaseFrom: i.purchaseFrom, purchasePrice: Number(i.purchasePrice) || 0,
     purchaseDate: i.purchaseDate || null, warrantyExpires: i.warrantyExpires || null,
     lifetimeWarranty: i.lifetimeWarranty, warrantyDetails: i.warrantyDetails,
+    // '' (cleared field) and null both mean "stop tracking" — the server
+    // treats a null as an explicit clear, unlike absent keys.
+    minQuantity: i.minQuantity === '' || i.minQuantity == null ? null : Number(i.minQuantity),
+    targetQuantity: i.targetQuantity === '' || i.targetQuantity == null ? null : Number(i.targetQuantity),
     binId: binId.value || null,
     locationId: binId.value ? null : (locationId.value || null),
     labelIds: i.labels.map((l) => l.id),
@@ -434,6 +438,12 @@ async function addMaint() {
             <label class="field"><span>Description</span><textarea v-model="item.description" rows="2"></textarea></label>
             <div class="row">
               <label class="field fill"><span>Quantity</span><input type="number" v-model.number="item.quantity" /></label>
+              <label class="field fill" title="At or below this, the item shows on the Restock list. Leave blank for things that aren't consumables.">
+                <span>Min (restock at)</span>
+                <input type="number" min="0" v-model.number="item.minQuantity" placeholder="—" /></label>
+              <label class="field fill" title="Restock suggests buying enough to reach this.">
+                <span>Target</span>
+                <input type="number" min="0" v-model.number="item.targetQuantity" placeholder="—" /></label>
               <label class="field fill"><span>Bin</span>
                 <select v-model="binId" @change="onBinChange"><option value="">None</option>
                   <option v-for="b in bins" :key="b.id" :value="b.id">{{ b.name }}</option></select></label>

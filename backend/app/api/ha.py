@@ -65,9 +65,21 @@ def summary():
         .all()
     )
 
+    from ..services.restock import restock_suggestions
+    restock = restock_suggestions(gid)
+
     return jsonify(
         {
             "health": True,
+            # Low consumables — the to-do/shopping feed for HA (same policy as
+            # GET /restock and the notifier digest, so they can never disagree).
+            "restock": {
+                "count": len(restock),
+                "items": [{"id": r["id"], "name": r["name"],
+                           "onHand": r["onHand"],
+                           "suggestedQuantity": r["suggestedQuantity"]}
+                          for r in restock[:20]],
+            },
             "group": current_group().name,
             "recentItems": [
                 {

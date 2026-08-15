@@ -35,6 +35,12 @@ class Item(IDMixin, TimestampMixin, db.Model):
     # merely filtered out of the default list.
     hidden: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=text("0"), nullable=False, index=True)
+    # Consumables policy (both optional): an item with a min_quantity is a
+    # tracked consumable — at/below it, the restock list suggests topping up to
+    # target_quantity (or back to the threshold when no target is set). Floats
+    # to match `quantity` (fractional/bulk amounts).
+    min_quantity: Mapped[float] = mapped_column(Float, nullable=True)
+    target_quantity: Mapped[float] = mapped_column(Float, nullable=True)
     # When set, moving this item's container moves its children with it.
     sync_child_locations: Mapped[bool] = mapped_column(Boolean, default=False)
 

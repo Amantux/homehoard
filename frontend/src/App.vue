@@ -59,6 +59,7 @@ const nav = [
   { to: '/labels', icon: '🏷️', label: 'Labels' },
   { to: '/maintenance', icon: '🔧', label: 'Maintenance' },
   { to: '/checkouts', icon: '📤', label: 'Checked out' },
+  { to: '/restock', icon: '🛒', label: 'Restock' },
 ]
 </script>
 

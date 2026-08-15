@@ -162,6 +162,14 @@ def _apply(item: Item, data: dict):
     if item.barcode and len(item.barcode) > 64:
         item.barcode = item.barcode[:64]
 
+    # Consumables policy: applied on PRESENCE (an explicit null CLEARS the
+    # threshold — "stop tracking this"), unlike the simple map which skips None.
+    from ..utils_validation import positive_or_none
+    for key, attr in {"minQuantity": "min_quantity",
+                      "targetQuantity": "target_quantity"}.items():
+        if key in data:
+            setattr(item, attr, positive_or_none(data[key]))
+
     for key, attr in {
         "purchaseDate": "purchase_date",
         "soldDate": "sold_date",
@@ -301,6 +309,17 @@ def list_items():
             "total": total,
         }
     )
+
+
+@bp.get("/restock")
+@login_required
+def restock():
+    """Consumables at/below their min threshold, with a suggested buy amount.
+    The policy lives in services/restock.py, shared with the HA summary and the
+    notifier digest so all three agree on what "running low" means."""
+    from ..services.restock import restock_suggestions
+    items = restock_suggestions(current_group().id)
+    return jsonify({"items": items, "total": len(items)})
 
 
 @bp.post("/items")
