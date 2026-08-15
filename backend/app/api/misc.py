@@ -28,6 +28,35 @@ CURRENCIES = [
 ]
 
 
+@bp.get("/changes")
+@login_required
+def change_cursor():
+    """A cheap change CURSOR, not the data — the SPA polls this every ~12s.
+
+    Background writers (MCP tools, HA service calls, the chat assistant) mutate
+    the database without the browser knowing; polling the actual lists to find
+    that out would be N requests per view. Instead: one aggregate over the hot
+    tables' updated_at. Same cursor -> nothing changed; new cursor -> the client
+    bumps dataVersion and every open useLoader view quiet-refreshes.
+
+    Deliberately reveals nothing but "something changed" — no names, no counts —
+    so it is safe alongside the vault (a hidden item's edit moves the cursor,
+    but a timestamp is not contents).
+    """
+    from ..models import Bin, Item, ItemHolding, Label, Location, MaintenanceEntry
+    gid = current_group().id
+    parts = []
+    for model in (Item, Bin, Location, Label, ItemHolding):
+        parts.append(db.session.query(db.func.max(model.updated_at))
+                     .filter(model.group_id == gid).scalar())
+    # maintenance has no group_id — join through the item
+    parts.append(db.session.query(db.func.max(MaintenanceEntry.updated_at))
+                 .join(Item, Item.id == MaintenanceEntry.item_id)
+                 .filter(Item.group_id == gid).scalar())
+    latest = max((p for p in parts if p is not None), default=None)
+    return jsonify({"cursor": latest.isoformat() if latest else ""})
+
+
 @bp.get("/status")
 def status():
     """Liveness: the process is up and serving. Cheap, no dependency access."""

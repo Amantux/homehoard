@@ -3,6 +3,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuth } from './stores/auth'
 import { useUI } from './stores/ui'
+import { api } from './api'
 import Toasts from './components/Toasts.vue'
 import QuickCreate from './components/QuickCreate.vue'
 import ScannerModal from './components/ScannerModal.vue'
@@ -25,11 +26,19 @@ const showReport = ref(false)
 // Previously the sidebar was simply display:none there, so no page except the
 // dashboard was reachable on a phone.
 const menuOpen = ref(false)
+// Start the live-sync poller the moment a login lands (startLiveSync is
+// idempotent, so a hot-reload or double-fire is harmless).
+watch(() => auth.isAuthed, (ok) => { if (ok) ui.startLiveSync(api) })
+
 // Close the drawer whenever the route changes (i.e. a nav link was tapped).
 watch(() => route.fullPath, () => { menuOpen.value = false })
 
 onMounted(() => {
   ui.applyTheme()
+  // Live sync: only when authenticated — the poller would just 401 on the
+  // login screen (auth store logs the user in via a route change, and the
+  // watcher below starts it then).
+  if (auth.isAuthed) ui.startLiveSync(api)
   window
     .matchMedia('(prefers-color-scheme: dark)')
     .addEventListener('change', () => ui.applyTheme())
