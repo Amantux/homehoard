@@ -98,23 +98,57 @@ def _rank(rows, q, limit):
     return out
 
 
+def _token_stems(q: str) -> list[list[str]]:
+    """Per word of the query, the LIKE-able variants that should count as a hit.
+
+    Written after a 46-item persona run showed the most HUMAN queries failing
+    against a single contiguous LIKE: 'battery' missed "batteries", the words of
+    'screwdriver phillips' had to be adjacent and ordered, 'dewalt drill' missed
+    a name where brand and noun sit apart. Tokenising gives AND-of-words in any
+    order; the crude suffix-stem (strip a plural 's', then a trailing 'y' so
+    battery/batteries share the stem 'batter') covers singular/plural and the
+    trailing-s typo without a stemming library — household names, not corpora.
+    """
+    groups = []
+    for tok in q.split():
+        variants = {tok}
+        if len(tok) > 3 and tok.endswith("s"):
+            variants.add(tok[:-1])
+        base = tok[:-1] if tok.endswith("s") else tok
+        if len(base) > 3 and base.endswith("y"):
+            variants.add(base[:-1])
+        groups.append(sorted(variants))
+    return groups
+
+
+def _word_filter(columns, q):
+    """AND across the query's words, OR across each word's variants+columns."""
+    conds = []
+    for variants in _token_stems(q):
+        ors = []
+        for v in variants:
+            like = f"%{v}%"
+            ors.extend(col.ilike(like) for col in columns)
+        conds.append(db.or_(*ors))
+    return db.and_(*conds)
+
+
 def _search_items(gid, q, limit):
     query = vault.visible(db.session.query(Item).filter_by(group_id=gid))
     if q:
-        like = f"%{q}%"
-        query = query.filter(
-            db.or_(
-                Item.name.ilike(like),
-                Item.description.ilike(like),
-                Item.search_text.ilike(like),
-                Item.manufacturer.ilike(like),
-                Item.model_number.ilike(like),
-                Item.serial_number.ilike(like),
-                Item.barcode.ilike(like),
-                Item.notes.ilike(like),
-                Item.labels.any(Label.name.ilike(like)),
-            )
-        )
+        # Every WORD must match somewhere (any order, any column); each word
+        # also matches its crude stem so battery/batteries/batterys agree.
+        cols = [Item.name, Item.description, Item.search_text, Item.manufacturer,
+                Item.model_number, Item.serial_number, Item.barcode, Item.notes]
+        conds = []
+        for variants in _token_stems(q):
+            ors = []
+            for v in variants:
+                like = f"%{v}%"
+                ors.extend(col.ilike(like) for col in cols)
+                ors.append(Item.labels.any(Label.name.ilike(like)))
+            conds.append(db.or_(*ors))
+        query = query.filter(db.and_(*conds))
     rows = [
         {
             "type": "item",
@@ -143,8 +177,7 @@ def _search_items(gid, q, limit):
 def _search_bins(gid, q, limit):
     query = db.session.query(Bin).filter_by(group_id=gid)
     if q:
-        like = f"%{q}%"
-        query = query.filter(db.or_(Bin.name.ilike(like), Bin.description.ilike(like)))
+        query = query.filter(_word_filter([Bin.name, Bin.description], q))
     rows = [
         {
             "type": "bin",
@@ -162,10 +195,7 @@ def _search_bins(gid, q, limit):
 def _search_locations(gid, q, limit):
     query = db.session.query(Location).filter_by(group_id=gid)
     if q:
-        like = f"%{q}%"
-        query = query.filter(
-            db.or_(Location.name.ilike(like), Location.description.ilike(like))
-        )
+        query = query.filter(_word_filter([Location.name, Location.description], q))
     rows = [
         {
             "type": "location",

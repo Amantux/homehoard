@@ -18,6 +18,12 @@ const smart = ref('')
 const name = ref('')
 const description = ref('')
 const quantity = ref(1)
+// The persona run's biggest measured friction: stocking 8 consumables cost 8
+// open-the-item detours (3.2 requests/item vs 1.4) because Min/Target only
+// existed on the item page. A toggle keeps the fast path uncluttered.
+const trackConsumable = ref(false)
+const minQuantity = ref(null)
+const targetQuantity = ref(null)
 const locationId = ref('')
 const binId = ref('')
 const code = ref('')
@@ -150,6 +156,9 @@ function resetPerItem() {
   description.value = ''
   code.value = ''
   quantity.value = 1
+  trackConsumable.value = false
+  minQuantity.value = null
+  targetQuantity.value = null
   suggestions.value = []
   parsedPlace.value = ''
   removePhoto()
@@ -165,6 +174,8 @@ async function submit(stay = false) {
       created = await api.post('/items', {
         name: name.value, description: description.value,
         quantity: Number(quantity.value) || 1,
+        minQuantity: trackConsumable.value && minQuantity.value !== '' ? Number(minQuantity.value) : null,
+        targetQuantity: trackConsumable.value && targetQuantity.value !== '' ? Number(targetQuantity.value) : null,
         binId: binId.value || null,
         locationId: binId.value ? null : (locationId.value || null),
       })
@@ -249,6 +260,21 @@ async function submit(stay = false) {
 
       <label v-if="kind === 'item'" class="field" style="max-width:130px"><span>Quantity</span>
         <input type="number" min="1" v-model.number="quantity" @keyup.enter="submit(true)" /></label>
+
+      <!-- Consumable tracking inline: without this, every consumable cost an
+           open-the-item detour to set its threshold (measured: 3.2 req/item). -->
+      <label v-if="kind === 'item'" class="row" style="gap:6px;align-items:center;font-size:0.9rem">
+        <input type="checkbox" v-model="trackConsumable" />
+        Track as consumable (restock reminder)
+      </label>
+      <div v-if="kind === 'item' && trackConsumable" class="row wrap" style="gap:10px">
+        <label class="field" style="max-width:150px">
+          <span>Restock at (min)</span>
+          <input type="number" min="0" v-model.number="minQuantity" /></label>
+        <label class="field" style="max-width:150px">
+          <span>Top up to (target)</span>
+          <input type="number" min="0" v-model.number="targetQuantity" /></label>
+      </div>
 
       <!-- Item: bin (location follows) or a bare location, both free-text -->
       <div v-if="kind === 'item'" class="row wrap">

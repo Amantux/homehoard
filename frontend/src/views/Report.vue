@@ -55,7 +55,7 @@ async function downloadCsv() {
 
   <div v-if="loading" class="card muted">Loading your inventory report…</div>
 
-  <div v-else-if="error" class="card" style="border-color:var(--danger,#c0392b)">
+  <div v-else-if="error" class="card" style="border-color:var(--danger)">
     <strong>Couldn’t load the report.</strong> <span class="muted">{{ error }}</span>
     <button class="secondary sm no-print" style="margin-left:8px" @click="load">Retry</button>
   </div>
@@ -149,7 +149,7 @@ async function downloadCsv() {
 
 <style scoped>
 .sum-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin-bottom:14px; }
-.sum { border:1px solid var(--border,#e2e2e2); border-radius:8px; padding:14px 16px; background:var(--surface-raised,#fafafa); }
+.sum { border:1px solid var(--border); border-radius:8px; padding:14px 16px; background:var(--surface-2); }
 .sum .v { font-size:1.5rem; font-weight:650; font-variant-numeric:tabular-nums; }
 .sum .l { color:var(--muted,#777); font-size:0.82rem; margin-top:2px; }
 .cols { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
@@ -157,9 +157,9 @@ async function downloadCsv() {
 table { width:100%; border-collapse:collapse; font-size:0.9rem; }
 th, td { text-align:left; padding:5px 8px; border-bottom:1px solid var(--border,#eee); }
 .num { text-align:right; font-variant-numeric:tabular-nums; }
-.chip { display:inline-block; margin-right:6px; padding:2px 8px; border-radius:999px; background:var(--surface-raised,#f0f0f0); font-size:0.8rem; }
+.chip { display:inline-block; margin-right:6px; padding:2px 8px; border-radius:999px; background:var(--surface-2); font-size:0.8rem; }
 .photos { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px; }
 .photos figure { margin:0; }
-.photos img { width:100%; height:120px; object-fit:cover; border-radius:6px; border:1px solid var(--border,#e2e2e2); }
+.photos img { width:100%; height:120px; object-fit:cover; border-radius:6px; border:1px solid var(--border); }
 .photos figcaption { font-size:0.78rem; color:var(--muted,#777); margin-top:4px; }
 </style>
