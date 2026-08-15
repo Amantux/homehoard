@@ -10,7 +10,8 @@ from flask import Blueprint, request, jsonify, abort, Response, stream_with_cont
 
 from ..extensions import db, limiter
 from ..models import ChatSession, ChatMessage, utcnow
-from ..auth import login_required, current_group
+from ..auth import login_required, current_group, current_user
+from ..services import vault
 from ..schemas.serializers import (
     chat_session_out, chat_session_summary, chat_message_out,
 )
@@ -58,6 +59,46 @@ def _next_position(session) -> int:
     return (max((m.position for m in session.messages), default=-1)) + 1
 
 
+# What lands in history instead of the phrase. The phrase itself must never be
+# persisted or forwarded — history is re-sent to the provider on every later turn.
+_PHRASE_PLACEHOLDER = "[vault passphrase]"
+
+
+def _trace_needs_passphrase(trace) -> bool:
+    """Did this turn's unhide_items call come back asking for the passphrase?"""
+    return any(t.get("tool") == "unhide_items"
+               and isinstance(t.get("result"), dict)
+               and t["result"].get("needsPassphrase")
+               for t in trace)
+
+
+def _vault_phrase_turn(session, phrase: str) -> str:
+    """Consume an awaiting-vault-phrase turn entirely server-side.
+
+    Calls vault.unlock directly with the inbound text, clears the flag either
+    way (a retry goes back through the tool ask — never straight to the LLM),
+    persists only a redacted placeholder as the user message, and returns the
+    assistant-style reply."""
+    group = current_group()
+    session.awaiting_vault_phrase = False
+    if vault.unlock(group, current_user(), phrase):
+        n = vault.hidden_count(group.id)
+        reply = f"Unlocked — {n} hidden item{'s' if n != 1 else ''} now visible."
+    else:
+        reply = ("That passphrase isn't right — the vault stays locked. "
+                 "Ask me to unhide again when you want to retry.")
+    pos = _next_position(session)
+    db.session.add_all([
+        ChatMessage(role="user", content=_PHRASE_PLACEHOLDER, position=pos,
+                    session_id=session.id),
+        ChatMessage(role="assistant", content=reply, position=pos + 1,
+                    session_id=session.id),
+    ])
+    session.updated_at = utcnow()
+    db.session.commit()
+    return reply
+
+
 @bp.post("/chat")
 @login_required
 @limiter.limit("30 per minute")
@@ -68,16 +109,29 @@ def chat():
     if not message:
         return jsonify({"error": "message is required"}), 422
 
+    gid = current_group().id
+    session_id = data.get("sessionId")
+    if session_id:
+        session = _get_session(session_id)
+        # Awaiting the vault passphrase: this message IS the phrase. Handle it
+        # entirely server-side — no provider call, nothing verbatim in history.
+        if session.awaiting_vault_phrase:
+            reply = _vault_phrase_turn(session, message)
+            return jsonify({
+                "sessionId": session.id,
+                "reply": reply,
+                "actions": [],
+                "message": chat_message_out(session.messages[-1]),
+            })
+    else:
+        session = None
+
     try:
         provider = get_provider()
     except ProviderError as exc:
         return jsonify({"error": str(exc)}), 503
 
-    gid = current_group().id
-    session_id = data.get("sessionId")
-    if session_id:
-        session = _get_session(session_id)
-    else:
+    if session is None:
         session = ChatSession(title=message[:60] or "New chat", group_id=gid)
         db.session.add(session)
         db.session.flush()
@@ -98,6 +152,10 @@ def chat():
         role="assistant", content=result["reply"],
         tool_trace=json.dumps(result["trace"]), position=pos + 1, session_id=session.id)
     db.session.add_all([user_msg, assistant_msg])
+    # The tool asked for the passphrase: flag the session so the next inbound
+    # message is intercepted before it can reach the provider or history.
+    if _trace_needs_passphrase(result["trace"]):
+        session.awaiting_vault_phrase = True
     # Touch the parent so most-recently-used sessions sort first (adding child
     # messages alone doesn't fire the session's onupdate).
     session.updated_at = utcnow()
@@ -125,17 +183,33 @@ def chat_stream():
     if not message:
         return jsonify({"error": "message is required"}), 422
 
-    try:
-        provider = get_provider()
-    except ProviderError as exc:
-        return jsonify({"error": str(exc)}), 503
-
     gid = current_group().id
     session_id = data.get("sessionId")
     # Validate an existing session up front (a bad id is a normal 404, not a stream);
     # its history is read here, but ALL writes happen inside the generator so the
     # session INSERT and the message INSERTs share one transaction/commit.
     existing = _get_session(session_id) if session_id else None
+
+    # Awaiting the vault passphrase: this message IS the phrase. Same
+    # short-circuit as the plain endpoint, dressed as a two-event stream.
+    if existing is not None and existing.awaiting_vault_phrase:
+        reply = _vault_phrase_turn(existing, message)
+        body = (json.dumps({"type": "delta", "text": reply}) + "\n"
+                + json.dumps({
+                    "type": "done",
+                    "sessionId": existing.id,
+                    "reply": reply,
+                    "actions": [],
+                    "message": chat_message_out(existing.messages[-1]),
+                }) + "\n")
+        return Response(body, mimetype="application/x-ndjson",
+                        headers={"Cache-Control": "no-cache",
+                                 "X-Accel-Buffering": "no"})
+
+    try:
+        provider = get_provider()
+    except ProviderError as exc:
+        return jsonify({"error": str(exc)}), 503
     history = ([{"role": m.role, "content": m.content} for m in existing.messages]
                if existing is not None else [])
 
@@ -173,6 +247,8 @@ def chat_stream():
                 role="assistant", content=reply, tool_trace=json.dumps(trace),
                 position=pos + 1, session_id=session.id)
             db.session.add_all([user_msg, assistant_msg])
+            if _trace_needs_passphrase(trace):
+                session.awaiting_vault_phrase = True
             session.updated_at = utcnow()
             db.session.commit()
         except Exception:  # noqa: BLE001 - a commit failure must surface, not end silently
