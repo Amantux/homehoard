@@ -109,12 +109,17 @@ def test_correct_phrase_unlocks_this_credential_only(auth_client, client, app, m
     # …and the flag is cleared: the next message is normal chat again.
     with app.app_context():
         assert db.session.get(ChatSession, sid).awaiting_vault_phrase is False
-    # A different credential (fresh login = new token) stays locked.
-    token2 = client.post(
-        "/api/v1/users/login",
-        json={"username": "t@t.com", "password": "password"}).get_json()["token"]
+    # A different credential stays locked. NOT a second login: this app's JWT
+    # is a pure function of its claims at SECOND resolution, so two logins
+    # inside the same second return the byte-identical token and are the same
+    # credential — this exact assertion flaked in CI on that collision (the
+    # same trap test_vault.py documents). An API token is unambiguously
+    # distinct, and the case that matters most: an automation must never
+    # inherit a human's unlock.
+    api_tok = auth_client.post("/api/v1/tokens",
+                               json={"name": "bot"}).get_json()["token"]
     r2 = client.get("/api/v1/vault/status",
-                    headers={"Authorization": token2})
+                    headers={"Authorization": f"Bearer {api_tok}"})
     assert r2.get_json()["locked"] is True
 
 
