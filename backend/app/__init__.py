@@ -427,6 +427,7 @@ def _migrate(app):
 
 def _register_blueprints(app):
     from .api.attachments import bp as attachments_bp
+    from .api.backup import bp as backup_bp
     from .api.bins import bp as bins_bp
     from .api.chat import bp as chat_bp
     from .api.checkout import bp as checkout_bp
@@ -471,6 +472,7 @@ def _register_blueprints(app):
         jobs_bp,
         suggestions_bp,
         vault_bp,
+        backup_bp,
     ):
         app.register_blueprint(bp, url_prefix=prefix)
 

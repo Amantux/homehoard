@@ -55,6 +55,31 @@ async function doImport(e) {
   }
 }
 
+const backupBusy = ref(false)
+async function doBackup() {
+  backupBusy.value = true
+  try {
+    const res = await fetch(apiUrl('/backup'), {
+      headers: getToken() ? { Authorization: getToken() } : {},
+    })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      throw new Error(body.error || `HTTP ${res.status}`)
+    }
+    const cd = res.headers.get('Content-Disposition') || ''
+    const m = cd.match(/filename="?([^";]+)"?/)
+    const url = URL.createObjectURL(await res.blob())
+    const a = document.createElement('a')
+    a.href = url
+    a.download = m ? m[1] : 'homehoard-backup.zip'
+    a.click()
+    URL.revokeObjectURL(url)
+    ui.toast('Backup downloaded')
+  } catch (err) {
+    ui.error('Backup failed: ' + (err.message || 'error'))
+  } finally { backupBusy.value = false }
+}
+
 async function doExport() {
   const res = await fetch(apiUrl('/items/export'), {
     headers: getToken() ? { Authorization: getToken() } : {},
@@ -82,6 +107,18 @@ async function doExport() {
       </label>
       <button class="secondary" style="flex:1;justify-content:center" @click="doExport">⬇️ Export CSV</button>
     </div>
+  </div>
+
+  <div class="card" v-if="dbBackend === 'sqlite'">
+    <h2>Full backup</h2>
+    <p class="muted" style="max-width:560px">Downloads a ZIP with a consistent snapshot of the whole
+      database (every item, bin, location, user and setting) plus all uploaded photos and documents —
+      everything needed to recover this instance. Because it is complete, the database file also
+      contains your <strong>hidden (vault) items in plain text</strong>, so this download is
+      owner-only: store the file somewhere safe. Restoring is a manual, offline procedure — see the
+      disaster-recovery docs.</p>
+    <button class="secondary" :disabled="backupBusy" @click="doBackup">
+      {{ backupBusy ? 'Preparing backup…' : '⬇️ Download full backup' }}</button>
   </div>
 
   <div class="card" v-if="dbBackend === 'sqlite'">
