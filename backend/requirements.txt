@@ -20,7 +20,7 @@ qrcode[pil]==7.4.2
 # qrcode[pil]; pinned explicitly because the app now imports PIL directly.
 Pillow>=10.0
 # >=23.0.0 for CVE-2024-6827 (Transfer-Encoding request smuggling).
-gunicorn>=23.0.0
+gunicorn>=26.0.0
 # MCP server exposed to Home Assistant (runs alongside the app in the same container)
 mcp==1.29.0  # pin: newer mcp dropped mcp.server.fastmcp (breaks the MCP server + CI)
 uvicorn>=0.52.0
