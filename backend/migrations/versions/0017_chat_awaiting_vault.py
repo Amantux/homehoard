@@ -7,15 +7,15 @@ server-side — never sent to the LLM provider, never stored in history.
 `server_default` so a database built by `create_all()` and one built by
 migrations describe the same schema. Idempotent, with a real downgrade.
 
-Revision ID: 0016_chat_awaiting_vault
-Revises: 0015_item_hidden_vault
+Revision ID: 0017_chat_awaiting_vault
+Revises: 0016_consumables_policy
 Create Date: 2026-08-15
 """
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0016_chat_awaiting_vault"
-down_revision = "0015_item_hidden_vault"
+revision = "0017_chat_awaiting_vault"
+down_revision = "0016_consumables_policy"
 branch_labels = None
 depends_on = None
 
