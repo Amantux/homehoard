@@ -253,7 +253,10 @@ async function remove() {
       </div>
     </div>
 
-    <div v-show="tab==='qr'"><QrPanel kind="bin" :target-id="bin.id" /></div>
+    <!-- v-if, not v-show: the panel autofocuses its code field for hardware
+         scanners, and an always-mounted panel would steal the caret on page
+         load. Mounting on open makes "open tab, scan" the whole flow. -->
+    <div v-if="tab==='qr'"><QrPanel kind="bin" :target-id="bin.id" /></div>
     <PhotoCapture v-if="showCapture" @captured="onCapture" @close="showCapture = false" />
   </div>
   <div v-else class="card"><div class="skeleton" style="height:240px"></div></div>

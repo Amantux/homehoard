@@ -17,11 +17,22 @@ const loading = ref(true)
 // hardware scanner types straight into a focused field. Generating a HomeHoard
 // QR is the deliberate path, behind a disclosure.
 const showGenerate = ref(false)
+const codeField = ref(null)
 const linking = ref(false)
 const generating = ref(false)
 const description = ref('')
 const ownCode = ref('')
 const ownFormat = ref('barcode')
+
+// Autofocus for the walk-up-and-scan flow: a hardware scanner types like a
+// keyboard, so focusing this field on tab-open makes scanning zero-touch. NOT
+// on touch-primary devices — there, autofocus pops the on-screen keyboard over
+// the code list for people who only came to look.
+onMounted(() => {
+  if (window.matchMedia && window.matchMedia('(pointer: fine)').matches) {
+    codeField.value?.focus()
+  }
+})
 
 async function load() {
   tags.value = await api.get(`/qr-tags?kind=${props.kind}&targetId=${props.targetId}`)
@@ -132,7 +143,7 @@ onMounted(load)
       <div class="row wrap" style="gap:10px">
         <label class="field" style="flex:2;min-width:180px">
           <span>Scan or type your code</span>
-          <input v-model="ownCode" inputmode="text" autocomplete="off"
+          <input ref="codeField" v-model="ownCode" inputmode="text" autocomplete="off"
                  @keyup.enter="addOwn" />
         </label>
         <label class="field" style="width:auto">

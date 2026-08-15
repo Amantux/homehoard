@@ -181,7 +181,8 @@ async function remove() {
       </div>
       <div v-else class="card muted">No sub-locations.</div>
     </div>
-    <div v-show="tab==='qr'"><QrPanel kind="location" :target-id="loc.id" /></div>
+    <!-- v-if so the panel's scan field can autofocus on open (see BinDetail). -->
+    <div v-if="tab==='qr'"><QrPanel kind="location" :target-id="loc.id" /></div>
   </div>
   <div v-else class="card"><div class="skeleton" style="height:240px"></div></div>
 </template>

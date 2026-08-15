@@ -593,7 +593,8 @@ async function addMaint() {
     </div>
 
     <!-- QR -->
-    <div v-show="tab==='qr'">
+    <!-- v-if so the panel's scan field can autofocus on open (see BinDetail). -->
+    <div v-if="tab==='qr'">
       <QrPanel kind="item" :target-id="item.id" />
     </div>
   </div>
