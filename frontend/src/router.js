@@ -13,6 +13,7 @@ import LabelSheet from './views/LabelSheet.vue'
 import Maintenance from './views/Maintenance.vue'
 import Checkouts from './views/Checkouts.vue'
 import Restock from './views/Restock.vue'
+import Duplicates from './views/Duplicates.vue'
 import Tools from './views/Tools.vue'
 import Review from './views/Review.vue'
 import Database from './views/Database.vue'
@@ -35,6 +36,7 @@ const routes = [
   { path: '/maintenance', component: Maintenance },
   { path: '/checkouts', component: Checkouts },
   { path: '/restock', component: Restock },
+  { path: '/duplicates', component: Duplicates },
   { path: '/review', component: Review },
   { path: '/tools', component: Tools },
   { path: '/database', component: Database },

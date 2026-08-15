@@ -5,7 +5,7 @@ import { api, apiUrl } from '../api'
 import { money, loadCurrency } from '../format'
 import { useUI } from '../stores/ui'
 import QrPanel from '../components/QrPanel.vue'
-import { confirmNotDuplicate } from '../composables/useDuplicateCheck'
+import { findDuplicates } from '../composables/useDuplicateCheck'
 import PhotoCapture from '../components/PhotoCapture.vue'
 
 const route = useRoute()
@@ -105,7 +105,6 @@ function labelName(lid) { return labels.value.find((l) => l.id === lid)?.name ||
 async function createItemHere() {
   if (!newItemName.value.trim() || creating.value) return
   const name = newItemName.value.trim()
-  if (!(await confirmNotDuplicate(name))) return
   creating.value = true
   let created
   try {
@@ -143,6 +142,11 @@ async function createItemHere() {
   clearItemPhoto()
   creating.value = false
   if (!photoFailed) ui.toast(newItemPhoto.value ? 'Item created with photo' : 'Item created in bin')
+  // Passive awareness, never a gate: if this name now exists more than once,
+  // point at the page that resolves it.
+  findDuplicates(name).then((dupes) => {
+    if (dupes.length > 1) ui.toast(`“${name}” now exists ${dupes.length} times — see Duplicates to merge`, 'info')
+  })
   await load()
   allItems.value = (await api.get('/items?pageSize=500')).items
 }

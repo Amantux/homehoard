@@ -138,6 +138,10 @@ button.sm { padding: 5px 10px; font-size: 0.82rem; }
   border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow);
 }
 .card + .card { margin-top: 16px; }
+/* Item display: long names/descriptions must not deform table rows. */
+td strong { overflow-wrap: anywhere; }
+td .muted { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+
 .card-flush {
   padding: 0;
   /* Wide tables scroll INSIDE the card — the page body must never scroll

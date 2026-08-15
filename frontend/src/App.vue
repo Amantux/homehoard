@@ -80,6 +80,7 @@ const nav = [
         <router-link to="/home-assistant" class="nav-link"><span class="ico">🔌</span> Home Assistant</router-link>
         <router-link to="/tools" class="nav-link"><span class="ico">🛠️</span> Tools</router-link>
         <router-link to="/review" class="nav-link"><span class="ico">🗂️</span> Review</router-link>
+        <router-link to="/duplicates" class="nav-link"><span class="ico">⧉</span> Duplicates</router-link>
         <router-link to="/database" class="nav-link"><span class="ico">🗄️</span> Database</router-link>
         <router-link to="/report" class="nav-link"><span class="ico">📄</span> Report</router-link>
         <div class="spacer"></div>

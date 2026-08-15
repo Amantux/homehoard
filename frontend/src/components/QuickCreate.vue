@@ -2,7 +2,7 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api'
-import { confirmNotDuplicate } from '../composables/useDuplicateCheck'
+import { findDuplicates } from '../composables/useDuplicateCheck'
 import { useUI } from '../stores/ui'
 import Combobox from './Combobox.vue'
 import PhotoCapture from './PhotoCapture.vue'
@@ -180,10 +180,6 @@ function resetPerItem() {
 // stay = keep the modal open for the next item (bin/location stay selected).
 async function submit(stay = false) {
   if (!name.value || busy.value) return
-  // Soft duplicate nudge for ITEMS only — a second bin/location/label named the
-  // same is caught by their own flows, and duplicate items are the split that
-  // corrupts quantities/restock silently.
-  if (kind.value === 'item' && !(await confirmNotDuplicate(name.value))) return
   busy.value = true
   try {
     let created
@@ -227,6 +223,13 @@ async function submit(stay = false) {
     }
     sessionCount.value += 1
     ui.toast(`${name.value} created`)
+    if (kind.value === 'item') {
+      // Passive, post-create: never a gate on the common path.
+      const created_name = name.value
+      findDuplicates(created_name).then((dupes) => {
+        if (dupes.length > 1) ui.toast(`“${created_name}” now exists ${dupes.length} times — see Duplicates to merge`, 'info')
+      })
+    }
     emit('created')
     if (stay) {
       resetPerItem()

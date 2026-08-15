@@ -311,6 +311,64 @@ def list_items():
     )
 
 
+@bp.post("/items/<item_id>/merge")
+@login_required
+def merge_items(item_id):
+    """Fold a duplicate item INTO this one (the Duplicates view's action).
+
+    Two same-named items split quantities, thresholds and history — the restock
+    list then lies about both. The merge MOVES the source's holdings (so both
+    placements survive, and resync_item derives the summed quantity from them —
+    holdings stay the source of truth), unions labels, carries attachments,
+    maintenance and checkout history, then deletes the source row. Both items
+    must be this group's and vault-readable; merging an item with itself is a
+    caller bug, not a no-op.
+    """
+    keep = _get(item_id)                       # group + vault guarded
+    data = request.get_json(force=True) or {}
+    source = db.session.get(Item, str(data.get("sourceId") or ""))
+    if (source is None or source.group_id != current_group().id
+            or not vault.readable(source)):
+        abort(404)                             # absent and hidden look identical
+    if source.id == keep.id:
+        return jsonify({"error": "cannot merge an item into itself"}), 422
+
+    # Move children through the RELATIONSHIPS, never by mutating item_id: these
+    # collections cascade delete-orphan, so a row whose FK was repointed but
+    # which still sits in source.<collection> gets DELETED with the source —
+    # the merge silently destroying exactly what it promised to carry.
+    # append ALONE: back_populates re-parents the row and drops it from the
+    # source's collection in one step. An explicit remove() first marks the row
+    # as a delete-orphan before the append can save it ("Instance has been
+    # deleted" — found the hard way), and repointing item_id directly leaves it
+    # in source's collection where the source's deletion cascades over it.
+    for h in list(source.holdings):
+        keep.holdings.append(h)
+    for lbl in source.labels:
+        if lbl not in keep.labels:
+            keep.labels.append(lbl)
+    for a in list(source.attachments):
+        keep.attachments.append(a)
+    for m_entry in list(source.maintenance_entries):
+        keep.maintenance_entries.append(m_entry)
+    for ce in list(source.checkout_entries):
+        keep.checkout_entries.append(ce)
+    # Notes/details: keep's win; fill blanks from the source so data isn't lost.
+    for attr in ("description", "notes", "manufacturer", "model_number",
+                 "serial_number", "barcode"):
+        if not getattr(keep, attr) and getattr(source, attr):
+            setattr(keep, attr, getattr(source, attr))
+    if keep.min_quantity is None and source.min_quantity is not None:
+        keep.min_quantity = source.min_quantity
+        keep.target_quantity = source.target_quantity
+
+    db.session.flush()
+    db.session.delete(source)
+    resync_item(keep)                          # quantity + primary from holdings
+    db.session.commit()
+    return jsonify(item_out(keep))
+
+
 @bp.get("/restock")
 @login_required
 def restock():
