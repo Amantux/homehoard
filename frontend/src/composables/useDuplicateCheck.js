@@ -10,7 +10,7 @@ import { api } from '../api'
 export async function confirmNotDuplicate(name) {
   const q = (name || '').trim()
   if (!q) return true
-  let existing = []
+  let existing
   try {
     const res = await api.get(`/items?q=${encodeURIComponent(q)}&pageSize=5`)
     existing = (res.items || []).filter(
