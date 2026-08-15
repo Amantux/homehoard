@@ -171,6 +171,16 @@ label.field > span {
 .row > .fill { flex: 1; }
 .wrap { flex-wrap: wrap; }
 .muted { color: var(--muted); }
+/* Utilities extracted from the ~70x repeated inline styles in ItemDetail/Tools
+   (refactor pass): same values, shared names. Use these, not style="...". */
+.txt-sm { font-size: 0.85rem; }
+.input-block { width: 100%; margin-top: 4px; }
+.field-narrow { display: block; max-width: 520px; margin-bottom: 10px; }
+.w-narrow { max-width: 520px; }
+.mt-8 { margin-top: 8px; }
+.mt-6 { margin-top: 6px; }
+.m-0 { margin: 0; }
+.w-auto { width: auto; }
 .stack > * + * { margin-top: 14px; }
 .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 18px; }
 

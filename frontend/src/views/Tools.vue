@@ -336,44 +336,44 @@ const actions = [
       barcode identify). Set it here (overrides the add-on options) or in the add-on
       configuration. Pick <strong>OpenAI-compatible</strong> and a base URL to use a local
       model server (LM Studio, vLLM, llama.cpp, Ollama's <code>/v1</code>).</p>
-    <label style="display:block;max-width:520px;margin-bottom:10px">
-      <span class="muted" style="font-size:0.85rem">Provider</span>
-      <select v-model="aiForm.provider" style="width:100%;margin-top:4px">
+    <label class="field-narrow">
+      <span class="muted txt-sm">Provider</span>
+      <select v-model="aiForm.provider" class="input-block">
         <option value="">Disabled</option>
         <option v-for="p in ai.validProviders" :key="p" :value="p">{{ PROVIDER_LABELS[p] || p }}</option>
       </select>
     </label>
-    <label v-if="needsBaseUrl" style="display:block;max-width:520px;margin-bottom:10px">
-      <span class="muted" style="font-size:0.85rem">Base URL</span>
+    <label v-if="needsBaseUrl" class="field-narrow">
+      <span class="muted txt-sm">Base URL</span>
       <input v-model="aiForm.baseUrl"
         :placeholder="aiForm.provider === 'ollama' ? 'http://localhost:11434' : 'http://localhost:1234/v1'"
-        style="width:100%;margin-top:4px" />
+        class="input-block" />
     </label>
     <p v-if="aiForm.provider === 'ollama_cloud'" class="muted" style="font-size:0.8rem;max-width:520px;margin:-2px 0 10px">
       Ollama's hosted cloud — pinned to <code>ollama.com</code>. Paste your ollama.com API key below,
       then <em>List models</em> to pick one.
     </p>
-    <label v-if="aiForm.provider" style="display:block;max-width:520px;margin-bottom:10px">
-      <span class="muted" style="font-size:0.85rem">Model</span>
-      <input v-model="aiForm.model" list="ai-model-list" placeholder="model name" style="width:100%;margin-top:4px" />
+    <label v-if="aiForm.provider" class="field-narrow">
+      <span class="muted txt-sm">Model</span>
+      <input v-model="aiForm.model" list="ai-model-list" placeholder="model name" class="input-block" />
       <datalist id="ai-model-list"><option v-for="m in aiModels" :key="m" :value="m" /></datalist>
-      <button v-if="canListModels" class="secondary sm" style="margin-top:6px"
+      <button v-if="canListModels" class="secondary sm mt-6"
         :disabled="aiLoadingModels" @click="loadAiModels">
         {{ aiLoadingModels ? 'Listing…' : 'List models' }}</button>
     </label>
-    <label v-if="aiForm.provider" style="display:block;max-width:520px;margin-bottom:10px">
-      <span class="muted" style="font-size:0.85rem">API key</span>
+    <label v-if="aiForm.provider" class="field-narrow">
+      <span class="muted txt-sm">API key</span>
       <input v-model="aiForm.apiKey" type="password"
         :placeholder="aiForm.provider === 'ollama' ? 'optional for a local server'
           : (aiForm.provider === 'ollama_cloud' ? 'ollama.com API key (required)' : 'provider API key')"
-        style="width:100%;margin-top:4px" />
+        class="input-block" />
       <span v-if="ai.apiKeySet" class="muted" style="font-size:0.78rem">A key is saved — leave blank to keep it.
         <a href="#" style="color:var(--danger)" @click.prevent="clearAiKey">Clear saved key</a></span>
     </label>
-    <label style="display:block;max-width:520px;margin-bottom:10px">
-      <span class="muted" style="font-size:0.85rem">Ollama web-search key (for enrichment)</span>
+    <label class="field-narrow">
+      <span class="muted txt-sm">Ollama web-search key (for enrichment)</span>
       <input v-model="aiForm.ollamaSearchKey" type="password" placeholder="ollama.com API key"
-        style="width:100%;margin-top:4px" />
+        class="input-block" />
       <span v-if="ai.hasSearchKey" class="muted" style="font-size:0.78rem">A key is saved — leave blank to keep it.</span>
     </label>
     <p class="muted" style="font-size:0.8rem;max-width:520px">Enrichment's <em>web search</em> uses
@@ -386,26 +386,26 @@ const actions = [
 
   <div v-if="canEditAi" class="card">
     <h2>Sync to your other apps</h2>
-    <p class="muted" style="max-width:520px">Deploying Edibl, HomeHoard, and myMeal together? Copy this
+    <p class="muted w-narrow">Deploying Edibl, HomeHoard, and myMeal together? Copy this
       app's AI settings — provider, URL, model, streaming default, and background-task models — and paste
       the code into the other apps so you configure the LLM once. By default <strong>the API key is
       not included</strong>; add each app's key separately, or opt in below to embed it.</p>
     <label style="display:flex;gap:8px;align-items:center;max-width:520px">
-      <input type="checkbox" style="width:auto" v-model="syncIncludeKey" />
+      <input type="checkbox" class="w-auto" v-model="syncIncludeKey" />
       <span>Also include my API key in the code</span>
     </label>
-    <div v-if="syncIncludeKey" style="max-width:520px;margin-top:8px">
+    <div v-if="syncIncludeKey" class="w-narrow mt-8">
       <input type="password" v-model="syncKeyInput" placeholder="Paste the API key to embed"
         autocomplete="off" style="width:100%" />
       <p class="muted" style="font-size:0.85rem;margin-top:4px">Your API key will be embedded in the
         copied text — treat it like a password and only paste it into your own apps.</p>
     </div>
-    <div class="row" style="max-width:520px;margin-top:8px">
+    <div class="row w-narrow mt-8">
       <button class="secondary" @click="copyAiSettings">📋 Copy AI settings</button>
     </div>
     <label style="display:block;max-width:520px;margin-top:12px">
-      <span class="muted" style="font-size:0.85rem">Paste a settings code from another app</span>
-      <input v-model="syncPasteInput" placeholder="AICFG1:… or AICFG2:…" style="width:100%;margin-top:4px" />
+      <span class="muted txt-sm">Paste a settings code from another app</span>
+      <input v-model="syncPasteInput" placeholder="AICFG1:… or AICFG2:…" class="input-block" />
     </label>
     <div class="row" style="justify-content:flex-end;max-width:520px;margin-top:8px">
       <button class="secondary" :disabled="syncApplying || !syncPasteInput.trim()" @click="applyAiSettings">
@@ -418,7 +418,7 @@ const actions = [
     <p class="muted">Household default for how chat replies arrive. <strong>Stream</strong>
       shows the answer as it's written; <strong>classic</strong> shows it all at once.</p>
     <label style="display:flex;gap:8px;align-items:center;max-width:520px">
-      <input type="checkbox" style="width:auto" :checked="chatStreamDefault" :disabled="chatSaving"
+      <input type="checkbox" class="w-auto" :checked="chatStreamDefault" :disabled="chatSaving"
         @change="saveChatDefault($event.target.checked)" />
       <span>Stream chat responses by default</span>
     </label>
@@ -435,17 +435,17 @@ const actions = [
     <div v-for="area in JOB_AREAS" :key="area.k" style="max-width:520px;margin-bottom:14px">
       <div class="muted" style="font-size:0.85rem;font-weight:600;margin-bottom:4px">{{ area.l }}</div>
       <div class="row" style="gap:8px">
-        <select v-model="jobAi[area.k].provider" style="flex:1">
+        <select v-model="jobAi[area.k].provider" class="fill">
           <option value="">Same as chat</option>
           <option v-for="p in ai.validProviders" :key="p" :value="p">{{ PROVIDER_LABELS[p] || p }}</option>
         </select>
-        <select v-if="jobModels[area.k].length" v-model="jobAi[area.k].model" style="flex:1">
+        <select v-if="jobModels[area.k].length" v-model="jobAi[area.k].model" class="fill">
           <option value="">Default model</option>
           <option v-for="m in jobModels[area.k]" :key="m" :value="m">{{ m }}</option>
           <option v-if="jobAi[area.k].model && !jobModels[area.k].includes(jobAi[area.k].model)"
                   :value="jobAi[area.k].model">{{ jobAi[area.k].model }} (current)</option>
         </select>
-        <input v-else v-model="jobAi[area.k].model" placeholder="model (optional)" style="flex:1" />
+        <input v-else v-model="jobAi[area.k].model" placeholder="model (optional)" class="fill" />
         <button type="button" class="secondary sm" :disabled="jobModelsLoading[area.k]"
                 @click="listJobModels(area.k)">{{ jobModelsLoading[area.k] ? '…' : 'List' }}</button>
       </div>
@@ -453,7 +453,7 @@ const actions = [
       <div v-if="jobAi[area.k].provider" class="row job-row" style="gap:8px;margin-top:6px">
         <input v-model="jobAi[area.k].baseUrl" style="flex:2"
                placeholder="server, e.g. http://192.168.1.50:11434 (blank = same as chat)" />
-        <input v-model="jobAi[area.k].apiKey" type="password" style="flex:1"
+        <input v-model="jobAi[area.k].apiKey" type="password" class="fill"
                :placeholder="jobAi[area.k].apiKeySet
                  ? '•••• (saved — leave blank to keep)' : 'API key (optional)'" />
         <button v-if="jobAi[area.k].apiKeySet" type="button" class="secondary sm"
@@ -473,29 +473,29 @@ const actions = [
       Per-item, use ✨ Describe on the item page.</p>
     <div v-if="!enrichActive">
       <label style="display:block;max-width:520px;margin-bottom:8px">
-        <span class="muted" style="font-size:0.85rem">Note (optional guidance for the AI)</span>
+        <span class="muted txt-sm">Note (optional guidance for the AI)</span>
         <textarea v-model="enrichForm.note" rows="2"
-          placeholder="e.g. these are camping items — note brand and model" style="width:100%;margin-top:4px"></textarea>
+          placeholder="e.g. these are camping items — note brand and model" class="input-block"></textarea>
       </label>
       <div style="display:flex;gap:8px;max-width:520px;margin-bottom:10px">
-        <label style="flex:1">
-          <span class="muted" style="font-size:0.85rem">Model to use</span>
-          <select v-model="enrichForm.provider" style="width:100%;margin-top:4px">
+        <label class="fill">
+          <span class="muted txt-sm">Model to use</span>
+          <select v-model="enrichForm.provider" class="input-block">
             <option value="">Default provider</option>
             <option value="ollama">Ollama</option>
             <option value="openai">OpenAI-compatible</option>
             <option value="claude">Anthropic Claude</option>
           </select>
         </label>
-        <label style="flex:1">
-          <span class="muted" style="font-size:0.85rem">Model name (optional)</span>
-          <input v-model="enrichForm.model" placeholder="override model" style="width:100%;margin-top:4px" />
+        <label class="fill">
+          <span class="muted txt-sm">Model name (optional)</span>
+          <input v-model="enrichForm.model" placeholder="override model" class="input-block" />
         </label>
       </div>
       <button class="secondary" :disabled="enrichStarting" @click="startEnrich">
         {{ enrichStarting ? 'Starting…' : '✨ Describe items missing a description' }}</button>
     </div>
-    <div v-else style="max-width:520px">
+    <div v-else class="w-narrow">
       <div class="muted" style="font-size:0.85rem;margin-bottom:6px">
         Describing… {{ enrichJob.done }}<span v-if="enrichJob.total">/{{ enrichJob.total }}</span> items</div>
       <progress :value="enrichJob.done" :max="enrichJob.total || 1" style="width:100%"></progress>
@@ -509,12 +509,12 @@ const actions = [
       your accept/reject choices teach later runs.</p>
     <div style="display:flex;gap:8px;max-width:520px;margin-bottom:10px">
       <label style="flex:2">
-        <span class="muted" style="font-size:0.85rem">Note (optional guidance)</span>
-        <input v-model="organizeForm.note" placeholder="e.g. group by room" style="width:100%;margin-top:4px" />
+        <span class="muted txt-sm">Note (optional guidance)</span>
+        <input v-model="organizeForm.note" placeholder="e.g. group by room" class="input-block" />
       </label>
-      <label style="flex:1">
-        <span class="muted" style="font-size:0.85rem">Model (optional)</span>
-        <input v-model="organizeForm.model" placeholder="override model" style="width:100%;margin-top:4px" />
+      <label class="fill">
+        <span class="muted txt-sm">Model (optional)</span>
+        <input v-model="organizeForm.model" placeholder="override model" class="input-block" />
       </label>
     </div>
     <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">
@@ -547,7 +547,7 @@ const actions = [
     <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(230px,1fr))">
       <div v-for="a in actions" :key="a.p" class="card" style="box-shadow:none">
         <h3>{{ a.l }}</h3>
-        <p class="muted" style="font-size:0.85rem">{{ a.d }}</p>
+        <p class="muted txt-sm">{{ a.d }}</p>
         <button class="secondary sm" @click="runAction(a.p, a.l)">Run</button>
       </div>
     </div>

@@ -326,13 +326,13 @@ async function addMaint() {
           <div style="flex:1;min-width:180px">
             <template v-if="item.checkedOut">
               <strong>📤 Checked out{{ item.checkedOutTo ? ' to ' + item.checkedOutTo : '' }}</strong>
-              <div class="muted" style="font-size:0.85rem">
+              <div class="muted txt-sm">
                 Since {{ shortDate(item.checkedOutAt) }}<span v-if="item.checkoutDue"> · due {{ shortDate(item.checkoutDue) }}</span>
               </div>
             </template>
             <template v-else>
               <strong>✅ It's here</strong>
-              <div class="muted" style="font-size:0.85rem">Available in inventory.</div>
+              <div class="muted txt-sm">Available in inventory.</div>
             </template>
           </div>
           <button v-if="item.checkedOut" @click="checkIn">Check in</button>
@@ -345,7 +345,7 @@ async function addMaint() {
           <div class="row" style="flex-wrap:wrap;gap:10px">
             <label class="field fill" style="margin:0;min-width:160px"><span>Who has it?</span>
               <input v-model="checkoutForm.person" placeholder="e.g. Alex, the garage, work" @keyup.enter="saveCheckoutDetails" /></label>
-            <label class="field" style="margin:0"><span>Due back</span>
+            <label class="field m-0"><span>Due back</span>
               <input type="date" v-model="checkoutForm.due" /></label>
           </div>
           <label class="field" style="margin:10px 0 0"><span>Notes</span>
@@ -366,7 +366,7 @@ async function addMaint() {
       </div>
 
       <div class="row top" style="gap:16px;align-items:stretch">
-        <div class="card" style="flex:1">
+        <div class="card fill">
           <template v-if="!editing">
             <p v-if="item.description">{{ item.description }}</p>
             <dl class="kv">
@@ -407,7 +407,7 @@ async function addMaint() {
             </div>
             <div v-for="h in item.holdings" :key="h.id" class="row"
               style="align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
-              <span style="flex:1">
+              <span class="fill">
                 <router-link v-if="h.bin" :to="'/bins/' + h.bin.id">{{ h.bin.name }}</router-link>
                 <router-link v-else-if="h.location" :to="'/locations/' + h.location.id">{{ h.location.name }}</router-link>
                 <template v-else>Unassigned</template>
@@ -421,7 +421,7 @@ async function addMaint() {
                 title="Remove this placement" @click="removeHolding(h)">✕</button>
             </div>
             <div class="row" style="gap:8px;margin-top:10px;align-items:flex-end">
-              <label class="field" style="flex:1"><span>Add placement — bin</span>
+              <label class="field fill"><span>Add placement — bin</span>
                 <select v-model="placement.binId">
                   <option value="">(choose a bin)</option>
                   <option v-for="b in bins" :key="b.id" :value="b.id">{{ b.name }}</option>
@@ -530,7 +530,7 @@ async function addMaint() {
                  :href="v.url || apiUrl(v.streamUrl.replace('/api/v1',''))"
                  target="_blank" rel="noopener noreferrer" class="badge">▶ {{ v.title }}</a>
             </div>
-            <button class="secondary sm" style="margin-top:6px"
+            <button class="secondary sm mt-6"
                     @click="videoFor = (videoFor === m.id ? null : m.id)">
               {{ videoFor === m.id ? 'Cancel' : '+ Video' }}</button>
             <div v-if="videoFor === m.id" class="row wrap" style="gap:6px;margin-top:6px">
@@ -551,8 +551,8 @@ async function addMaint() {
       <div class="row wrap" style="align-items:flex-end;gap:10px">
         <label class="field fill" style="margin:0;min-width:160px"><span>Task</span><input v-model="newMaint.name" placeholder="e.g. Oil change" /></label>
         <label class="field" style="margin:0;width:110px"><span>Cost</span><input type="number" step="0.01" v-model="newMaint.cost" /></label>
-        <label class="field" style="margin:0"><span>Scheduled</span><input type="date" v-model="newMaint.scheduledDate" /></label>
-        <label class="field" style="margin:0"><span>Completed</span><input type="date" v-model="newMaint.completedDate" /></label>
+        <label class="field m-0"><span>Scheduled</span><input type="date" v-model="newMaint.scheduledDate" /></label>
+        <label class="field m-0"><span>Completed</span><input type="date" v-model="newMaint.completedDate" /></label>
         <button :disabled="!newMaint.name" @click="addMaint">Add</button>
       </div>
     </div>
