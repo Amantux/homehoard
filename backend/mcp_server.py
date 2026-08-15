@@ -251,6 +251,36 @@ def list_checkouts() -> list[dict]:
 
 
 @mcp.tool()
+def whats_running_low() -> list[dict]:
+    """What's running low: consumables at/below their restock threshold, each
+    with how many are on hand and a suggested amount to buy."""
+    return _get("/restock").get("items", [])
+
+
+@mcp.tool()
+def merge_duplicate_items(keep_name_or_id: str, source_name_or_id: str) -> str:
+    """Fold a duplicate item into the one to keep: quantities, placements,
+    labels and history combine, and the duplicate is deleted.
+    If either name matches several items this asks which you meant and changes NOTHING — show the options, then call again with the exact name.
+    """
+    keep, candidates = _resolve(keep_name_or_id)
+    if candidates:
+        return _clarify(keep_name_or_id, candidates)
+    if not keep:
+        return f"No item matching '{keep_name_or_id}'."
+    source, candidates = _resolve(source_name_or_id)
+    if candidates:
+        return _clarify(source_name_or_id, candidates)
+    if not source:
+        return f"No item matching '{source_name_or_id}'."
+    if source["id"] == keep["id"]:
+        return "Those both resolve to the same item — nothing to merge."
+    merged = _post(f"/items/{keep['id']}/merge", {"sourceId": source["id"]})
+    return (f"Merged {source['name']} into {keep['name']} "
+            f"(quantity now {merged.get('quantity')}); the duplicate was deleted.")
+
+
+@mcp.tool()
 def check_out_item(name: str, person: str = "", due: str = "") -> str:
     """Check an item out (mark it as not here). Optionally note who has it."""
     item, candidates = _resolve(name)
@@ -579,6 +609,7 @@ READ_TOOLS = frozenset({
     "where_is", "search_inventory", "get_item", "get_bin_contents",
     "get_location_contents", "list_checkouts", "suggest_placement",
     "inventory_statistics", "inventory_value", "warranties_expiring", "maintenance_due",
+    "whats_running_low",  # read-only; merge_duplicate_items is deliberately absent
 })
 
 

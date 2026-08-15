@@ -9,9 +9,10 @@ OpenAI, and Claude — the same tool schema and executor drive all three.
 from __future__ import annotations
 
 import json
+from datetime import datetime
 
 from ...extensions import db
-from ...models import Item, Label, Location
+from ...models import CheckoutEntry, Item, Label, Location
 from .base import AIProvider
 from .. import vault
 
@@ -108,11 +109,52 @@ TOOLS = [
                                       "label": {"type": "string"}},
                        "required": ["item", "label"]},
     },
+    {
+        "name": "list_restock",
+        "description": "What's running low: consumables at/below their restock "
+        "threshold, each with a suggested amount to buy.",
+        "parameters": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "name": "list_checkouts",
+        "description": "List every item currently checked out — who has it, when "
+        "it's due, and whether it's overdue.",
+        "parameters": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "name": "check_out_item",
+        "description": "Check an item out (mark it as not here). Optionally note "
+        "who has it and an ISO due date.",
+        "parameters": {"type": "object",
+                       "properties": {"name_or_id": {"type": "string"},
+                                      "person": {"type": "string"},
+                                      "due": {"type": "string"}},
+                       "required": ["name_or_id"]},
+    },
+    {
+        "name": "check_in_item",
+        "description": "Check an item back in (mark it as here again).",
+        "parameters": {"type": "object",
+                       "properties": {"name_or_id": {"type": "string"}},
+                       "required": ["name_or_id"]},
+    },
+    {
+        "name": "merge_duplicate_items",
+        "description": "Fold a duplicate item into the one to keep: quantities, "
+        "placements, labels and history combine, and the duplicate is deleted. "
+        "If a name matches several items this returns the candidates and changes "
+        "NOTHING — show them, ask which was meant, then call again with that id.",
+        "parameters": {"type": "object",
+                       "properties": {"keep_name_or_id": {"type": "string"},
+                                      "source_name_or_id": {"type": "string"}},
+                       "required": ["keep_name_or_id", "source_name_or_id"]},
+    },
 ]
 
 # Tools that change data — surfaced to the UI as actions taken this turn.
 _WRITE_TOOLS = {"add_label_to_item", "hide_item", "unhide_items",
-                "lock_items"}
+                "lock_items", "check_out_item", "check_in_item",
+                "merge_duplicate_items"}
 
 
 def _current_user_or_none():
@@ -138,6 +180,38 @@ def _find_item(gid, name_or_id, *, include_hidden=None):
          .filter(Item.group_id == gid, Item.name.ilike(like)))
     return vault.visible(q, include_hidden=include_hidden).order_by(
         Item.name.asc()).first()
+
+
+def _resolve_item_strict(gid, name_or_id):
+    """``(item, candidates)`` — resolve for a DESTRUCTIVE tool, never guessing.
+
+    ``_find_item`` is fine for reads and reversible edits: it takes the first
+    name match. A merge deletes a row, so ambiguity must refuse instead: the
+    shared confidence policy (services/resolve — the same one behind
+    ``/resolve`` and MCP) decides whether the top match is safe to act on;
+    anything ambiguous comes back as ``(None, candidates)`` so the model asks
+    which was meant. The final fetch goes through the vault-aware
+    ``_find_item``, so a hidden item stays indistinguishable from an absent one.
+    """
+    from .. import resolve as resolve_policy
+    key = str(name_or_id or "").strip()
+    if not key:
+        return None, []
+    it = db.session.get(Item, key)
+    if it and it.group_id == gid:  # an id is an unambiguous handle
+        return _find_item(gid, key), []
+    rows = vault.visible(
+        db.session.query(Item)
+        .filter(Item.group_id == gid, Item.name.ilike(f"%{key}%"))).all()
+    decision = resolve_policy.decide(
+        [{"id": r.id, "name": r.name,
+          "labels": [lb.name for lb in r.labels],
+          "description": r.description or "", "notes": r.notes or ""}
+         for r in rows],
+        key)
+    if decision["confidence"] == "high":
+        return _find_item(gid, decision["match"]["id"]), []
+    return None, decision.get("candidates") or []
 
 
 def _find_label(gid, name_or_id):
@@ -241,7 +315,121 @@ def execute_tool(gid: str, name: str, args: dict):
             db.session.flush()  # stage only — the request owns the single commit
         return {"ok": True, "item": it.name, "label": lb.name}
 
+    if name == "list_restock":
+        from ..restock import restock_suggestions  # local: policy lives once
+        return restock_suggestions(gid)
+
+    if name == "list_checkouts":
+        from .. import vault  # local: the sibling branches shadow the module name
+        now = datetime.utcnow()
+        rows = (vault.visible(db.session.query(Item))
+                .filter(Item.group_id == gid, Item.checked_out.is_(True))
+                .order_by(Item.checked_out_at.asc()).all())
+        return [{"id": i.id, "name": i.name, "to": i.checked_out_to or "",
+                 "due": i.checkout_due.isoformat() if i.checkout_due else None,
+                 "overdue": bool(i.checkout_due and i.checkout_due < now)}
+                for i in rows]
+
+    if name == "check_out_item":
+        it = _find_item(gid, args.get("name_or_id", ""))
+        if not it:
+            return {"error": "no matching item"}
+        if it.checked_out:
+            return {"error": "already checked out",
+                    "checkedOutTo": it.checked_out_to}
+        person = (args.get("person") or "").strip()
+        it.checked_out = True
+        it.checked_out_to = person
+        it.checked_out_at = datetime.utcnow()
+        it.checkout_due = _parse_dt(args.get("due"))
+        db.session.add(CheckoutEntry(action="out", person=person,
+                                     due=it.checkout_due, item_id=it.id))
+        db.session.flush()  # stage only — the request owns the single commit
+        return {"ok": True, "checkedOut": it.name, "to": person}
+
+    if name == "check_in_item":
+        it = _find_item(gid, args.get("name_or_id", ""))
+        if not it:
+            return {"error": "no matching item"}
+        if not it.checked_out:
+            return {"error": "not checked out"}
+        db.session.add(CheckoutEntry(action="in", person=it.checked_out_to,
+                                     item_id=it.id))
+        it.checked_out = False
+        it.checked_out_to = ""
+        it.checked_out_at = None
+        it.checkout_due = None
+        db.session.flush()
+        return {"ok": True, "checkedIn": it.name}
+
+    if name == "merge_duplicate_items":
+        keep, cands = _resolve_item_strict(gid, args.get("keep_name_or_id", ""))
+        if cands:
+            return {"needsClarification": True, "which": "keep_name_or_id",
+                    "candidates": cands,
+                    "note": "Nothing was merged — ask which item was meant, "
+                            "then call again with its id."}
+        if not keep:
+            return {"error": "no matching item to keep"}
+        source, cands = _resolve_item_strict(gid, args.get("source_name_or_id", ""))
+        if cands:
+            return {"needsClarification": True, "which": "source_name_or_id",
+                    "candidates": cands,
+                    "note": "Nothing was merged — ask which item was meant, "
+                            "then call again with its id."}
+        if not source:
+            return {"error": "no matching duplicate item"}
+        if source.id == keep.id:
+            return {"error": "cannot merge an item into itself"}
+        _merge_items(keep, source)
+        return {"ok": True, "kept": keep.name, "merged": source.name,
+                "quantity": keep.quantity}
+
     return {"error": f"unknown tool {name}"}
+
+
+def _merge_items(keep, source) -> None:
+    """Fold ``source`` into ``keep`` — the same steps as POST /items/<id>/merge
+    (api/items.py merge_items, the tested reference; keep the two in step).
+
+    Children move via the RELATIONSHIPS, append ALONE: these collections
+    cascade delete-orphan, so repointing item_id (or remove()-then-append)
+    leaves the row where the source's deletion cascades over it.
+    """
+    for h in list(source.holdings):
+        keep.holdings.append(h)
+    for lbl in source.labels:
+        if lbl not in keep.labels:
+            keep.labels.append(lbl)
+    for a in list(source.attachments):
+        keep.attachments.append(a)
+    for m_entry in list(source.maintenance_entries):
+        keep.maintenance_entries.append(m_entry)
+    for ce in list(source.checkout_entries):
+        keep.checkout_entries.append(ce)
+    # Notes/details: keep's win; fill blanks from the source so data isn't lost.
+    for attr in ("description", "notes", "manufacturer", "model_number",
+                 "serial_number", "barcode"):
+        if not getattr(keep, attr) and getattr(source, attr):
+            setattr(keep, attr, getattr(source, attr))
+    if keep.min_quantity is None and source.min_quantity is not None:
+        keep.min_quantity = source.min_quantity
+        keep.target_quantity = source.target_quantity
+    db.session.flush()
+    db.session.delete(source)
+    from ..holdings import resync_item  # local: quantity + primary from holdings
+    resync_item(keep)
+    db.session.flush()  # stage only — the request owns the single commit
+
+
+def _parse_dt(value):
+    """ISO-8601 (Z tolerated) → datetime, or None — same policy as api/checkout."""
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
 
 
 def actions_from_trace(trace: list[dict]) -> list[dict]:
