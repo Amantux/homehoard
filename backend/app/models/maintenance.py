@@ -1,7 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import String, Text, DateTime, ForeignKey
+from sqlalchemy import String, Text, DateTime, ForeignKey, Integer
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..extensions import db
@@ -17,6 +17,9 @@ class MaintenanceEntry(IDMixin, TimestampMixin, db.Model):
     cost: Mapped[Decimal] = mapped_column(MONEY, default=Decimal("0.00"))
     scheduled_date: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     completed_date: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    # Repeat every N calendar months; NULL = one-shot. Completing a recurring
+    # entry spawns the next scheduled one (api.maintenance), keeping history.
+    recur_months: Mapped[int] = mapped_column(Integer, nullable=True)
 
     item_id: Mapped[str] = mapped_column(String(36), ForeignKey("items.id"))
     item = relationship("Item", back_populates="maintenance_entries")

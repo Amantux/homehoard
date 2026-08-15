@@ -186,6 +186,7 @@ def maintenance_out(m):
         "cost": money.out(m.cost),
         "scheduledDate": iso(m.scheduled_date),
         "completedDate": iso(m.completed_date),
+        "recurMonths": m.recur_months,
         "itemId": m.item_id,
         # Videos for THIS job. Ride along in the existing per-item maintenance
         # payload, matching how the item detail page already loads its tabs.

@@ -23,7 +23,7 @@ const allLabels = ref([])
 const maint = ref({ entries: [], costTotal: 0 })
 const tab = ref('details')
 const editing = ref(false)
-const newMaint = ref({ name: '', cost: 0, scheduledDate: '', completedDate: '' })
+const newMaint = ref({ name: '', cost: 0, scheduledDate: '', completedDate: '', recurMonths: null })
 const showCheckout = ref(false)
 const checkoutForm = ref({ person: '', due: '', notes: '' })
 
@@ -263,7 +263,7 @@ function onCapture(file) { showCapture.value = false; uploadFile(file) }
 async function addMaint() {
   if (!newMaint.value.name) return
   await api.post(`/items/${id}/maintenance`, newMaint.value)
-  newMaint.value = { name: '', cost: 0, scheduledDate: '', completedDate: '' }
+  newMaint.value = { name: '', cost: 0, scheduledDate: '', completedDate: '', recurMonths: null }
   maint.value = await api.get(`/items/${id}/maintenance`)
   ui.toast('Maintenance logged')
 }
@@ -524,7 +524,9 @@ async function addMaint() {
       <table v-if="maint.entries.length">
         <thead><tr><th>Name</th><th>Scheduled</th><th>Completed</th><th>Cost</th></tr></thead>
         <tbody><tr v-for="m in maint.entries" :key="m.id">
-          <td>{{ m.name }}<div class="muted" style="font-size:0.8rem">{{ m.description }}</div>
+          <td>{{ m.name }}
+            <span v-if="m.recurMonths" class="badge" :title="`Repeats every ${m.recurMonths} months`">↻ {{ m.recurMonths }}mo</span>
+            <div class="muted" style="font-size:0.8rem">{{ m.description }}</div>
             <div v-if="m.videos && m.videos.length" class="task-videos">
               <a v-for="v in m.videos" :key="v.id"
                  :href="v.url || apiUrl(v.streamUrl.replace('/api/v1',''))"
@@ -553,6 +555,7 @@ async function addMaint() {
         <label class="field" style="margin:0;width:110px"><span>Cost</span><input type="number" step="0.01" v-model="newMaint.cost" /></label>
         <label class="field m-0"><span>Scheduled</span><input type="date" v-model="newMaint.scheduledDate" /></label>
         <label class="field m-0"><span>Completed</span><input type="date" v-model="newMaint.completedDate" /></label>
+        <label class="field m-0" style="width:130px"><span>Repeat every N months</span><input type="number" min="1" step="1" v-model.number="newMaint.recurMonths" placeholder="—" /></label>
         <button :disabled="!newMaint.name" @click="addMaint">Add</button>
       </div>
     </div>

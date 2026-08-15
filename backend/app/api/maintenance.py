@@ -1,3 +1,4 @@
+import calendar
 from datetime import datetime
 
 from flask import Blueprint, request, jsonify, abort
@@ -19,6 +20,36 @@ def _parse_dt(value):
         return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     except ValueError:
         return None
+
+
+def _parse_recur(value):
+    """recurMonths from the wire: positive int, else None (one-shot)."""
+    try:
+        months = int(value)
+    except (TypeError, ValueError):
+        return None
+    return months if months > 0 else None
+
+
+def _add_months(dt: datetime, months: int) -> datetime:
+    """Calendar-aware month add: Jan 31 + 1 month clamps to Feb 28/29."""
+    month0 = dt.month - 1 + months
+    year = dt.year + month0 // 12
+    month = month0 % 12 + 1
+    day = min(dt.day, calendar.monthrange(year, month)[1])
+    return dt.replace(year=year, month=month, day=day)
+
+
+def _spawn_next(entry: MaintenanceEntry) -> None:
+    """Roll a completed recurring entry forward: next occurrence scheduled at
+    completed_date + recur_months; the completed entry stays as history."""
+    db.session.add(MaintenanceEntry(
+        name=entry.name,
+        description=entry.description,
+        recur_months=entry.recur_months,
+        scheduled_date=_add_months(entry.completed_date, entry.recur_months),
+        item_id=entry.item_id,
+    ))
 
 
 def _get_item(item_id) -> Item:
@@ -102,9 +133,14 @@ def create_entry(item_id):
         cost=money.to_money(data.get("cost")),
         scheduled_date=_parse_dt(data.get("scheduledDate")),
         completed_date=_parse_dt(data.get("completedDate")),
+        recur_months=_parse_recur(data.get("recurMonths")),
         item_id=item.id,
     )
     db.session.add(entry)
+    # Logged as already done in one step ("did it today, repeat every 6
+    # months") — roll forward immediately.
+    if entry.recur_months and entry.completed_date:
+        _spawn_next(entry)
     db.session.commit()
     return jsonify(maintenance_out(entry)), 201
 
@@ -125,8 +161,15 @@ def update_entry(item_id, entry_id):
         entry.cost = money.to_money(data["cost"])
     if "scheduledDate" in data:
         entry.scheduled_date = _parse_dt(data["scheduledDate"])
+    if "recurMonths" in data:
+        entry.recur_months = _parse_recur(data["recurMonths"])
+    was_completed = entry.completed_date is not None
     if "completedDate" in data:
         entry.completed_date = _parse_dt(data["completedDate"])
+    # Spawn only on the not-completed -> completed transition, so re-saving an
+    # already-completed entry can never duplicate the next occurrence.
+    if entry.recur_months and entry.completed_date and not was_completed:
+        _spawn_next(entry)
     db.session.commit()
     return jsonify(maintenance_out(entry))
 
