@@ -33,7 +33,8 @@ def test_alert_digest_collects_the_three_alert_kinds(auth_client, app):
         digest = alert_digest(gid, now=now)
     assert digest["counts"] == {"overdueCheckouts": 1,
                                 "warrantyExpiringSoon": 1,
-                                "maintenanceOverdue": 1}
+                                "maintenanceOverdue": 1,
+                                "restock": 0}
     assert digest["isEmpty"] is False
     assert "Ladder" in digest["text"] and "Oil change" in digest["text"]
 

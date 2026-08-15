@@ -70,6 +70,7 @@ docker compose run --rm app python3 -m app.config_check
 | `HBOX_CORS_ORIGINS` | list | `_(empty)_` | no | — | Comma-separated origins allowed to make credentialed cross-origin requests. Empty = same-origin only (correct for normal deployments). |
 | `HBOX_PROXY_HOPS` | enum/int | `0` | no | — | How many reverse proxies sit in front. 0 = do not trust X-Forwarded-* headers at all. |
 | `HBOX_RATELIMIT_ENABLED` | boolean | `true` | no | — | Enable request rate limiting (disabled automatically under tests). |
+| `HBOX_PUBLIC_URL` | string | `_(empty)_` | no | `public_url` | The URL this HomeHoard is reachable at from your phone/browser (e.g. https://ha.example.com/api/hassio_ingress/<token> or a direct port URL). When set, notification digests append tap-through links to the Restock / Checked-out / Maintenance pages. Blank = plain-text digests with no links. |
 
 ### AI providers
 

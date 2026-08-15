@@ -43,6 +43,7 @@ options:
   ollama_search_key: ""
   barcode_lookup: false
   barcode_db_key: ""
+  public_url: ""
   database_url: ""
   migrate_from_sqlite: false
   use_shared_postgres: false
@@ -68,6 +69,10 @@ schema:
   # Optional API key for the product-barcode DB. The default lookup endpoint is
   # keyless; set this only if you've pointed the lookup at a keyed provider.
   barcode_db_key: password?
+  # The URL this HomeHoard is reachable at from your phone (your HA URL + the
+  # ingress path, or a direct port URL). If you forget it, notification digests
+  # still arrive — just as plain text with no tap-through links.
+  public_url: str?
   # Optional external Postgres. Blank = built-in SQLite in /data (or the shared
   # add-on below). Format: postgresql+psycopg://user:pass@host:5432/homehoard
   database_url: password?

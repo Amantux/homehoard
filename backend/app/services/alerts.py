@@ -62,13 +62,35 @@ def alert_digest(group_id, now=None):
     maintenance_overdue = [
         m for m in open_maintenance(group_id) if m.scheduled_date < now
     ]
+    # include_hidden=False, NOT the default: the dispatcher runs inside a
+    # request, and if that session happened to be vault-unlocked the default
+    # visibility would put a hidden consumable's NAME on someone's phone. A
+    # notification outlives the session; never-hidden, like everything above.
+    from .restock import restock_suggestions
+    low = restock_suggestions(group_id, include_hidden=False)
+
+    # Tap-through links make the digest actionable — but only when the operator
+    # told us the browser-facing URL (PUBLIC_URL): under ingress the server
+    # cannot derive it, and a wrong guess is a broken link on a phone.
+    from flask import current_app, has_app_context
+    base = ""
+    if has_app_context():
+        base = (current_app.config.get("PUBLIC_URL") or "").rstrip("/")
+
+    def _link(path):
+        return f" {base}/#{path}" if base else ""
 
     lines = []
     if overdue_checkouts:
         names = ", ".join(
             f"{i.name}" + (f" (to {i.checked_out_to})" if i.checked_out_to else "")
             for i in overdue_checkouts[:10])
-        lines.append(f"Overdue for return ({len(overdue_checkouts)}): {names}")
+        lines.append(f"Overdue for return ({len(overdue_checkouts)}): {names}."
+                     + _link("/checkouts"))
+    if low:
+        names = ", ".join(f"{r['name']} (buy {r['suggestedQuantity']:g})"
+                          for r in low[:10])
+        lines.append(f"Running low ({len(low)}): {names}." + _link("/restock"))
     if warranty_soon:
         names = ", ".join(
             f"{i.name} — {i.warranty_expires.date().isoformat()}"
@@ -80,9 +102,11 @@ def alert_digest(group_id, now=None):
         names = ", ".join(
             f"{m.name}" + (f" [{m.item.name}]" if m.item else "")
             for m in sorted(maintenance_overdue, key=lambda x: x.scheduled_date)[:10])
-        lines.append(f"Maintenance overdue ({len(maintenance_overdue)}): {names}")
+        lines.append(f"Maintenance overdue ({len(maintenance_overdue)}): {names}."
+                     + _link("/maintenance"))
 
     counts = {
+        "restock": len(low),
         "overdueCheckouts": len(overdue_checkouts),
         "warrantyExpiringSoon": len(warranty_soon),
         "maintenanceOverdue": len(maintenance_overdue),

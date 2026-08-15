@@ -96,6 +96,36 @@ sent anywhere else.
 
 Provider config is instance-wide and editable only by the founding household's owner.
 
+## Actionable notifications
+
+Set **public_url** (Configuration tab) to the URL you open HomeHoard at, and
+every notification digest gains tap-through links straight to the Restock,
+Checked-out and Maintenance pages.
+
+For real buttons, pair the digest with a Home Assistant actionable
+notification — the add-on provides the data and the REST endpoints, HA provides
+the buttons. Example: a daily digest with a "Show restock list" action:
+
+```yaml
+automation:
+  - alias: HomeHoard daily digest
+    trigger: [{ platform: time, at: "08:00:00" }]
+    action:
+      - service: rest_command.homehoard_dispatch     # POST /api/v1/notifiers/dispatch
+      - service: notify.mobile_app_your_phone
+        data:
+          message: "HomeHoard has updates"
+          data:
+            actions:
+              - action: URI
+                title: "Show restock list"
+                uri: "/api/hassio_ingress/YOUR_TOKEN/#/restock"
+```
+
+"Mark maintenance done" works the same way: an action that fires a
+`rest_command` at `PUT /api/v1/items/<item_id>/maintenance/<entry_id>` with
+`{"completedDate": "..."}`.
+
 ## Home Assistant integration
 
 Install the **HomeHoard** HACS integration for one **HomeHoard** device with:

@@ -402,6 +402,12 @@ FIELDS: tuple[Field, ...] = (
     Field("MAX_UPLOAD_MB", int_between(1, 1024), 50, "Maximum upload size in MB."),
     Field("FRONTEND_DIST", as_str, "",
           "Path to the built SPA. Blank = the location baked into the image."),
+    Field("PUBLIC_URL", as_str, "",
+          "The URL this HomeHoard is reachable at from your phone/browser "
+          "(e.g. https://ha.example.com/api/hassio_ingress/<token> or a direct "
+          "port URL). When set, notification digests append tap-through links "
+          "to the Restock / Checked-out / Maintenance pages. Blank = plain-text "
+          "digests with no links.", ha_option="public_url"),
     Field("DISCOVERY_HOST", as_str, "",
           "Override the hostname advertised to Home Assistant via Supervisor "
           "discovery. Blank = ask the Supervisor for the add-on's own hostname."),
