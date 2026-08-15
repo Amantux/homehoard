@@ -70,11 +70,15 @@ export const useUI = defineStore('ui', {
       window.addEventListener('focus', tick)
       tick()
     },
-    toast(message, type = 'success') {
+    // Optional { action: { label, run } } renders a button on the toast
+    // (e.g. "Undo" after a merge). Action toasts linger longer — 3.2s is not
+    // enough time to read, decide and click — but still auto-dismiss: the
+    // action is a convenience, not a modal decision.
+    toast(message, type = 'success', { action = null } = {}) {
       const id = ++toastId
-      this.toasts.push({ id, message, type })
+      this.toasts.push({ id, message, type, action })
       // Errors persist until dismissed; success/info auto-dismiss.
-      if (type !== 'error') setTimeout(() => this.dismiss(id), 3200)
+      if (type !== 'error') setTimeout(() => this.dismiss(id), action ? 8000 : 3200)
     },
     error(message) {
       this.toast(message, 'error')

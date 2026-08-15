@@ -41,13 +41,29 @@ async function mergeInto(keep, source) {
     `photos carry over, and the ${where(source)} entry is removed.`)) return
   merging.value = source.id
   try {
-    await api.post(`/items/${keep.id}/merge`, { sourceId: source.id })
-    ui.toast(`Merged — “${keep.name}” now has both placements`)
+    const merged = await api.post(`/items/${keep.id}/merge`, { sourceId: source.id })
+    // The server's undo payload is the road back for a destructive action:
+    // it recreates the source and moves the same holdings/photos/history rows
+    // back, so Undo restores — it does not duplicate.
+    ui.toast(`Merged — “${keep.name}” now has both placements`, 'success', {
+      action: { label: 'Undo', run: () => undoMerge(merged.undo, keep.name) },
+    })
     await load()
   } catch (e) {
     ui.error(e.message || 'Could not merge those.')
   } finally {
     merging.value = ''
+  }
+}
+
+async function undoMerge(undo, name) {
+  try {
+    await api.post('/items/undo-merge', undo)
+    ui.toast(`Merge undone — “${name}” is split back out`)
+    await load()
+  } catch (e) {
+    // Errors persist until dismissed (house rule) — ui.error does that.
+    ui.error(e.message || 'Could not undo that merge.')
   }
 }
 </script>
