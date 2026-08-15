@@ -12,7 +12,7 @@ from .const import DOMAIN
 from .coordinator import HomeHoardDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
-PLATFORMS = ["sensor", "binary_sensor", "calendar"]
+PLATFORMS = ["sensor", "binary_sensor", "calendar", "todo"]
 
 CARD_FILENAME = "homehoard-card.js"
 CARD_URL = "/homehoard_static/homehoard-card.js"
