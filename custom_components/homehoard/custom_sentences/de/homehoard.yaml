@@ -1,0 +1,44 @@
+# HomeHoard Sprachbefehle für Home Assistant Assist (Deutsch).
+#
+# Diese Datei kopieren nach:  <dein HA config>/custom_sentences/de/homehoard.yaml
+# und dann Home Assistant neu starten. Danach kannst du Assist z. B. fragen:
+#   "wo ist mein Akkuschrauber"   "finde den Reisepass"   "wo sind die Batterien"
+language: "de"
+intents:
+  HomeHoardLocate:
+    data:
+      - sentences:
+          - "wo ist [mein|meine|der|die|das|unser|unsere] {name}"
+          - "wo sind [meine|die|unsere] {name}"
+          - "wo liegt [mein|meine|der|die|das] {name}"
+          - "finde [mein|meine|meinen|den|die|das] {name}"
+          - "suche [mein|meine|meinen|den|die|das] {name}"
+          - "in welcher [kiste|box|schublade] [ist|liegt] [der|die|das] {name}"
+          - "wo ist [der|die|das] {name} abgelegt"
+  HomeHoardCheckOut:
+    data:
+      - sentences:
+          - "checke [den|die|das] {name} aus"
+          - "ich leihe [mir] [den|die|das] {name} [aus]"
+          - "ich nehme [mir] [den|die|das|mein|meine|meinen] {name} [mit]"
+          - "leihe [den|die|das] {name} aus"
+          - "nimm [den|die|das] {name} heraus"
+  HomeHoardCheckIn:
+    data:
+      - sentences:
+          - "checke [den|die|das] {name} ein"
+          - "ich bringe [den|die|das|mein|meine|meinen] {name} zurück"
+          - "lege [den|die|das] {name} zurück"
+          - "[der|die|das] {name} ist [wieder] zurück"
+          - "ich gebe [den|die|das] {name} zurück"
+  HomeHoardContents:
+    data:
+      - sentences:
+          - "was ist in [meinem|meiner|dem|der] {name}"
+          - "was befindet sich in [meinem|meiner|dem|der] {name}"
+          - "was habe ich in [meinem|meiner|dem|der] {name}"
+          - "zeige [mir] den inhalt [von|vom] [dem|der] {name}"
+          - "was ist im {name}"
+lists:
+  name:
+    wildcard: true

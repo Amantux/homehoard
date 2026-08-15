@@ -1,0 +1,44 @@
+# Frases de voz de HomeHoard para Home Assistant Assist (español).
+#
+# Copia este archivo a:  <tu config de HA>/custom_sentences/es/homehoard.yaml
+# y reinicia Home Assistant. Después puedes preguntarle a Assist cosas como:
+#   "dónde está mi taladro"   "busca el pasaporte"   "dónde están las pilas"
+language: "es"
+intents:
+  HomeHoardLocate:
+    data:
+      - sentences:
+          - "dónde está [mi|el|la|nuestro|nuestra] {name}"
+          - "dónde están [mis|los|las|nuestros|nuestras] {name}"
+          - "encuentra [mi|el|la] {name}"
+          - "busca [mi|el|la] {name}"
+          - "localiza [mi|el|la] {name}"
+          - "en qué [caja|cajón|sitio|lugar] está [el|la] {name}"
+  HomeHoardCheckOut:
+    data:
+      - sentences:
+          - "saca [mi|el|la] {name}"
+          - "me llevo [mi|el|la] {name}"
+          - "estoy [tomando|cogiendo] [mi|el|la] {name}"
+          - "voy a llevarme [mi|el|la] {name}"
+          - "presta [mi|el|la] {name}"
+          - "marca [el|la] {name} como prestado"
+  HomeHoardCheckIn:
+    data:
+      - sentences:
+          - "devuelvo [mi|el|la] {name}"
+          - "estoy devolviendo [mi|el|la] {name}"
+          - "guarda [mi|el|la] {name}"
+          - "[el|la] {name} está de vuelta"
+          - "marca [el|la] {name} como devuelto"
+  HomeHoardContents:
+    data:
+      - sentences:
+          - "qué hay en [mi|el|la] {name}"
+          - "qué hay dentro [de|del] [el|la] {name}"
+          - "qué tengo en [mi|el|la] {name}"
+          - "contenido [de|del] [mi|el|la] {name}"
+          - "[dime|muestra] el contenido [de|del] [el|la] {name}"
+lists:
+  name:
+    wildcard: true

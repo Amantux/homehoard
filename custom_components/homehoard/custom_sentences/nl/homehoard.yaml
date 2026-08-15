@@ -1,0 +1,43 @@
+# HomeHoard spraakzinnen voor Home Assistant Assist (Nederlands).
+#
+# Kopieer dit bestand naar:  <jouw HA config>/custom_sentences/nl/homehoard.yaml
+# en herstart Home Assistant. Daarna kun je Assist bijvoorbeeld vragen:
+#   "waar is mijn boormachine"   "zoek het paspoort"   "waar zijn de batterijen"
+language: "nl"
+intents:
+  HomeHoardLocate:
+    data:
+      - sentences:
+          - "waar is [mijn|de|het|onze] {name}"
+          - "waar zijn [mijn|de|onze] {name}"
+          - "waar ligt [mijn|de|het] {name}"
+          - "vind [mijn|de|het] {name}"
+          - "zoek [mijn|de|het] {name}"
+          - "in welke [bak|doos|lade] [zit|ligt] [de|het] {name}"
+  HomeHoardCheckOut:
+    data:
+      - sentences:
+          - "check [mijn|de|het] {name} uit"
+          - "ik leen [mijn|de|het] {name}"
+          - "ik neem [mijn|de|het] {name} mee"
+          - "leen [de|het] {name} uit"
+          - "ik pak [mijn|de|het] {name}"
+  HomeHoardCheckIn:
+    data:
+      - sentences:
+          - "check [mijn|de|het] {name} in"
+          - "ik breng [mijn|de|het] {name} terug"
+          - "leg [de|het] {name} terug"
+          - "[de|het] {name} is [weer] terug"
+          - "ik geef [de|het] {name} terug"
+  HomeHoardContents:
+    data:
+      - sentences:
+          - "wat zit er in [mijn|de|het] {name}"
+          - "wat is er in [mijn|de|het] {name}"
+          - "wat heb ik in [mijn|de|het] {name}"
+          - "[toon|geef] de inhoud van [mijn|de|het] {name}"
+          - "inhoud van [mijn|de|het] {name}"
+lists:
+  name:
+    wildcard: true

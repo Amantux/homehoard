@@ -142,7 +142,10 @@ Install the **HomeHoard** HACS integration for one **HomeHoard** device with:
   on a later refresh while the inventory still says it's low.
 - **Voice & chat** — ask *"where is my drill?"*, *"check out the drill"*. The
   easiest way is the **MCP server** below with an LLM Assist pipeline (no setup).
-  A no-LLM option (plain Assist sentences) also ships — see the main README.
+  A no-LLM option (plain Assist sentences) also ships in **English, German,
+  Spanish, French and Dutch** — depending on your setup the sentence file for
+  your language may need a one-time copy into your HA config's
+  `custom_sentences/<lang>/` directory; see the main README.
 - **Service** — `homehoard.locate` for notifications / messaging (Telegram, …).
 
 When this add-on is running, Home Assistant offers the integration automatically

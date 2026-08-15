@@ -1,0 +1,44 @@
+# Phrases vocales HomeHoard pour Home Assistant Assist (français).
+#
+# Copiez ce fichier vers :  <votre config HA>/custom_sentences/fr/homehoard.yaml
+# puis redémarrez Home Assistant. Vous pourrez ensuite demander à Assist :
+#   "où est ma perceuse"   "trouve le passeport"   "où sont les piles"
+language: "fr"
+intents:
+  HomeHoardLocate:
+    data:
+      - sentences:
+          - "où est [mon|ma|le|la|notre] {name}"
+          - "où sont [mes|les|nos] {name}"
+          - "où se trouve [mon|ma|le|la] {name}"
+          - "trouve [mon|ma|le|la] {name}"
+          - "cherche [mon|ma|le|la] {name}"
+          - "localise [mon|ma|le|la] {name}"
+          - "dans quelle [boîte|caisse|bac] est [le|la] {name}"
+  HomeHoardCheckOut:
+    data:
+      - sentences:
+          - "j'emprunte [mon|ma|le|la] {name}"
+          - "je prends [mon|ma|le|la] {name}"
+          - "je sors [mon|ma|le|la] {name}"
+          - "sors [le|la] {name}"
+          - "marque [le|la] {name} comme emprunté"
+  HomeHoardCheckIn:
+    data:
+      - sentences:
+          - "je rends [mon|ma|le|la] {name}"
+          - "je rapporte [mon|ma|le|la] {name}"
+          - "range [mon|ma|le|la] {name}"
+          - "remets [le|la] {name} [en place]"
+          - "[le|la] {name} est de retour"
+  HomeHoardContents:
+    data:
+      - sentences:
+          - "qu'est-ce qu'il y a dans [mon|ma|le|la] {name}"
+          - "qu'y a-t-il dans [mon|ma|le|la] {name}"
+          - "qu'est-ce que j'ai dans [mon|ma|le|la] {name}"
+          - "contenu [de|du] [mon|ma|le|la] {name}"
+          - "[montre|liste] le contenu [de|du] [le|la] {name}"
+lists:
+  name:
+    wildcard: true

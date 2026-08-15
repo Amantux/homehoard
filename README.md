@@ -173,9 +173,14 @@ The alternative below (plain Assist **sentences**) needs **no LLM** but only
 understands fixed phrasings and requires a one-time file copy. Use it if you run
 the default, non-LLM conversation agent.
 
-- **Voice sentences (no LLM, optional):** copy
+- **Voice sentences (no LLM, optional):** sentence files ship for **English
+  (`en`), German (`de`), Spanish (`es`), French (`fr`) and Dutch (`nl`)**. Copy
+  the file for your Assist language, e.g.
   `custom_components/homehoard/custom_sentences/en/homehoard.yaml` to
-  `<your HA config>/custom_sentences/en/homehoard.yaml` and restart HA. Then say:
+  `<your HA config>/custom_sentences/en/homehoard.yaml` (same pattern for
+  `de`/`es`/`fr`/`nl` — the directory name is the language code), and restart
+  HA. Then say (English shown; each language uses natural equivalents such as
+  German *"wo ist mein …"* or Spanish *"dónde está mi …"*):
   - **Find** — *"where is my …"*, *"find the …"*, *"which bin has the …"*
   - **Check out / in** — *"check out the …"*, *"I'm borrowing the …"*,
     *"check in the …"*, *"put back the …"*
