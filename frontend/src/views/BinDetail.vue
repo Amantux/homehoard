@@ -25,6 +25,8 @@ const allItems = ref([])
 const addItemId = ref('')
 const newItemName = ref('')
 const newItemQty = ref(1)
+const newItemLabels = ref([])   // picked label ids for the item being created
+const labels = ref([])
 const tab = ref('items')
 const editing = ref(false)
 
@@ -74,6 +76,7 @@ onMounted(async () => {
   await load()
   locations.value = await api.get('/locations')
   allItems.value = (await api.get('/items?pageSize=500')).items
+  labels.value = await api.get('/labels')
 })
 
 async function save() {
@@ -91,6 +94,13 @@ async function addItem() {
   ui.toast('Item added to bin')
   await load()
 }
+function pickLabel(e) {
+  const lid = e.target.value
+  e.target.value = ''
+  if (lid && !newItemLabels.value.includes(lid)) newItemLabels.value.push(lid)
+}
+function labelName(lid) { return labels.value.find((l) => l.id === lid)?.name || '' }
+
 async function createItemHere() {
   if (!newItemName.value.trim() || creating.value) return
   creating.value = true
@@ -99,6 +109,7 @@ async function createItemHere() {
   try {
     created = await api.post('/items', {
       name, quantity: Number(newItemQty.value) || 1, binId: id,
+      labelIds: newItemLabels.value,
     })
   } catch (e) {
     // Values are preserved so the user can retry without retyping.
@@ -126,6 +137,7 @@ async function createItemHere() {
 
   newItemName.value = ''
   newItemQty.value = 1
+  newItemLabels.value = []
   clearItemPhoto()
   creating.value = false
   if (!photoFailed) ui.toast(newItemPhoto.value ? 'Item created with photo' : 'Item created in bin')
@@ -203,6 +215,20 @@ async function remove() {
                style="height:32px;width:32px;object-fit:cover;border-radius:var(--radius)" />
           <button type="button" class="ghost sm" title="Remove this photo"
                   @click="clearItemPhoto">✕</button>
+        </span>
+
+        <!-- Labels ride the create (labelIds goes through _apply) — before
+             this, a labelled item still needed the open-item detour even
+             though QuickCreate couldn't assign labels either. -->
+        <select v-if="labels.length" style="max-width:150px" aria-label="Add a label to the new item"
+                @change="pickLabel">
+          <option value="">＋ Label…</option>
+          <option v-for="l in labels" :key="l.id" :value="l.id">🏷️ {{ l.name }}</option>
+        </select>
+        <span v-for="lid in newItemLabels" :key="lid" class="chip">
+          {{ labelName(lid) }}
+          <button type="button" class="ghost sm" style="padding:0 4px" title="Remove label"
+                  @click="newItemLabels = newItemLabels.filter((x) => x !== lid)">✕</button>
         </span>
 
         <button :disabled="!newItemName.trim() || creating" @click="createItemHere">

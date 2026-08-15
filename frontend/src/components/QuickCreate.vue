@@ -22,6 +22,8 @@ const quantity = ref(1)
 // open-the-item detours (3.2 requests/item vs 1.4) because Min/Target only
 // existed on the item page. A toggle keeps the fast path uncluttered.
 const trackConsumable = ref(false)
+const allLabels = ref([])
+const pickedLabels = ref([])
 const minQuantity = ref(null)
 const targetQuantity = ref(null)
 const locationId = ref('')
@@ -50,9 +52,11 @@ function removePhoto() {
 }
 
 async function loadPlaces() {
-  const [locs, bs] = await Promise.all([api.get('/locations'), api.get('/bins')])
+  const [locs, bs, labs] = await Promise.all([
+    api.get('/locations'), api.get('/bins'), api.get('/labels')])
   locations.value = locs
   bins.value = bs
+  allLabels.value = labs
 }
 onMounted(loadPlaces)
 watch(() => props.initialKind, (k) => (kind.value = k))
@@ -74,6 +78,13 @@ const binOptions = computed(() =>
 )
 
 // --- Create bins/locations on the fly from the comboboxes ------------------
+function pickLabel(e) {
+  const lid = e.target.value
+  e.target.value = ''
+  if (lid && !pickedLabels.value.includes(lid)) pickedLabels.value.push(lid)
+}
+function pickedName(lid) { return allLabels.value.find((l) => l.id === lid)?.name || '' }
+
 async function createLocation(newName, { select = true } = {}) {
   const loc = await api.post('/locations', { name: newName })
   await loadPlaces()
@@ -159,6 +170,7 @@ function resetPerItem() {
   trackConsumable.value = false
   minQuantity.value = null
   targetQuantity.value = null
+  pickedLabels.value = []
   suggestions.value = []
   parsedPlace.value = ''
   removePhoto()
@@ -174,6 +186,7 @@ async function submit(stay = false) {
       created = await api.post('/items', {
         name: name.value, description: description.value,
         quantity: Number(quantity.value) || 1,
+        labelIds: pickedLabels.value,
         minQuantity: trackConsumable.value && minQuantity.value !== '' ? Number(minQuantity.value) : null,
         targetQuantity: trackConsumable.value && targetQuantity.value !== '' ? Number(targetQuantity.value) : null,
         binId: binId.value || null,
@@ -274,6 +287,20 @@ async function submit(stay = false) {
         <label class="field" style="max-width:150px">
           <span>Top up to (target)</span>
           <input type="number" min="0" v-model.number="targetQuantity" /></label>
+      </div>
+
+      <!-- Labels ride the create; both create flows previously required the
+           open-item detour to label anything. -->
+      <div v-if="kind === 'item' && allLabels.length" class="row wrap" style="gap:6px">
+        <select style="max-width:170px" aria-label="Add a label" @change="pickLabel">
+          <option value="">＋ Label…</option>
+          <option v-for="l in allLabels" :key="l.id" :value="l.id">🏷️ {{ l.name }}</option>
+        </select>
+        <span v-for="lid in pickedLabels" :key="lid" class="chip">
+          {{ pickedName(lid) }}
+          <button type="button" class="ghost sm" style="padding:0 4px" title="Remove label"
+                  @click="pickedLabels = pickedLabels.filter((x) => x !== lid)">✕</button>
+        </span>
       </div>
 
       <!-- Item: bin (location follows) or a bare location, both free-text -->
