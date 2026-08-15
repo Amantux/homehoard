@@ -62,3 +62,14 @@ def test_the_linked_places_actually_resolve(auth_client):
     assert auth_client.get(f"/api/v1/bins/{got['bin']['id']}").status_code == 200
     assert auth_client.get(
         f"/api/v1/locations/{got['location']['id']}").status_code == 200
+
+
+def test_items_q_finds_an_exact_name_for_the_duplicate_nudge(auth_client):
+    """The create flows ask 'do you already have one?' via /items?q=<name> and
+    then exact-match client-side. If ?q= stops matching on name, the nudge
+    silently never fires — pin the half the server owns."""
+    auth_client.post("/api/v1/items", json={"name": "AA batteries"})
+
+    rows = auth_client.get("/api/v1/items?q=AA%20batteries").get_json()["items"]
+
+    assert any(r["name"] == "AA batteries" for r in rows)

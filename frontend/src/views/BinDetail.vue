@@ -5,6 +5,7 @@ import { api, apiUrl } from '../api'
 import { money, loadCurrency } from '../format'
 import { useUI } from '../stores/ui'
 import QrPanel from '../components/QrPanel.vue'
+import { confirmNotDuplicate } from '../composables/useDuplicateCheck'
 import PhotoCapture from '../components/PhotoCapture.vue'
 
 const route = useRoute()
@@ -103,8 +104,9 @@ function labelName(lid) { return labels.value.find((l) => l.id === lid)?.name ||
 
 async function createItemHere() {
   if (!newItemName.value.trim() || creating.value) return
-  creating.value = true
   const name = newItemName.value.trim()
+  if (!(await confirmNotDuplicate(name))) return
+  creating.value = true
   let created
   try {
     created = await api.post('/items', {
