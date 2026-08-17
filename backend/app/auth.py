@@ -10,6 +10,7 @@ Supports two modes:
 """
 import functools
 import logging
+import secrets
 from datetime import datetime, timezone
 
 import jwt
@@ -59,13 +60,26 @@ def _default_user() -> User:
     user = db.session.query(User).filter_by(email=DEFAULT_EMAIL).first()
     if user:
         return user
-    group = Group(name=DEFAULT_GROUP, currency="usd")
-    db.session.add(group)
-    db.session.flush()
+    # JOIN the shared household — the earliest-created group, the same one
+    # ingress users are provisioned into — rather than minting a fresh one. A
+    # machine client bound to this user (the HA integration token) would
+    # otherwise read a different, empty household than the real HA users
+    # populate. Only seed a brand-new household when none exists yet.
+    group = db.session.query(Group).order_by(Group.created_at.asc()).first()
+    if group is None:
+        group = Group(name=DEFAULT_GROUP, currency="usd")
+        db.session.add(group)
+        db.session.flush()
     user = User(
         name="Local User",
         email=DEFAULT_EMAIL,
-        password_hash=hash_password("unused"),
+        # A random, discarded password — this account is never meant to be
+        # reachable through /users/login (it exists only as the DISABLE_AUTH
+        # fallback identity and the anchor the integration token binds to). A
+        # fixed literal here would be a public, guessable password for an
+        # owner account on every install, including hardened (DISABLE_AUTH=false)
+        # ones where the integration token is minted at startup regardless.
+        password_hash=hash_password(secrets.token_urlsafe(32)),
         is_owner=True,
         group_id=group.id,
     )
@@ -128,7 +142,10 @@ def _ingress_user():
         User.ha_user_id.isnot(None),
     ).count() > 0
     user = User(name=real_name or "Home Assistant user",
-                email=f"ha:{ha_id}", password_hash=hash_password("unused"),
+                email=f"ha:{ha_id}",
+                # Random, discarded — this account authenticates only via the
+                # trusted ingress header, never via /users/login.
+                password_hash=hash_password(secrets.token_urlsafe(32)),
                 is_owner=not has_owner, ha_user_id=ha_id, group_id=group.id)
     db.session.add(user)
     db.session.commit()
@@ -136,23 +153,40 @@ def _ingress_user():
 
 
 def load_current_user():
-    """Resolve the current user, honoring the DISABLE_AUTH toggle."""
-    if current_app.config["DISABLE_AUTH"]:
-        # Behind ingress each HA user gets their own identity; fall back to the
-        # shared local user only when there's no trusted ingress identity.
-        return _ingress_user() or _default_user()
+    """Resolve the current user from three INDEPENDENT sources, in order — so a
+    machine client (the HA integration, MCP) can authenticate by token whether or
+    not DISABLE_AUTH is set, while the browser keeps working behind ingress.
+    DISABLE_AUTH then only controls the open fallback (step 3).
 
+    1. An explicit ``Authorization: Bearer`` token — a long-lived API key or a
+       login JWT. A present-but-INVALID token is a 401, never a silent downgrade
+       to the shared user.
+    2. A trusted HA ingress identity (``X-Remote-User-*`` from the Supervisor
+       peer), provisioning the per-HA-user account. This runs REGARDLESS of
+       DISABLE_AUTH — that's what makes a hardened install (disable_auth: false)
+       usable behind ingress; previously this branch never ran with auth
+       enabled, so a browser behind ingress got 401'd in hardened mode.
+    3. In open mode (DISABLE_AUTH) only: the shared local user — covering both a
+       standalone open deployment and an ingress request with no identity
+       headers.
+    """
     header = request.headers.get("Authorization", "")
-    if not header.startswith("Bearer "):
-        return None
-    token = header[len("Bearer "):].strip()
-    # Long-lived API keys are prefixed so we can route them without a JWT decode.
-    if token.startswith(TOKEN_PREFIX):
-        return _user_from_api_token(token)
-    user_id = decode_token(token)
-    if not user_id:
-        return None
-    return db.session.get(User, user_id)
+    if header.startswith("Bearer "):
+        token = header[len("Bearer "):].strip()
+        # Long-lived API keys are prefixed so we can route them without a JWT decode.
+        if token.startswith(TOKEN_PREFIX):
+            return _user_from_api_token(token)
+        user_id = decode_token(token)
+        return db.session.get(User, user_id) if user_id else None
+
+    ingress = _ingress_user()
+    if ingress is not None:
+        return ingress
+
+    if current_app.config["DISABLE_AUTH"]:
+        return _default_user()
+
+    return None
 
 
 def _user_from_api_token(raw: str):
