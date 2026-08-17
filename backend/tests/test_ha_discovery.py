@@ -73,3 +73,20 @@ def test_supervisor_lookup_is_skipped_without_a_token(monkeypatch):
     monkeypatch.setattr(ha_discovery, "TOKEN", "")
 
     assert ha_discovery._supervisor_self_info() is None
+
+
+def test_payload_carries_the_minted_integration_token(monkeypatch, tmp_path):
+    monkeypatch.setattr(ha_discovery, "DATA_DIR", str(tmp_path))
+    (tmp_path / ".integration_token").write_text("hh_abc123")
+
+    payload = ha_discovery.build_payload("local-homehoard")
+
+    assert payload["config"]["token"] == "hh_abc123"
+
+
+def test_payload_token_is_blank_when_none_minted_yet(monkeypatch, tmp_path):
+    monkeypatch.setattr(ha_discovery, "DATA_DIR", str(tmp_path))
+
+    payload = ha_discovery.build_payload("local-homehoard")
+
+    assert payload["config"]["token"] == ""
