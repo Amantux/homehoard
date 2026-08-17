@@ -129,6 +129,11 @@ def chat():
     try:
         provider = get_provider()
     except ProviderError as exc:
+        # CodeQL flags str(exc) at a response boundary; verified false positive
+        # (alerts #87/#88): ProviderError is a TYPED domain error whose every
+        # raise site is a curated literal ("No AI provider configured.") or
+        # upstream detail already scrubbed by safe_upstream_detail(). New raise
+        # sites must keep that contract — never embed raw upstream bodies.
         return jsonify({"error": str(exc)}), 503
 
     if session is None:
@@ -209,6 +214,11 @@ def chat_stream():
     try:
         provider = get_provider()
     except ProviderError as exc:
+        # CodeQL flags str(exc) at a response boundary; verified false positive
+        # (alerts #87/#88): ProviderError is a TYPED domain error whose every
+        # raise site is a curated literal ("No AI provider configured.") or
+        # upstream detail already scrubbed by safe_upstream_detail(). New raise
+        # sites must keep that contract — never embed raw upstream bodies.
         return jsonify({"error": str(exc)}), 503
     history = ([{"role": m.role, "content": m.content} for m in existing.messages]
                if existing is not None else [])

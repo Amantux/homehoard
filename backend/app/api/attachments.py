@@ -260,6 +260,9 @@ def _create_video(parent_kwargs: dict):
         att, pending = _video_from_request(parent_kwargs)
     except videos.VideoError as exc:
         db.session.rollback()
+        # CodeQL false positive (alert #85): VideoError is a typed validation
+        # error; every raise site is a curated user-facing literal (see
+        # services/videos.py). New raise sites must keep that contract.
         return jsonify({"error": str(exc)}), 422
     if pending:
         upload, path = pending
