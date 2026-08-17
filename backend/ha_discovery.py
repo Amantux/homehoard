@@ -17,7 +17,23 @@ from app.settings import load_settings
 
 SUPERVISOR_API = "http://supervisor"
 TOKEN = os.environ.get("SUPERVISOR_TOKEN", "")
-PORT = load_settings().PORT
+_SETTINGS = load_settings()
+PORT = _SETTINGS.PORT
+DATA_DIR = _SETTINGS.data_dir
+
+
+def _integration_token() -> str:
+    """Read the long-lived integration API key the app minted at startup.
+
+    The app persists it to <data>/.integration_token (0600) before workers
+    start; handing it to HA in the discovery payload authenticates the
+    integration on the direct REST path. Best-effort: an empty string just
+    means the integration falls back to the open path (unchanged behaviour)."""
+    try:
+        with open(os.path.join(DATA_DIR, ".integration_token"), encoding="utf-8") as fh:
+            return fh.read().strip()
+    except OSError:
+        return ""
 
 
 def _supervisor_self_info():
@@ -63,7 +79,8 @@ def resolve_host():
 
 def build_payload(host: str) -> dict:
     """The Supervisor discovery message the companion integration consumes."""
-    return {"service": "homehoard", "config": {"host": host, "port": PORT}}
+    return {"service": "homehoard",
+            "config": {"host": host, "port": PORT, "token": _integration_token()}}
 
 
 def main() -> int:
@@ -72,8 +89,10 @@ def main() -> int:
         return 0
 
     host, source = resolve_host()
-    print(f"HomeHoard: advertising host {host!r} (source: {source}).")
-    payload = json.dumps(build_payload(host)).encode()
+    message = build_payload(host)
+    print(f"HomeHoard: advertising host {host!r} (source: {source}), "
+          f"token {'set' if message['config']['token'] else 'absent'}.")
+    payload = json.dumps(message).encode()
 
     req = urllib.request.Request(
         f"{SUPERVISOR_API}/discovery",

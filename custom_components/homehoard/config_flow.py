@@ -70,12 +70,26 @@ class HomeHoardConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_hassio(self, discovery_info: HassioServiceInfo) -> FlowResult:
         self._hassio_discovery = discovery_info
         await self.async_set_unique_id("homehoard_addon")
-        self._abort_if_unique_id_configured()
 
         host = discovery_info.config.get(CONF_HOST, DEFAULT_HOST)
         port = int(discovery_info.config.get(CONF_PORT, DEFAULT_PORT))
+        # The add-on advertises a long-lived API key so the integration is
+        # authenticated on the direct (non-ingress) REST path — works whether
+        # or not disable_auth is set on the add-on.
+        token = str(discovery_info.config.get(CONF_TOKEN, "") or "")
+        # Refresh the stored host, and the token ONLY when the add-on actually
+        # advertised one. The mint is best-effort, so a re-fired discovery can
+        # carry token="" (mint failed / not yet minted); overwriting a good
+        # stored CONF_TOKEN with "" would 401 the next poll and silently break
+        # the entry. An empty token still heals an entry that never had one,
+        # because a missing key reads back as "" anyway.
+        updates = {CONF_HOST: host, CONF_PORT: port}
+        if token:
+            updates[CONF_TOKEN] = token
+        self._abort_if_unique_id_configured(updates=updates)
+
         try:
-            await self._async_validate(host, port)
+            await self._async_validate(host, port, token)
         except (ClientError, asyncio.TimeoutError):
             return self.async_abort(reason="cannot_connect")
         return await self.async_step_hassio_confirm()
@@ -92,8 +106,7 @@ class HomeHoardConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_PORT: int(
                         self._hassio_discovery.config.get(CONF_PORT, DEFAULT_PORT)
                     ),
-                    # Add-on runs auth-disabled behind ingress — no token needed.
-                    CONF_TOKEN: "",
+                    CONF_TOKEN: str(self._hassio_discovery.config.get(CONF_TOKEN, "") or ""),
                 },
             )
         self._set_confirm_only()

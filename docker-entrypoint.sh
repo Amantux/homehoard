@@ -71,6 +71,7 @@ RESOLVED=$($RUN_AS python3 -c 'from app.settings import load_settings
 s = load_settings()
 print(f"RESOLVED_PORT={s.PORT}")
 print("RESOLVED_MCP_ENABLED=" + ("true" if s.MCP_ENABLED else "false"))
+print("RESOLVED_DISABLE_AUTH=" + ("true" if s.DISABLE_AUTH else "false"))
 print(f"RESOLVED_MCP_PORT={s.MCP_PORT}")
 print(f"RESOLVED_LOGLEVEL={s.LOG_LEVEL.lower()}")' | grep "^RESOLVED_[A-Z_]*=")
 eval "$RESOLVED"
@@ -92,16 +93,28 @@ $RUN_AS python3 -m app.pg_provision \
 # Initialize / migrate the database ONCE, before starting workers. Otherwise
 # each of gunicorn's workers races to run create_all()/_migrate() on a fresh DB
 # and one crashes with "table already exists". After this, the per-worker
-# create_all() is a safe no-op.
+# create_all() is a safe no-op. Mint the stable integration API key in the SAME
+# process (race-free — no second create_all) whenever a machine client needs
+# it: under the HA Supervisor (the integration), or in hardened mode with the
+# MCP server on (its outbound calls need a REST key).
+MINT_TOKEN=false
+if [ -n "${SUPERVISOR_TOKEN:-}" ]; then MINT_TOKEN=true; fi
+if [ "${RESOLVED_DISABLE_AUTH}" != "true" ] && [ "${RESOLVED_MCP_ENABLED}" = "true" ]; then
+  MINT_TOKEN=true
+fi
 echo "Initializing database schema…"
 # Also report which backend the app actually booted against. Every "why is my
 # data missing / why didn't the migration take" question starts here. /status
 # and /diagnostics report it too, but the log is what an operator pastes into an
 # issue — and it is the only one available if the app fails to serve at all.
-$RUN_AS python3 -c "from app import create_app
+$RUN_AS env MINT_TOKEN="$MINT_TOKEN" python3 -c "import os
+from app import create_app
 app = create_app()
 uri = app.config['SQLALCHEMY_DATABASE_URI']
-print('HomeHoard: database backend =', 'sqlite' if uri.startswith('sqlite') else 'postgresql')"
+print('HomeHoard: database backend =', 'sqlite' if uri.startswith('sqlite') else 'postgresql')
+if os.environ.get('MINT_TOKEN') == 'true':
+    from app.integration_token import ensure_integration_token
+    ensure_integration_token(app)"
 
 # Best-effort Home Assistant discovery. Runs AFTER schema init and as the app
 # user, matching the sibling add-ons: anything discovery needs to read (data
@@ -123,11 +136,18 @@ $RUN_AS python3 ha_discovery.py \
 # ---------------------------------------------------------------------------
 MCP_PID=""
 if [ "${RESOLVED_MCP_ENABLED}" = "true" ]; then
+  # In hardened mode the MCP server's own outbound calls to the REST API need a
+  # key — hand it the minted integration token (full scope). Open mode reaches
+  # the API without one, so this stays blank there.
+  MCP_API_TOKEN=""
+  if [ "${RESOLVED_DISABLE_AUTH}" != "true" ] && [ -f "${HBOX_DATA_DIR}/.integration_token" ]; then
+    MCP_API_TOKEN="$(cat "${HBOX_DATA_DIR}/.integration_token" 2>/dev/null || true)"
+  fi
   # HBOX_WORKER_ENABLED=false: the sidecar builds create_app() only for DB-backed
   # key lookups — it must NOT start a second AI-job worker (the main app runs it).
-  # mcp_server.py resolves everything else (host, port, tokens, external
-  # exposure) from the registry itself, so nothing is passed twice.
-  HBOX_WORKER_ENABLED=false \
+  # mcp_server.py resolves everything else (host, port, external exposure) from
+  # the registry itself, so nothing is passed twice.
+  HBOX_WORKER_ENABLED=false HBOX_MCP_API_TOKEN="$MCP_API_TOKEN" \
     $RUN_AS python3 mcp_server.py &
   MCP_PID=$!
   echo "HomeHoard: MCP server started (pid $MCP_PID) on :${RESOLVED_MCP_PORT}/sse"
