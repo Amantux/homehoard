@@ -250,3 +250,92 @@ def test_valid_jwt_authenticates_through_reordered_branch(client):
     resp = client.get(SUMMARY, headers={"Authorization": token})
 
     assert resp.status_code == 200
+
+
+# --- Group-bootstrap hardening (concurrency race + ambiguous-household IDOR) --
+
+def test_concurrent_group_bootstrap_creates_only_one_household(app):
+    # Two DIFFERENT HA users hitting different gunicorn workers for the first
+    # time could each observe zero households and both insert one — Group has
+    # no unique constraint to catch that, and unlike two callers racing to
+    # create the SAME shared local user, distinct ha_user_ids don't share a
+    # unique constraint that would incidentally roll one back. The fcntl lock
+    # in _group_bootstrap_lock() must serialize them.
+    #
+    # The probe fires AFTER the existing-households read, while (in
+    # production) still holding the lock. The first caller through pauses
+    # briefly so a second, concurrent caller gets a real chance to run its own
+    # read before either inserts — reproducing the actual race window. With
+    # the lock held, the second caller can't even reach the probe until the
+    # first releases it, so it naturally sees the first caller's new household
+    # and joins it instead. The pause has a timeout, so a correctly-serialized
+    # run never blocks on the second caller showing up.
+    import threading
+
+    from app import auth
+    from app.models import Group
+
+    calls = []
+    calls_lock = threading.Lock()
+    proceed = threading.Event()
+
+    def synced_probe():
+        with calls_lock:
+            is_first = not calls
+            calls.append(1)
+        if is_first:
+            proceed.wait(timeout=0.3)
+        else:
+            proceed.set()
+
+    orig_probe = auth._group_race_probe
+    auth._group_race_probe = synced_probe
+
+    errors = []
+
+    def worker(ha_id):
+        try:
+            with app.test_request_context(
+                headers={"X-Remote-User-Id": ha_id, "X-Remote-User-Display-Name": "A"},
+                environ_overrides=SUP,
+            ):
+                auth._ingress_user()
+                db.session.remove()
+        except Exception as exc:  # noqa: BLE001 - surfaced via `errors` below
+            errors.append(exc)
+
+    try:
+        t1 = threading.Thread(target=worker, args=("ha-1",))
+        t2 = threading.Thread(target=worker, args=("ha-2",))
+        t1.start()
+        t2.start()
+        t1.join(timeout=10)
+        t2.join(timeout=10)
+    finally:
+        auth._group_race_probe = orig_probe
+
+    assert not errors
+    with app.app_context():
+        assert db.session.query(Group).count() == 1
+
+
+def test_synthetic_account_does_not_join_an_ambiguous_household(app):
+    # If self-registration already produced more than one household before any
+    # synthetic/service account exists, joining "the oldest" would make a
+    # machine-bound account (the HA integration token) or an open-mode user an
+    # owner inside a household that isn't the operator's. Isolate it instead.
+    from app.auth import _default_user
+    from app.models import Group
+
+    with app.app_context():
+        g1 = Group(name="Home", currency="usd")
+        g2 = Group(name="Home", currency="usd")
+        db.session.add_all([g1, g2])
+        db.session.commit()
+        g1_id, g2_id = g1.id, g2.id
+
+    with app.app_context():
+        user = _default_user()
+
+        assert user.group_id not in (g1_id, g2_id)
+        assert db.session.query(Group).count() == 3
