@@ -55,10 +55,26 @@ def decode_token(token: str):
         return None
 
 
+# A version before this fix minted synthetic users with this literal password,
+# which /users/login's ungated email+password check made a public, guessable
+# owner-login backdoor. Rotating it only in the CREATE branch below would leave
+# every already-provisioned install exposed forever — the row already exists,
+# so _default_user/_ingress_user just return it. Detect and rotate it here, on
+# every read, so an upgrade closes the door without a migration.
+_KNOWN_BACKDOOR_PASSWORD = "unused"
+
+
+def _rotate_known_backdoor_password(user: User) -> None:
+    if verify_password(_KNOWN_BACKDOOR_PASSWORD, user.password_hash):
+        user.password_hash = hash_password(secrets.token_urlsafe(32))
+        db.session.commit()
+
+
 def _default_user() -> User:
     """Return (creating if needed) the single local user for no-auth mode."""
     user = db.session.query(User).filter_by(email=DEFAULT_EMAIL).first()
     if user:
+        _rotate_known_backdoor_password(user)
         return user
     # JOIN the shared household — the earliest-created group, the same one
     # ingress users are provisioned into — rather than minting a fresh one. A
@@ -124,6 +140,7 @@ def _ingress_user():
     real_name = (request.headers.get("X-Remote-User-Display-Name")
                  or request.headers.get("X-Remote-User-Name") or "").strip()
     if user:
+        _rotate_known_backdoor_password(user)
         if real_name and user.name != real_name:
             user.name = real_name
             db.session.commit()
