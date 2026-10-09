@@ -22,6 +22,7 @@ import HomeAssistant from './views/HomeAssistant.vue'
 import Scan from './views/Scan.vue'
 import ScanLaunch from './views/ScanLaunch.vue'
 import Login from './views/Login.vue'
+import NotFound from './views/NotFound.vue'
 
 const routes = [
   { path: '/', component: Dashboard },
@@ -45,6 +46,8 @@ const routes = [
   { path: '/scan', component: ScanLaunch },
   { path: '/t/:token', component: Scan, meta: { public: false } },
   { path: '/login', component: Login, meta: { public: true } },
+  // Must stay last: anything unmatched lands on a real page, not a blank shell.
+  { path: '/:pathMatch(.*)*', component: NotFound },
 ]
 
 const router = createRouter({ history: createWebHashHistory(), routes })
