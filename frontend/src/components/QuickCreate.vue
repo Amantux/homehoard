@@ -64,6 +64,7 @@ async function loadPlaces() {
 }
 onMounted(loadPlaces)
 watch(() => props.initialKind, (k) => (kind.value = k))
+watch(kind, () => (fieldErrors.value = {}))  // an item's field error isn't a bin's
 
 // An item placed in a bin inherits that bin's location, so mirror it in the UI.
 watch(binId, (id) => {
