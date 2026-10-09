@@ -21,6 +21,7 @@ from passlib.hash import bcrypt
 from sqlalchemy.exc import IntegrityError
 
 from .extensions import db
+from .logging_setup import request_id_var
 from .logsafe import scrub
 from .models import User, Group, ApiToken, hash_token
 from .models.api_token import TOKEN_PREFIX
@@ -273,8 +274,13 @@ def _resolve_current_user():
     # open-mode fallback are explicitly write.
     g.token_access = "write"
     header = request.headers.get("Authorization", "")
-    if header.startswith("Bearer "):
-        token = header[len("Bearer "):].strip()
+    if header.strip():
+        token = _bearer_token(header)
+        # Any credential that isn't a Bearer token (wrong scheme, empty token)
+        # is "present but invalid" → 401, never a fall-through to ingress or
+        # the open-mode user. Otherwise `bearer <read-key>` escalated to write.
+        if not token:
+            return None
         # Long-lived API keys are prefixed so we can route them without a JWT decode.
         if token.startswith(TOKEN_PREFIX):
             return _user_from_api_token(token)
@@ -289,6 +295,17 @@ def _resolve_current_user():
         return _default_user()
 
     return None
+
+
+def _bearer_token(header: str) -> str | None:
+    """The token from an ``Authorization: Bearer <token>`` header, or None when the
+    scheme isn't Bearer. The scheme is case-insensitive (RFC 7235); both the
+    resolver and the central read-only hook go through here so they can't
+    disagree about what counts as a Bearer credential."""
+    scheme, _, token = header.strip().partition(" ")
+    if scheme.lower() != "bearer":
+        return None
+    return token.strip() or None
 
 
 def _user_from_api_token(raw: str):
@@ -321,17 +338,18 @@ def _read_only_blocked():
     mutating method, else None. No-op for JWT/ingress users (no token → default write)."""
     if getattr(g, "token_access", "write") == "read" and \
             request.method not in ("GET", "HEAD", "OPTIONS"):
-        return jsonify({"error": "this API key is read-only"}), 403
+        return jsonify({"error": "this API key is read-only",
+                        "requestId": request_id_var.get()}), 403
     return None
 
 
 def enforce_read_only():
     """App-level before_request: a read-only API key may not mutate anything under
     /api/v1, decorated or not — so a new route can't forget the check. The
-    decorators keep their own check (belt and braces). Only a Bearer header can
-    carry a read-only key, so other requests aren't resolved here."""
+    decorators keep their own check (belt and braces). Only an Authorization
+    header can carry a read-only key, so other requests aren't resolved here."""
     if not request.path.startswith("/api/v1/") or \
-            not request.headers.get("Authorization", "").startswith("Bearer "):
+            not request.headers.get("Authorization", "").strip():
         return None
     load_current_user()
     return _read_only_blocked()
