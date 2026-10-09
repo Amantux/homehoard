@@ -7,19 +7,6 @@ import ItemDetail from './views/ItemDetail.vue'
 import Bins from './views/Bins.vue'
 import BinDetail from './views/BinDetail.vue'
 import Locations from './views/Locations.vue'
-import LocationDetail from './views/LocationDetail.vue'
-import Labels from './views/Labels.vue'
-import LabelSheet from './views/LabelSheet.vue'
-import Maintenance from './views/Maintenance.vue'
-import Checkouts from './views/Checkouts.vue'
-import Restock from './views/Restock.vue'
-import Duplicates from './views/Duplicates.vue'
-import Tools from './views/Tools.vue'
-import Review from './views/Review.vue'
-import Database from './views/Database.vue'
-import Report from './views/Report.vue'
-import HomeAssistant from './views/HomeAssistant.vue'
-import Scan from './views/Scan.vue'
 import ScanLaunch from './views/ScanLaunch.vue'
 import Login from './views/Login.vue'
 import NotFound from './views/NotFound.vue'
@@ -31,20 +18,20 @@ const routes = [
   { path: '/bins', component: Bins },
   { path: '/bins/:id', component: BinDetail },
   { path: '/locations', component: Locations },
-  { path: '/locations/:id', component: LocationDetail },
-  { path: '/labels', component: Labels },
-  { path: '/labels/print', component: LabelSheet },
-  { path: '/maintenance', component: Maintenance },
-  { path: '/checkouts', component: Checkouts },
-  { path: '/restock', component: Restock },
-  { path: '/duplicates', component: Duplicates },
-  { path: '/review', component: Review },
-  { path: '/tools', component: Tools },
-  { path: '/database', component: Database },
-  { path: '/report', component: Report },
-  { path: '/home-assistant', component: HomeAssistant },
+  { path: '/locations/:id', component: () => import('./views/LocationDetail.vue') },
+  { path: '/labels', component: () => import('./views/Labels.vue') },
+  { path: '/labels/print', component: () => import('./views/LabelSheet.vue') },
+  { path: '/maintenance', component: () => import('./views/Maintenance.vue') },
+  { path: '/checkouts', component: () => import('./views/Checkouts.vue') },
+  { path: '/restock', component: () => import('./views/Restock.vue') },
+  { path: '/duplicates', component: () => import('./views/Duplicates.vue') },
+  { path: '/review', component: () => import('./views/Review.vue') },
+  { path: '/tools', component: () => import('./views/Tools.vue') },
+  { path: '/database', component: () => import('./views/Database.vue') },
+  { path: '/report', component: () => import('./views/Report.vue') },
+  { path: '/home-assistant', component: () => import('./views/HomeAssistant.vue') },
   { path: '/scan', component: ScanLaunch },
-  { path: '/t/:token', component: Scan, meta: { public: false } },
+  { path: '/t/:token', component: () => import('./views/Scan.vue'), meta: { public: false } },
   { path: '/login', component: Login, meta: { public: true } },
   // Must stay last: anything unmatched lands on a real page, not a blank shell.
   { path: '/:pathMatch(.*)*', component: NotFound },

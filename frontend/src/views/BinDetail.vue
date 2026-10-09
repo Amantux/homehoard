@@ -9,6 +9,7 @@ import QrPanel from '../components/QrPanel.vue'
 import { findDuplicates } from '../composables/useDuplicateCheck'
 import PhotoCapture from '../components/PhotoCapture.vue'
 import ErrorState from '../components/ErrorState.vue'
+import Combobox from '../components/Combobox.vue'
 import { useLoader } from '../components/useLoader'
 
 const route = useRoute()
@@ -26,8 +27,34 @@ const newItemPreview = ref('')      // object URL for the thumbnail
 const creating = ref(false)
 const bin = ref(null)
 const locations = ref([])
-const allItems = ref([])
 const addItemId = ref('')
+const itemMatches = ref([])         // server search results for the "add existing" picker
+let searchTimer = null
+let searchSeq = 0
+// Picked option is kept in the list so the combobox can still show it after a new search.
+const addItemOptions = computed(() => {
+  const inBin = new Set((bin.value?.items || []).map((i) => i.id))
+  return itemMatches.value
+    .filter((i) => !inBin.has(i.id))
+    .map((i) => ({ id: i.id, label: i.name, sublabel: i.bin?.name || i.location?.name || '' }))
+})
+function searchItems(term) {
+  clearTimeout(searchTimer)
+  searchTimer = setTimeout(async () => {
+    const seq = ++searchSeq
+    const params = new URLSearchParams({ pageSize: '20' })
+    if (term) params.set('q', term)
+    try {
+      const res = await api.get(`/items?${params}`)
+      if (seq !== searchSeq) return // a newer search already answered
+      const picked = itemMatches.value.find((i) => i.id === addItemId.value)
+      const next = res.items
+      itemMatches.value = picked && !next.some((i) => i.id === picked.id) ? [picked, ...next] : next
+    } catch (e) {
+      if (seq === searchSeq) ui.error(e.message || 'Item search failed')
+    }
+  }, 200)
+}
 const newItemName = ref('')
 const newItemQty = ref(1)
 const newItemLabels = ref([])   // picked label ids for the item being created
@@ -87,7 +114,6 @@ const { loading, error, reload } = useLoader(async () => {
     await loadCurrency()
     await load()
     locations.value = await api.get('/locations')
-    allItems.value = (await api.get('/items?pageSize=500')).items
     labels.value = await api.get('/labels')
   } catch (e) {
     notFound.value = e.status === 404
@@ -171,7 +197,6 @@ async function createItemHere() {
     if (dupes.length > 1) ui.toast(`“${name}” now exists ${dupes.length} times — see Duplicates to merge`, 'info')
   })
   await load()
-  allItems.value = (await api.get('/items?pageSize=500')).items
 }
 async function removeItem(item) {
   try {
@@ -257,7 +282,7 @@ async function remove() {
         <span v-else class="row" style="gap:6px;align-items:center">
           <img :src="newItemPreview" alt="Photo staged for the new item"
                style="height:32px;width:32px;object-fit:cover;border-radius:var(--radius)" />
-          <button type="button" class="ghost sm" title="Remove this photo"
+          <button aria-label="Remove this photo" type="button" class="ghost sm" title="Remove this photo"
                   @click="clearItemPhoto">✕</button>
         </span>
 
@@ -279,10 +304,11 @@ async function remove() {
           {{ creating ? 'Creating…' : (newItemPhoto ? '＋ Create with photo' : '＋ Create here') }}
         </button>
         <span class="muted" style="align-self:center">or</span>
-        <select v-model="addItemId" style="max-width:240px">
-          <option value="">Add an existing item…</option>
-          <option v-for="i in allItems" :key="i.id" :value="i.id">{{ i.name }}</option>
-        </select>
+        <div style="max-width:240px;flex:1">
+          <Combobox v-model="addItemId" :options="addItemOptions" remote
+                    placeholder="Add an existing item…" aria-label="Add an existing item"
+                    @search="searchItems" />
+        </div>
         <button class="secondary" :disabled="!addItemId" @click="addItem">Add to bin</button>
       </div>
       <div v-if="bin.items.length" class="card-grid">
