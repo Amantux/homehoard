@@ -872,7 +872,11 @@ def _guard(asgi_app, server_token: str):
         names = _tool_names(scope, body)
         if _is_message_path(scope) and body.strip() and names is None:
             # An unparseable body yields no tool names, which would skip every
-            # scope check below and forward it to FastMCP. Fail closed.
+            # scope check below and forward it to FastMCP. Fail closed — but
+            # authenticate first (same rule as the domain-tool branch), so an
+            # unauthenticated client cannot fill the audit ring with garbage.
+            if (external or server_token) and not _authorized(header, server_token):
+                return await _deny(send, 401, b"unauthorized")
             _audit([], raw, "denied")
             return await _deny(send, 400, b"malformed JSON-RPC body")
         wants_debug = any(n in DEBUG_TOOLS for n in names)

@@ -406,3 +406,17 @@ def test_an_empty_body_still_forwards(app, auth_client, monkeypatch):
                   method="POST", path="/messages/", body=b"")
 
     assert sent[0]["status"] not in (400, 403)
+
+
+def test_a_truncated_body_from_an_unauthenticated_client_is_401_not_audited(
+        app, monkeypatch):
+    """External exposure: garbage from a stranger must not reach the audit ring."""
+    monkeypatch.setattr(mcp_server, "_app", app)
+    audited = []
+    monkeypatch.setattr(mcp_server, "_audit", lambda *a, **k: audited.append(a))
+
+    sent = _drive([], method="POST", path="/messages/", body=_TRUNCATED,
+                  external=True)
+
+    assert sent[0]["status"] == 401
+    assert audited == []
