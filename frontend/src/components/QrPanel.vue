@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { api, apiUrl, getToken } from '../api'
 import { useUI } from '../stores/ui'
+import { buildPrintHtml } from '../utils/html'
 
 const props = defineProps({
   kind: { type: String, required: true },
@@ -91,11 +92,11 @@ async function remove(t) {
 function copyLink(t) { navigator.clipboard?.writeText(t.scanUrl); ui.toast('Link copied') }
 function printTag(t) {
   const w = window.open('', '_blank')
-  w.document.write(`<html><head><title>QR ${t.token}</title></head>
-    <body style="text-align:center;font-family:sans-serif;padding:40px">
-    <img src="${images.value[t.id]}" style="width:260px;height:260px" />
-    <h2>${t.description || props.kind}</h2><p style="color:#888">${t.token}</p>
-    <script>window.onload=()=>window.print()</scr${''}ipt></body></html>`)
+  if (!w) { ui.error('Allow pop-ups for this page to print the tag.'); return }
+  w.document.write(buildPrintHtml({
+    title: `QR ${t.token}`, imgSrc: images.value[t.id],
+    heading: t.description || props.kind, caption: t.token,
+  }))
   w.document.close()
 }
 onMounted(load)
