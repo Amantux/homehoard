@@ -27,11 +27,32 @@ from dataclasses import dataclass, field
 from ...logsafe import SECRETISH as _SECRETISH
 
 
-class ProviderError(RuntimeError):
-    """Raised when a provider is misconfigured or the upstream call fails."""
-
-
 _MAX_UPSTREAM_DETAIL = 200
+# A ProviderError message is curated text plus (at most) one 200-char upstream
+# detail, so its cap is wider: it must only stop runaway bodies, not trim the
+# curated prefix.
+_MAX_PROVIDER_ERROR = 500
+
+
+def _redact_text(text: str, limit: int) -> str:
+    """Credential-free, single-line, truncated copy of `text`."""
+    text = _SECRETISH.sub("[redacted]", text or "")
+    text = " ".join(text.split())  # collapse multi-line response bodies
+    if len(text) > limit:
+        text = text[:limit].rstrip() + "…"
+    return text
+
+
+class ProviderError(RuntimeError):
+    """Raised when a provider is misconfigured or the upstream call fails.
+
+    Its message reaches API clients (endpoints and job.error return
+    ``str(exc)``), so it is redacted at construction — a raise site that
+    interpolates raw upstream text can't leak a credential.
+    """
+
+    def __init__(self, message: object = "", *args: object) -> None:
+        super().__init__(_redact_text(str(message), _MAX_PROVIDER_ERROR), *args)
 
 
 def safe_upstream_detail(exc: BaseException, limit: int = _MAX_UPSTREAM_DETAIL) -> str:
@@ -43,10 +64,7 @@ def safe_upstream_detail(exc: BaseException, limit: int = _MAX_UPSTREAM_DETAIL) 
     plus a redacted, truncated message — enough to debug "connection refused"
     vs "401 unauthorized" without leaking the secret that caused it.
     """
-    detail = _SECRETISH.sub("[redacted]", str(exc) or "")
-    detail = " ".join(detail.split())  # collapse multi-line response bodies
-    if len(detail) > limit:
-        detail = detail[:limit].rstrip() + "…"
+    detail = _redact_text(str(exc), limit)
     kind = type(exc).__name__
     return f"{kind}: {detail}" if detail else kind
 
