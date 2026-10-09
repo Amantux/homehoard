@@ -183,7 +183,7 @@ async function send(text) {
                  :placeholder="notConfigured ? 'Set up an AI provider to chat' : 'Ask the assistant…'"
                  :disabled="busy || notConfigured" @keyup.enter="send()"
                  aria-label="Message the assistant" />
-          <button class="send" :disabled="busy || notConfigured || !input.trim()" @click="send()">Send</button>
+          <button class="send" :disabled="busy || notConfigured || !input.trim()" @click="send()">{{ busy ? 'Sending…' : 'Send' }}</button>
         </div>
       </section>
     </transition>

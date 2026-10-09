@@ -292,7 +292,7 @@ onBeforeUnmount(stopCamera)
   <BaseModal width="460px" @close="close" v-slot="{ titleId }">
       <div class="modal-head">
         <h2 :id="titleId" style="flex:1">📷 Scan</h2>
-        <button class="ghost icon-btn" @click="close">✕</button>
+        <button aria-label="Close scanner" class="ghost icon-btn" @click="close">✕</button>
       </div>
 
       <div class="row wrap" style="gap:6px;margin-bottom:10px">
@@ -349,7 +349,7 @@ onBeforeUnmount(stopCamera)
       <!-- Onboard: name-first add + session list -->
       <template v-if="mode === 'onboard'">
         <div class="row" style="gap:8px;margin-top:6px">
-          <input v-model="nextName" style="flex:1" placeholder="Name for the next item (optional)"
+          <input aria-label="Name for the next item" v-model="nextName" style="flex:1" placeholder="Name for the next item (optional)"
                  @keyup.enter="addByName" />
           <button class="secondary" :disabled="!nextName.trim() || !targetId" @click="addByName">＋ Add</button>
         </div>
@@ -357,7 +357,7 @@ onBeforeUnmount(stopCamera)
           <div class="muted" style="font-size:0.82rem;margin-bottom:6px">Added this session ({{ added.length }}) — rename as needed:</div>
           <div style="max-height:180px;overflow:auto;display:flex;flex-direction:column;gap:6px">
             <div v-for="a in added" :key="a.id" class="row" style="gap:6px">
-              <input v-model="a.name" style="flex:1" @change="renameAdded(a)" @keyup.enter="renameAdded(a)" />
+              <input aria-label="Item name" v-model="a.name" style="flex:1" @change="renameAdded(a)" @keyup.enter="renameAdded(a)" />
               <button class="ghost sm" @click="router.push('/items/' + a.id)">Open</button>
             </div>
           </div>
@@ -366,7 +366,7 @@ onBeforeUnmount(stopCamera)
 
       <div class="divider"></div>
       <div class="row">
-        <input v-model="manual" placeholder="…or paste / type a code" @keyup.enter="onCode(manual); manual=''" />
+        <input aria-label="Code" v-model="manual" placeholder="…or paste / type a code" @keyup.enter="onCode(manual); manual=''" />
         <button :disabled="!manual" @click="onCode(manual); manual=''">Go</button>
       </div>
   </BaseModal>

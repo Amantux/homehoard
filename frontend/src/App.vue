@@ -100,17 +100,17 @@ const nav = [
           >☰</button>
           <div class="search" @click="showSearch = true">
             <span class="search-ico">🔍</span>
-            <input placeholder="Find where something is…  ( / )" readonly
+            <input aria-label="Find where something is" placeholder="Find where something is…  ( / )" readonly
                    style="cursor:pointer" @focus="showSearch = true" />
           </div>
           <div class="grow"></div>
           <button @click="showCreate = true">＋ Create</button>
-          <button class="secondary icon-btn" title="Scan QR" @click="showScanner = true">📷</button>
+          <button aria-label="Scan QR" class="secondary icon-btn" title="Scan QR" @click="showScanner = true">📷</button>
           <button class="secondary icon-btn" title="Report a bug" aria-label="Report a bug"
                   @click="showReport = true">🐞</button>
-          <button class="secondary icon-btn" title="Toggle theme" @click="ui.toggleTheme()">🌓</button>
+          <button aria-label="Toggle theme" class="secondary icon-btn" title="Toggle theme" @click="ui.toggleTheme()">🌓</button>
           <div v-if="!auth.authDisabled" class="dropdown">
-            <button class="secondary icon-btn" @click="showUserMenu = !showUserMenu">👤</button>
+            <button aria-label="Account menu" class="secondary icon-btn" @click="showUserMenu = !showUserMenu">👤</button>
             <div v-if="showUserMenu" class="dropdown-menu" @click="showUserMenu = false">
               <button @click="auth.logout()">Sign out</button>
             </div>

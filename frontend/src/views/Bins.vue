@@ -66,7 +66,7 @@ async function create() {
 
   <BaseModal v-if="showCreate" @close="showCreate = false" v-slot="{ titleId }">
       <div class="modal-head"><h2 :id="titleId">New bin</h2>
-        <button class="ghost icon-btn" @click="showCreate = false">✕</button></div>
+        <button aria-label="Close" class="ghost icon-btn" @click="showCreate = false">✕</button></div>
       <label class="field"><span>Name</span><input v-model="form.name" autofocus @keyup.enter="create" /></label>
       <label class="field"><span>Description</span><textarea v-model="form.description" rows="2"></textarea></label>
       <label class="field"><span>Location</span>

@@ -182,9 +182,11 @@ function resetPerItem() {
 }
 
 // stay = keep the modal open for the next item (bin/location stay selected).
+const submitStay = ref(false) // which submit button is pending
 async function submit(stay = false) {
   if (!name.value || busy.value) return
   busy.value = true
+  submitStay.value = stay
   fieldErrors.value = {}
   try {
     let created
@@ -259,7 +261,7 @@ async function submit(stay = false) {
   <BaseModal @close="emit('close')" v-slot="{ titleId }">
       <div class="modal-head">
         <h2 :id="titleId">Create</h2>
-        <button class="ghost icon-btn" @click="emit('close')">✕</button>
+        <button aria-label="Close" class="ghost icon-btn" @click="emit('close')">✕</button>
       </div>
 
       <div class="row wrap type-picker" style="gap:8px;margin-bottom:16px">
@@ -282,7 +284,7 @@ async function submit(stay = false) {
       </template>
 
       <Field label="Name" :error="fieldErrors.name">
-        <input ref="nameInput" v-model="name" autofocus placeholder="e.g. Cordless Drill"
+        <input aria-label="Name" ref="nameInput" v-model="name" autofocus placeholder="e.g. Cordless Drill"
                :aria-invalid="fieldErrors.name ? 'true' : undefined"
                @keyup.enter="submit(true)" /></Field>
       <label class="field"><span>Description</span>
@@ -376,8 +378,8 @@ async function submit(stay = false) {
         <span class="muted" style="font-size:0.85rem">{{ sessionCount ? sessionCount + ' added' : '' }}</span>
         <div class="row" style="gap:8px">
           <button class="secondary" @click="emit('close')">{{ sessionCount ? 'Done' : 'Cancel' }}</button>
-          <button class="secondary" :disabled="!name || busy" @click="submit(true)">Save &amp; add another</button>
-          <button :disabled="!name || busy" @click="submit(false)">Create {{ kind }}</button>
+          <button class="secondary" :disabled="!name || busy" @click="submit(true)">{{ busy && submitStay ? 'Saving…' : 'Save &amp; add another' }}</button>
+          <button :disabled="!name || busy" @click="submit(false)">{{ busy && !submitStay ? 'Creating…' : 'Create ' + kind }}</button>
         </div>
       </div>
   </BaseModal>

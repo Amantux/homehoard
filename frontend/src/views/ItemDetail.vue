@@ -440,7 +440,7 @@ async function addMaint() {
                 <span v-if="h.bin && h.location" class="muted sm">·
                   <router-link :to="'/locations/' + h.location.id">{{ h.location.name }}</router-link>
                 </span></span>
-              <input type="number" min="0" step="1" style="width:76px" :value="h.quantity"
+              <input aria-label="Quantity" type="number" min="0" step="1" style="width:76px" :value="h.quantity"
                 @change="(e) => editHolding(h, e.target.value)" />
               <button class="secondary sm" @click="openMove(h)">Move</button>
               <button v-if="item.holdings.length > 1" class="danger secondary sm"
@@ -562,7 +562,7 @@ async function addMaint() {
                     @click="videoFor = (videoFor === m.id ? null : m.id)">
               {{ videoFor === m.id ? 'Cancel' : '+ Video' }}</button>
             <div v-if="videoFor === m.id" class="row wrap" style="gap:6px;margin-top:6px">
-              <input v-model="newVideoUrl" placeholder="https://youtu.be/…" style="min-width:160px" />
+              <input aria-label="Video URL" v-model="newVideoUrl" placeholder="https://youtu.be/…" style="min-width:160px" />
               <button :disabled="videoBusy" @click="addVideo(m.id); videoFor = null">Add</button>
               <label class="secondary btnlike sm">Upload
                 <input type="file" accept="video/*" hidden :disabled="videoBusy"

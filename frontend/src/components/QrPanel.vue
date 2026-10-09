@@ -132,9 +132,9 @@ onMounted(load)
           <span class="badge">{{ t.source === 'external' ? 'your code' : 'homehoard QR' }}</span>
         </div>
         <div class="row" style="gap:5px;justify-content:center">
-          <button v-if="t.source === 'generated'" class="ghost sm" title="Copy link" @click="copyLink(t)">🔗</button>
-          <button v-if="t.source === 'generated'" class="ghost sm" title="Print" @click="printTag(t)">🖨️</button>
-          <button class="ghost sm" title="Remove" @click="remove(t)">🗑️</button>
+          <button aria-label="Copy link" v-if="t.source === 'generated'" class="ghost sm" title="Copy link" @click="copyLink(t)">🔗</button>
+          <button aria-label="Print" v-if="t.source === 'generated'" class="ghost sm" title="Print" @click="printTag(t)">🖨️</button>
+          <button aria-label="Remove" class="ghost sm" title="Remove" @click="remove(t)">🗑️</button>
         </div>
       </div>
     </div>

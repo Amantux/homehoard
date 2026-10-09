@@ -145,8 +145,8 @@ onMounted(resolve)
         </p>
 
         <div class="row" style="gap:8px">
-          <button v-if="!item.checkedOut" :disabled="busy" @click="checkOut">📤 Check out</button>
-          <button v-else :disabled="busy" @click="checkIn">📥 Check in</button>
+          <button v-if="!item.checkedOut" :disabled="busy" @click="checkOut">📤 {{ busy ? 'Checking out…' : 'Check out' }}</button>
+          <button v-else :disabled="busy" @click="checkIn">📥 {{ busy ? 'Checking in…' : 'Check in' }}</button>
           <button class="secondary" @click="router.replace('/items/' + item.id)">Open</button>
           <button class="ghost" @click="router.push('/')">Cancel</button>
         </div>
@@ -178,7 +178,7 @@ onMounted(resolve)
           <div class="row" style="gap:8px">
             <input v-model="newItemName" style="flex:1" placeholder="Item name"
                    @keyup.enter="addItemHere" />
-            <button :disabled="!newItemName.trim() || busy" @click="addItemHere">＋ Add</button>
+            <button :disabled="!newItemName.trim() || busy" @click="addItemHere">{{ busy ? 'Adding…' : '＋ Add' }}</button>
           </div>
         </label>
 
@@ -204,12 +204,12 @@ onMounted(resolve)
 
         <p class="muted" style="font-size:0.85rem">Or link this code to an existing record:</p>
         <div class="row">
-          <select v-model="kind" @change="targetId=''" style="width:auto">
+          <select aria-label="Record type" v-model="kind" @change="targetId=''" style="width:auto">
             <option value="item">Item</option>
             <option value="bin">Bin</option>
             <option value="location">Location</option>
           </select>
-          <select v-model="targetId">
+          <select aria-label="Record" v-model="targetId">
             <option value="">Select…</option>
             <option v-for="t in targets[kind]" :key="t.id" :value="t.id">{{ t.name }}</option>
           </select>

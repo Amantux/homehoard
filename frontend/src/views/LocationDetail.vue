@@ -179,13 +179,13 @@ async function remove() {
 
     <div v-show="tab==='items'">
       <div class="toolbar" style="flex-wrap:wrap;gap:8px">
-        <input v-model="newItemName" style="max-width:200px" placeholder="New item name…"
+        <input aria-label="New item name" v-model="newItemName" style="max-width:200px" placeholder="New item name…"
                @keyup.enter="createItemHere" />
-        <input type="number" min="1" v-model.number="newItemQty" style="max-width:76px"
+        <input aria-label="Quantity" type="number" min="1" v-model.number="newItemQty" style="max-width:76px"
                title="Quantity" @keyup.enter="createItemHere" />
         <button :disabled="!newItemName.trim()" @click="createItemHere">＋ Create here</button>
         <span class="muted" style="align-self:center">or</span>
-        <select v-model="addItemId" style="max-width:240px">
+        <select aria-label="Move an existing item here" v-model="addItemId" style="max-width:240px">
           <option value="">Move an existing item here…</option>
           <option v-for="i in allItems" :key="i.id" :value="i.id">{{ i.name }}</option>
         </select>

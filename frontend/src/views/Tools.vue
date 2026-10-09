@@ -408,7 +408,7 @@ const actions = [
       <span>Also include my API key in the code</span>
     </label>
     <div v-if="syncIncludeKey" class="w-narrow mt-8">
-      <input type="password" v-model="syncKeyInput" placeholder="Paste the API key to embed"
+      <input aria-label="API key to embed" type="password" v-model="syncKeyInput" placeholder="Paste the API key to embed"
         autocomplete="off" style="width:100%" />
       <p class="muted" style="font-size:0.85rem;margin-top:4px">Your API key will be embedded in the
         copied text — treat it like a password and only paste it into your own apps.</p>
@@ -448,25 +448,25 @@ const actions = [
     <div v-for="area in JOB_AREAS" :key="area.k" style="max-width:520px;margin-bottom:14px">
       <div class="muted" style="font-size:0.85rem;font-weight:600;margin-bottom:4px">{{ area.l }}</div>
       <div class="row" style="gap:8px">
-        <select v-model="jobAi[area.k].provider" class="fill">
+        <select :aria-label="area.l + ' provider'" v-model="jobAi[area.k].provider" class="fill">
           <option value="">Same as chat</option>
           <option v-for="p in ai.validProviders" :key="p" :value="p">{{ PROVIDER_LABELS[p] || p }}</option>
         </select>
-        <select v-if="jobModels[area.k].length" v-model="jobAi[area.k].model" class="fill">
+        <select :aria-label="area.l + ' model'" v-if="jobModels[area.k].length" v-model="jobAi[area.k].model" class="fill">
           <option value="">Default model</option>
           <option v-for="m in jobModels[area.k]" :key="m" :value="m">{{ m }}</option>
           <option v-if="jobAi[area.k].model && !jobModels[area.k].includes(jobAi[area.k].model)"
                   :value="jobAi[area.k].model">{{ jobAi[area.k].model }} (current)</option>
         </select>
-        <input v-else v-model="jobAi[area.k].model" placeholder="model (optional)" class="fill" />
+        <input :aria-label="area.l + ' model'" v-else v-model="jobAi[area.k].model" placeholder="model (optional)" class="fill" />
         <button type="button" class="secondary sm" :disabled="jobModelsLoading[area.k]"
                 @click="listJobModels(area.k)">{{ jobModelsLoading[area.k] ? '…' : 'List' }}</button>
       </div>
       <!-- Its own server + key. Blank = the same one chat uses. -->
       <div v-if="jobAi[area.k].provider" class="row job-row" style="gap:8px;margin-top:6px">
-        <input v-model="jobAi[area.k].baseUrl" style="flex:2"
+        <input :aria-label="area.l + ' server URL'" v-model="jobAi[area.k].baseUrl" style="flex:2"
                placeholder="server, e.g. http://192.168.1.50:11434 (blank = same as chat)" />
-        <input v-model="jobAi[area.k].apiKey" type="password" class="fill"
+        <input :aria-label="area.l + ' API key'" v-model="jobAi[area.k].apiKey" type="password" class="fill"
                :placeholder="jobAi[area.k].apiKeySet
                  ? '•••• (saved — leave blank to keep)' : 'API key (optional)'" />
         <button v-if="jobAi[area.k].apiKeySet" type="button" class="secondary sm"

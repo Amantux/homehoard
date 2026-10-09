@@ -27,7 +27,7 @@ const scheduled = computed(() => data.value.entries.filter((e) => e.status === '
     <h1>Maintenance</h1>
     <div class="grow"></div>
     <span class="badge">Total spent: {{ money(data.costTotal) }}</span>
-    <select v-model="filter" style="width:auto" @change="load">
+    <select aria-label="Filter" v-model="filter" style="width:auto" @change="load">
       <option value="both">All</option>
       <option value="scheduled">Scheduled</option>
       <option value="completed">Completed</option>

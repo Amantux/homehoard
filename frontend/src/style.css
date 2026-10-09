@@ -131,6 +131,11 @@ button.danger { background: var(--danger); }
 button.danger:hover { background: #b91c1c; }
 button.icon-btn { padding: 8px; width: 38px; height: 38px; justify-content: center; }
 button.sm { padding: 5px 10px; font-size: 0.82rem; }
+/* Touch screens: 44px minimum hit area (WCAG 2.5.5). Desktop sizes unchanged. */
+@media (pointer: coarse) {
+  button.icon-btn { width: 44px; height: 44px; }
+  button.sm, .btn.sm { min-height: 44px; min-width: 44px; justify-content: center; }
+}
 
 /* ---------- Cards ---------- */
 .card {

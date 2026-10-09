@@ -148,7 +148,7 @@ async function submit() {
           {{ copied ? "It's on your clipboard — " : 'Copy the text below, then ' }}open a
           new issue and paste it in:
         </p>
-        <textarea readonly :value="body" rows="4" @focus="$event.target.select()"
+        <textarea aria-label="Report text" readonly :value="body" rows="4" @focus="$event.target.select()"
                   style="font-family:var(--mono,monospace);font-size:0.8rem"></textarea>
         <div class="row" style="gap:8px;margin-top:6px;align-items:center">
           <button class="secondary sm" @click="copyReport">{{ copied ? 'Copied ✓' : 'Copy report' }}</button>

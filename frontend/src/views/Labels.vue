@@ -62,7 +62,7 @@ async function remove(l) {
 
   <BaseModal v-if="showModal" @close="showModal = false" v-slot="{ titleId }">
       <div class="modal-head"><h2 :id="titleId">{{ editing ? 'Edit' : 'New' }} label</h2>
-        <button class="ghost icon-btn" @click="showModal = false">✕</button></div>
+        <button aria-label="Close" class="ghost icon-btn" @click="showModal = false">✕</button></div>
       <label class="field"><span>Name</span><input v-model="form.name" autofocus @keyup.enter="submit" /></label>
       <label class="field"><span>Description</span><input v-model="form.description" /></label>
       <label class="field"><span>Color</span><input type="color" v-model="form.color" /></label>
