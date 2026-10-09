@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api, apiUrl } from '../api'
 import { money, loadCurrency } from '../format'
@@ -7,6 +7,8 @@ import { useUI } from '../stores/ui'
 import QrPanel from '../components/QrPanel.vue'
 import { findDuplicates } from '../composables/useDuplicateCheck'
 import PhotoCapture from '../components/PhotoCapture.vue'
+import ErrorState from '../components/ErrorState.vue'
+import { useLoader } from '../components/useLoader'
 
 const route = useRoute()
 const router = useRouter()
@@ -69,31 +71,50 @@ function clearItemPhoto() {
   newItemPreview.value = ''
 }
 async function removeAttachment(a) {
-  await api.del(`/bins/${id}/attachments/${a.id}`)
-  await load()
+  try {
+    await api.del(`/bins/${id}/attachments/${a.id}`)
+    await load()
+  } catch (e) {
+    ui.error(e.message)
+  }
 }
-onMounted(async () => {
-  await loadCurrency()
-  await load()
-  locations.value = await api.get('/locations')
-  allItems.value = (await api.get('/items?pageSize=500')).items
-  labels.value = await api.get('/labels')
+const notFound = ref(false)
+const { loading, error, reload } = useLoader(async () => {
+  notFound.value = false
+  try {
+    await loadCurrency()
+    await load()
+    locations.value = await api.get('/locations')
+    allItems.value = (await api.get('/items?pageSize=500')).items
+    labels.value = await api.get('/labels')
+  } catch (e) {
+    notFound.value = e.status === 404
+    throw e
+  }
 })
 
 async function save() {
-  bin.value = await api.put('/bins/' + id, {
-    name: bin.value.name, description: bin.value.description,
-    locationId: bin.value.locationId || null,
-  })
-  editing.value = false
-  ui.toast('Saved')
+  try {
+    bin.value = await api.put('/bins/' + id, {
+      name: bin.value.name, description: bin.value.description,
+      locationId: bin.value.locationId || null,
+    })
+    editing.value = false
+    ui.toast('Saved')
+  } catch (e) {
+    ui.error(e.message)
+  }
 }
 async function addItem() {
   if (!addItemId.value) return
-  await api.put(`/bins/${id}/items/${addItemId.value}`)
-  addItemId.value = ''
-  ui.toast('Item added to bin')
-  await load()
+  try {
+    await api.put(`/bins/${id}/items/${addItemId.value}`)
+    addItemId.value = ''
+    ui.toast('Item added to bin')
+    await load()
+  } catch (e) {
+    ui.error(e.message)
+  }
 }
 function pickLabel(e) {
   const lid = e.target.value
@@ -151,19 +172,34 @@ async function createItemHere() {
   allItems.value = (await api.get('/items?pageSize=500')).items
 }
 async function removeItem(item) {
-  await api.del(`/bins/${id}/items/${item.id}`)
-  await load()
+  try {
+    await api.del(`/bins/${id}/items/${item.id}`)
+    await load()
+  } catch (e) {
+    ui.error(e.message)
+  }
 }
 async function remove() {
   if (!confirm('Delete this bin? Items are kept but removed from the bin.')) return
-  await api.del('/bins/' + id)
+  try {
+    await api.del('/bins/' + id)
+  } catch (e) {
+    ui.error(e.message)
+    return
+  }
   ui.toast('Bin deleted')
   router.push('/bins')
 }
 </script>
 
 <template>
-  <div v-if="bin">
+  <div v-if="loading" class="card"><div class="skeleton" style="height:240px"></div></div>
+  <template v-else-if="notFound">
+    <ErrorState message="This bin was deleted or never existed." @retry="reload" />
+    <div style="margin-top:12px"><router-link to="/bins">Go to bins</router-link></div>
+  </template>
+  <ErrorState v-else-if="error" :message="error" @retry="reload" />
+  <div v-else-if="bin">
     <div class="breadcrumb" style="margin-bottom:10px">
       <router-link to="/bins">Bins</router-link>
       <template v-if="bin.location"><span class="sep">/</span>
@@ -291,5 +327,4 @@ async function remove() {
     <div v-if="tab==='qr'"><QrPanel kind="bin" :target-id="bin.id" /></div>
     <PhotoCapture v-if="showCapture" @captured="onCapture" @close="showCapture = false" />
   </div>
-  <div v-else class="card"><div class="skeleton" style="height:240px"></div></div>
 </template>

@@ -40,7 +40,11 @@ async function request(method, path, body, isForm = false) {
   }
   const ct = res.headers.get('content-type') || ''
   const data = ct.includes('application/json') ? await res.json() : await res.text()
-  if (!res.ok) throw new Error((data && data.error) || res.statusText)
+  if (!res.ok) {
+    const err = new Error((data && data.error) || res.statusText)
+    err.status = res.status // lets views tell a 404 ("deleted or never existed") from other failures
+    throw err
+  }
   return data
 }
 
