@@ -141,7 +141,46 @@ DISCOVERY_PID=$!
 # crashed MCP was invisible and SIGTERM never reached it. We now keep a
 # supervising shell that forwards signals and reports an MCP exit.
 # ---------------------------------------------------------------------------
-MCP_PID=""
+MCP_PID=""          # the supervise loop (a background subshell), not the server
+MCP_CHILD_PIDFILE="/tmp/homehoard-mcp.pid"   # the loop writes the CURRENT server pid
+
+# Restart a crashed MCP server up to 5 times (backoff 1,2,4,8,16s), then give up
+# without touching the REST API. Runs in the background; TERM (from shutdown())
+# sets STOPPING=1, stops the current server and any pending backoff, and exits.
+# MCP_BACKOFF_SLEEP shortens the real sleeps (tests only); the log keeps the
+# nominal delay.
+supervise_mcp() {
+  STOPPING=0
+  child="" nap="" attempt=0
+  trap 'STOPPING=1; [ -n "$nap" ] && kill -TERM "$nap" 2>/dev/null
+        [ -n "$child" ] && kill -TERM "$child" 2>/dev/null && { wait "$child" || true; }
+        rm -f "$MCP_CHILD_PIDFILE"; exit 0' TERM INT
+  while [ "$STOPPING" != 1 ]; do
+    start_mcp &
+    child=$!
+    echo "$child" > "$MCP_CHILD_PIDFILE"
+    echo "HomeHoard: MCP server started (pid $child) on :${RESOLVED_MCP_PORT}/sse"
+    status=0
+    wait "$child" || status=$?   # `|| ` keeps set -e from killing the loop
+    child=""
+    [ "$STOPPING" = 1 ] && break
+    [ "$status" -eq 0 ] && break   # a clean exit is deliberate, not a crash
+    if [ "$attempt" -ge 5 ]; then
+      echo "HomeHoard: MCP server gave up after 5 restarts — the REST API keeps" \
+           "running; check the log above" >&2
+      break
+    fi
+    attempt=$((attempt + 1))
+    delay=$((1 << (attempt - 1)))
+    echo "HomeHoard: MCP server exited (status $status), restart $attempt/5 in ${delay}s" >&2
+    sleep "${MCP_BACKOFF_SLEEP:-$delay}" &
+    nap=$!
+    wait "$nap" || true
+    nap=""
+  done
+  rm -f "$MCP_CHILD_PIDFILE"
+}
+
 if [ "${RESOLVED_MCP_ENABLED}" = "true" ]; then
   # In hardened mode the MCP server's own outbound calls to the REST API need a
   # key — hand it the minted integration token (full scope). Open mode reaches
@@ -154,16 +193,21 @@ if [ "${RESOLVED_MCP_ENABLED}" = "true" ]; then
   # key lookups — it must NOT start a second AI-job worker (the main app runs it).
   # mcp_server.py resolves everything else (host, port, external exposure) from
   # the registry itself, so nothing is passed twice.
-  HBOX_WORKER_ENABLED=false HBOX_MCP_API_TOKEN="$MCP_API_TOKEN" \
-    $RUN_AS python3 mcp_server.py &
+  start_mcp() {
+    HBOX_WORKER_ENABLED=false HBOX_MCP_API_TOKEN="$MCP_API_TOKEN" \
+      exec $RUN_AS python3 mcp_server.py
+  }
+  supervise_mcp &
   MCP_PID=$!
-  echo "HomeHoard: MCP server started (pid $MCP_PID) on :${RESOLVED_MCP_PORT}/sse"
 fi
 
 GUNICORN_PID=""
 shutdown() {
   [ -n "$GUNICORN_PID" ] && kill -TERM "$GUNICORN_PID" 2>/dev/null || true
+  # TERM the supervise loop first (its trap sets STOPPING=1 and stops the
+  # server), then the server directly in case the loop was between steps.
   [ -n "$MCP_PID" ] && kill -TERM "$MCP_PID" 2>/dev/null || true
+  [ -f "$MCP_CHILD_PIDFILE" ] && kill -TERM "$(cat "$MCP_CHILD_PIDFILE")" 2>/dev/null || true
   [ -n "$DISCOVERY_PID" ] && kill -TERM "$DISCOVERY_PID" 2>/dev/null || true
   wait
   exit 0
@@ -183,7 +227,7 @@ echo "HomeHoard: gunicorn on :${RESOLVED_PORT}"
 # takes the container down with its real exit status.
 while true; do
   if [ -n "$MCP_PID" ] && ! kill -0 "$MCP_PID" 2>/dev/null; then
-    echo "HomeHoard: WARNING - MCP server (pid $MCP_PID) exited. Assist voice" \
+    echo "HomeHoard: WARNING - MCP supervisor (pid $MCP_PID) stopped. Assist voice" \
          "control is unavailable; the web app is unaffected." >&2
     MCP_PID=""
   fi
@@ -192,6 +236,7 @@ while true; do
     status=$?
     echo "HomeHoard: gunicorn exited with status $status; shutting down." >&2
     [ -n "$MCP_PID" ] && kill -TERM "$MCP_PID" 2>/dev/null || true
+    [ -f "$MCP_CHILD_PIDFILE" ] && kill -TERM "$(cat "$MCP_CHILD_PIDFILE")" 2>/dev/null || true
     exit "$status"
   fi
   sleep 5

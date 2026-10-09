@@ -152,3 +152,37 @@ def test_backup_and_restore_verification_roundtrip(tmp_path):
     detail = next(ch["detail"] for ch in result["checks"]
                   if ch["name"] == "item_count_matches_backup")
     assert "restored=3" in detail
+
+
+def _free_port():
+    import socket
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def test_ready_reports_mcp_disabled(app, client, monkeypatch):
+    monkeypatch.setitem(app.config["SETTINGS"].values, "MCP_ENABLED", False)
+    assert client.get("/api/v1/ready").get_json()["checks"]["mcp"] == "disabled"
+
+
+def test_ready_reports_mcp_down_but_stays_ready(app, client, monkeypatch):
+    # A dead sidecar must not fail readiness: the healthcheck would otherwise
+    # restart the whole container while the REST API is serving fine.
+    monkeypatch.setitem(app.config["SETTINGS"].values, "MCP_ENABLED", True)
+    monkeypatch.setitem(app.config["SETTINGS"].values, "MCP_PORT", _free_port())
+    r = client.get("/api/v1/ready")
+    assert r.status_code == 200
+    assert r.get_json()["ready"] is True
+    assert r.get_json()["checks"]["mcp"] == "down"
+
+
+def test_ready_reports_mcp_ok_when_listening(app, client, monkeypatch):
+    import socket
+    with socket.socket() as srv:
+        srv.bind(("127.0.0.1", 0))
+        srv.listen(1)
+        monkeypatch.setitem(app.config["SETTINGS"].values, "MCP_ENABLED", True)
+        monkeypatch.setitem(app.config["SETTINGS"].values, "MCP_PORT",
+                            srv.getsockname()[1])
+        assert client.get("/api/v1/ready").get_json()["checks"]["mcp"] == "ok"
