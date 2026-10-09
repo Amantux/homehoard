@@ -10,6 +10,7 @@ from ..extensions import db, limiter
 from ..models import (Item, ItemField, ItemHolding, Label, Location, Bin,
                       Attachment, MaintenanceEntry, CheckoutEntry)
 from ..auth import login_required, current_group
+from ._scoping import get_owned_or_404
 from ..schemas.serializers import item_out, item_summary
 from ..services.holdings import ensure_holding, resync_item, primary_holding
 from .lookup import location_path_str
@@ -42,8 +43,8 @@ def _sync_holdings_from_item_form(item, data):
 
 
 def _get(item_id) -> Item:
-    item = db.session.get(Item, item_id)
-    if not item or item.group_id != current_group().id or not vault.readable(item):
+    item = get_owned_or_404(Item, item_id)
+    if not vault.readable(item):
         abort(404)
     return item
 

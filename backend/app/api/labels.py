@@ -3,15 +3,14 @@ from flask import Blueprint, request, jsonify, abort
 from ..extensions import db
 from ..models import Label
 from ..auth import login_required, current_group
+from ._scoping import get_owned_or_404
 from ..schemas.serializers import label_out, label_summary
 
 bp = Blueprint("labels", __name__)
 
 
 def _get(label_id):
-    label = db.session.get(Label, label_id)
-    if not label or label.group_id != current_group().id:
-        abort(404)
+    label = get_owned_or_404(Label, label_id)
     return label
 
 

@@ -6,6 +6,7 @@ from flask import Blueprint, request, jsonify, abort
 from ..extensions import db
 from ..models import Item, CheckoutEntry
 from ..auth import login_required, current_group
+from ._scoping import get_owned_or_404
 from ..schemas.serializers import item_out, item_summary, checkout_out
 from ..services import vault
 
@@ -22,11 +23,9 @@ def _parse_dt(value):
 
 
 def _get_item(item_id) -> Item:
-    item = db.session.get(Item, item_id)
-    if item is not None and not vault.readable(item):
-        item = None  # hidden: indistinguishable from absent
-    if not item or item.group_id != current_group().id:
-        abort(404)
+    item = get_owned_or_404(Item, item_id)
+    if not vault.readable(item):
+        abort(404)  # hidden: indistinguishable from absent
     return item
 
 

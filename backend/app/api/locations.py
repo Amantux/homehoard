@@ -1,18 +1,17 @@
-from flask import Blueprint, request, jsonify, abort
+from flask import Blueprint, request, jsonify
 from sqlalchemy.orm import selectinload
 
 from ..extensions import db
 from ..models import Location, Bin
 from ..auth import login_required, current_group
+from ._scoping import get_owned_or_404
 from ..schemas.serializers import location_out, location_tree
 
 bp = Blueprint("locations", __name__)
 
 
 def _get(location_id):
-    loc = db.session.get(Location, location_id)
-    if not loc or loc.group_id != current_group().id:
-        abort(404)
+    loc = get_owned_or_404(Location, location_id)
     return loc
 
 

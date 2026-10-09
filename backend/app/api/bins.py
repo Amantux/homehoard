@@ -6,6 +6,7 @@ from sqlalchemy.orm import selectinload, joinedload
 from ..models import Bin, Item, Location, QrTag
 from ..models.qrtag import gen_token
 from ..auth import login_required, current_group
+from ._scoping import get_owned_or_404
 from ..schemas.serializers import bin_out, bin_summary, item_summary
 from ..services.holdings import resync_item, primary_holding, resync_bin_holdings
 from ..services import vault
@@ -14,9 +15,7 @@ bp = Blueprint("bins", __name__)
 
 
 def _get(bin_id) -> Bin:
-    b = db.session.get(Bin, bin_id)
-    if not b or b.group_id != current_group().id:
-        abort(404)
+    b = get_owned_or_404(Bin, bin_id)
     return b
 
 
