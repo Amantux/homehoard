@@ -5,6 +5,7 @@ import { shortDate } from '../format'
 import { useUI } from '../stores/ui'
 import { useConfirm } from '../composables/useConfirm'
 import EmptyState from '../components/EmptyState.vue'
+import { isIngress } from '../utils/bugReport'
 
 const ui = useUI()
 const confirm = useConfirm()
@@ -50,6 +51,17 @@ async function init() {
   else loading.value = false
 }
 onMounted(init)
+
+// Open mode published outside ingress = anyone who can reach the port is the owner.
+// /diagnostics may 403 for non-owners; that just means no banner.
+const openExposure = ref(false)
+onMounted(async () => {
+  try {
+    openExposure.value = !!(await api.get('/diagnostics')).authDisabled && !isIngress()
+  } catch {
+    openExposure.value = false
+  }
+})
 
 async function create() {
   creating.value = true
@@ -111,6 +123,12 @@ const mcpUrl = computed(() => {
     maintenance calendar, voice, and an AI chat assistant that can search your
     stuff and check things in and out.
   </p>
+
+  <div v-if="openExposure" class="card info-card warn" role="alert" style="margin-bottom:16px">
+    <strong>Login is disabled and this page isn't behind Home Assistant ingress.</strong>
+    Anyone who can reach this port is the household owner. Turn <code>disable_auth</code> off,
+    or stop publishing the port.
+  </div>
 
   <!-- Add-on users: zero-config reassurance -->
   <div class="card info-card" style="margin-bottom:16px">
@@ -206,7 +224,7 @@ const mcpUrl = computed(() => {
           <option value="read">Read only</option>
         </select>
       </label>
-      <button :disabled="creating" @click="create">Generate token</button>
+      <button :disabled="creating" @click="create">{{ creating ? 'Generating…' : 'Generate token' }}</button>
     </div>
 
     <p v-if="newScope === 'debug'" class="muted" style="margin:0 0 12px">
@@ -250,6 +268,7 @@ const mcpUrl = computed(() => {
 
 <style scoped>
 .info-card { border-left: 4px solid var(--accent); background: var(--accent-soft); }
+.info-card.warn { border-left-color: var(--danger); background: var(--danger-soft); }
 .steps { margin: 8px 0 12px; padding-left: 20px; }
 .steps li { margin-bottom: 4px; }
 .code-row {
