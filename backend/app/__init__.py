@@ -140,6 +140,8 @@ def create_app(config_object=Config):
     _init_schema(app)
 
     _register_request_context(app)
+    from .auth import enforce_read_only
+    app.before_request(enforce_read_only)  # after request-id: a 403 still gets an id
     _register_blueprints(app)
     _register_spa(app)
     _register_errors(app)

@@ -243,6 +243,15 @@ def _ingress_user():
 
 
 def load_current_user():
+    """Resolve the current user once per request; the read-only hook and the
+    route decorator both ask, and resolution may hit the DB (key lookup, ingress
+    provisioning). See _resolve_current_user for the sources."""
+    if "_auth_user" not in g:
+        g._auth_user = _resolve_current_user()
+    return g._auth_user
+
+
+def _resolve_current_user():
     """Resolve the current user from three INDEPENDENT sources, in order — so a
     machine client (the HA integration, MCP) can authenticate by token whether or
     not DISABLE_AUTH is set, while the browser keeps working behind ingress.
@@ -260,6 +269,9 @@ def load_current_user():
        standalone open deployment and an ingress request with no identity
        headers.
     """
+    # Only an API key can be read-only; it overwrites this. JWT, ingress and the
+    # open-mode fallback are explicitly write.
+    g.token_access = "write"
     header = request.headers.get("Authorization", "")
     if header.startswith("Bearer "):
         token = header[len("Bearer "):].strip()
@@ -311,6 +323,18 @@ def _read_only_blocked():
             request.method not in ("GET", "HEAD", "OPTIONS"):
         return jsonify({"error": "this API key is read-only"}), 403
     return None
+
+
+def enforce_read_only():
+    """App-level before_request: a read-only API key may not mutate anything under
+    /api/v1, decorated or not — so a new route can't forget the check. The
+    decorators keep their own check (belt and braces). Only a Bearer header can
+    carry a read-only key, so other requests aren't resolved here."""
+    if not request.path.startswith("/api/v1/") or \
+            not request.headers.get("Authorization", "").startswith("Bearer "):
+        return None
+    load_current_user()
+    return _read_only_blocked()
 
 
 def login_required(fn):
