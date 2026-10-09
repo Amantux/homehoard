@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { api } from '../api'
 import { useUI } from '../stores/ui'
 import { useJobRunner } from '../composables/useJobRunner'
+import ErrorState from '../components/ErrorState.vue'
 
 const ui = useUI()
 
@@ -22,6 +23,7 @@ const aiModels = ref([])
 const aiSaving = ref(false)
 const aiLoadingModels = ref(false)
 const canEditAi = ref(false)
+const aiLoadError = ref('')
 
 // Ollama + OpenAI point at a server (base URL); Claude + Ollama Cloud are hosted
 // (no base URL — the cloud host is pinned to ollama.com).
@@ -30,12 +32,18 @@ const needsBaseUrl = computed(() => ['ollama', 'openai'].includes(aiForm.value.p
 const canListModels = computed(() => ['ollama', 'ollama_cloud', 'openai'].includes(aiForm.value.provider))
 
 async function loadAi() {
+  aiLoadError.value = ''
   try {
     ai.value = await api.get('/settings/ai')
     aiForm.value = { provider: ai.value.provider, baseUrl: ai.value.baseUrl,
       model: ai.value.model, apiKey: '', ollamaSearchKey: '' }
     canEditAi.value = true
-  } catch (e) { canEditAi.value = false }
+  } catch (e) {
+    canEditAi.value = false
+    // 403 = not the instance admin: hide the card. Anything else is a real
+    // failure the admin needs to see, not a silently missing card.
+    if (e.status !== 403) aiLoadError.value = e.message || 'Could not load the AI settings.'
+  }
 }
 
 // Household default for streaming chat replies (owner-editable). Each browser can
@@ -330,7 +338,12 @@ const actions = [
 <template>
   <div class="page-head"><h1>Tools</h1></div>
 
-  <div v-if="canEditAi" class="card">
+  <div v-if="aiLoadError" class="card">
+    <h2>AI provider</h2>
+    <ErrorState :message="aiLoadError" @retry="loadAi" />
+  </div>
+
+  <div v-else-if="canEditAi" class="card">
     <h2>AI provider</h2>
     <p class="muted">The LLM or local SLM used for chat and tooling (AI descriptions,
       barcode identify). Set it here (overrides the add-on options) or in the add-on

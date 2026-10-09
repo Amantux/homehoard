@@ -30,12 +30,24 @@ async function load() {
     loading.value = false
   }
 }
-const isOwner = ref(true)
-onMounted(async () => {
-  try { isOwner.value = (await api.get('/me')).isOwner } catch (e) { /* default owner */ }
+// Fail closed: until /me confirms ownership, no owner controls are shown. A /me
+// failure is surfaced as an error, not mistaken for "you're not the owner".
+const isOwner = ref(false)
+const meError = ref('')
+async function init() {
+  meError.value = ''
+  loading.value = true
+  try {
+    isOwner.value = !!(await api.get('/me')).isOwner
+  } catch (e) {
+    meError.value = e.message || 'Could not check your permissions.'
+    loading.value = false
+    return
+  }
   if (isOwner.value) load()
   else loading.value = false
-})
+}
+onMounted(init)
 
 async function create() {
   creating.value = true
@@ -134,7 +146,15 @@ const mcpUrl = computed(() => {
   </div>
 
   <!-- API tokens -->
-  <div v-if="!isOwner" class="card">
+  <div v-if="meError" class="card">
+    <h2 style="margin-top:0">API tokens</h2>
+    <div class="load-error">
+      <span>Couldn’t check your permissions — {{ meError }}</span>
+      <button class="secondary sm" @click="init">Retry</button>
+    </div>
+  </div>
+
+  <div v-else-if="!isOwner" class="card">
     <h2 style="margin-top:0">API tokens</h2>
     <p class="muted" style="margin:0">Only the household owner can manage API keys.</p>
   </div>
