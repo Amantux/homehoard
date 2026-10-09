@@ -69,3 +69,13 @@ def test_identify_rejects_malformed_code(app, auth_client, monkeypatch, raw):
     assert r.status_code == 400
     assert r.get_json() == {"error": "invalid barcode"}
     assert seen == []
+
+
+def test_a_malformed_db_url_degrades_instead_of_raising(app, monkeypatch):
+    """url_is_safe rejects it; the log line must not re-raise on the re-parse."""
+    with app.app_context():
+        app.config["BARCODE_LOOKUP"] = True
+        app.config["BARCODE_DB_URL"] = "http://[::1/lookup"
+        calls = _record_get(monkeypatch)
+        assert barcode._from_product_db("012345678905") is None
+        assert calls == []

@@ -26,8 +26,11 @@ def _from_product_db(code):
     # SSRF guard at the point of use: BARCODE_DB_URL also arrives via env /
     # add-on options, which bypass any API-side validation.
     if not url_is_safe(base):
-        _LOGGER.warning("barcode db url blocked: %s",
-                        scrub(urlparse(base).hostname or "<no host>"))
+        try:
+            host = urlparse(base).hostname or "<no host>"
+        except ValueError:  # url_is_safe already rejected it; keep degrading
+            host = "<unparseable>"
+        _LOGGER.warning("barcode db url blocked: %s", scrub(host))
         return None
     key = current_app.config.get("BARCODE_DB_KEY")
     headers = {"user_key": key, "key_type": "3scale"} if key else {}
