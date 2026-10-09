@@ -128,3 +128,61 @@ def test_dedupe_asset_ids_renumbers_duplicates():
     g1 = sorted(a for g, a in rows if g == "g1")
     assert g1 == [1, 2, 3]          # the two dup 2s became 2 and 3
     assert [a for g, a in rows if g == "g2"] == [5]   # other group untouched
+
+
+def _cfg(url):
+    backend = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    cfg = AlembicConfig(os.path.join(backend, "alembic.ini"))
+    cfg.set_main_option("script_location", os.path.join(backend, "migrations"))
+    cfg.attributes["url"] = url
+    return cfg
+
+
+def _quantity_types(engine):
+    insp = inspect(engine)
+    return {f"{t}.{c['name']}": type(c["type"]).__name__
+            for t in ("items", "item_holdings") for c in insp.get_columns(t)
+            if c["name"] in ("quantity", "min_quantity", "target_quantity")}
+
+
+def _round_trip_0019(app):
+    """0019 upgrade -> downgrade -> upgrade on whatever DB `app` points at: the
+    types flip both ways, quantities survive, and the SQLite table rebuild keeps
+    the partial unique index's WHERE (an asset_id=0 duplicate must still insert)."""
+    from alembic import command
+    from app.models import Item
+    with app.app_context():
+        g = Group(name="H", currency="USD")
+        db.session.add(g)
+        db.session.flush()
+        db.session.add_all([Item(name="Flour", group_id=g.id, quantity=2.5,
+                                 min_quantity=1, asset_id=0),
+                            Item(name="Rice", group_id=g.id, asset_id=0)])
+        db.session.commit()
+        gid = g.id
+        cfg = _cfg(app.config["SQLALCHEMY_DATABASE_URI"])
+        db.session.remove()
+        db.engine.dispose()
+
+        command.downgrade(cfg, "0018_maintenance_recurrence")
+        assert set(_quantity_types(db.engine).values()) <= {"FLOAT", "DOUBLE_PRECISION", "REAL"}
+        command.upgrade(cfg, "head")
+        assert set(_quantity_types(db.engine).values()) == {"NUMERIC"}
+        assert _revision() == _head()
+
+        flour = db.session.query(Item).filter_by(name="Flour").one()
+        assert flour.quantity == 2.5 and flour.min_quantity == 1
+        db.session.add(Item(name="Salt", group_id=gid, asset_id=0))
+        db.session.commit()  # partial index (asset_id > 0) still partial
+
+
+def test_quantity_numeric_round_trip_sqlite(app):
+    _round_trip_0019(app)
+
+
+@pytest.mark.skipif(not os.environ.get("HH_TEST_PG_URL"),
+                    reason="set HH_TEST_PG_URL to a throwaway Postgres to run")
+def test_quantity_numeric_round_trip_postgres(monkeypatch):
+    from app import create_app
+    monkeypatch.setenv("HBOX_DATABASE_URL", os.environ["HH_TEST_PG_URL"])
+    _round_trip_0019(create_app())

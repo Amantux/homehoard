@@ -32,4 +32,5 @@ def test_405_keeps_allow_header(auth_client):
 
 
 def test_422_returns_the_curated_description(auth_client):
-    assert _abort_422(auth_client).get_json()["error"] == "quantity must be a number"
+    assert _abort_422(auth_client).get_json()["error"] == (
+        "quantity must be a non-negative number with at most 3 decimal places")

@@ -9,7 +9,7 @@ from sqlalchemy.orm import selectinload
 from ..extensions import db
 from ..models import Item, Bin, Location, QrTag, Label
 from ..auth import login_required, current_group
-from ..schemas.serializers import item_summary, item_out, bin_out, location_out
+from ..schemas.serializers import item_summary, item_out, bin_out, location_out, num
 from ..services import resolve
 from ..services import vault
 
@@ -155,7 +155,7 @@ def _search_items(gid, q, limit):
             "id": i.id,
             "name": i.name,
             "where": item_where(i),
-            "quantity": i.quantity,
+            "quantity": num(i.quantity),
             # Ranking + disambiguation metadata: what a user needs to tell two
             # similarly-named things apart.
             "labels": [lbl.name for lbl in i.labels],

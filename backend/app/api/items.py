@@ -1,5 +1,4 @@
 import re
-import math
 from datetime import datetime
 
 from flask import Blueprint, request, jsonify, abort, current_app
@@ -107,15 +106,14 @@ def _validate_quantity(data: dict) -> None:
     Postgres). Called on every item write path."""
     if "quantity" not in data or data["quantity"] is None:
         return
-    try:
-        q = float(data["quantity"])
-    except (TypeError, ValueError):
-        abort(422, description="quantity must be a number")
-    # isfinite: NaN/Infinity slip past `< 0` (both comparisons are False) and
-    # then either 500 (NaN -> NULL on the NOT NULL column) or serialize as the
-    # bare token Infinity — invalid JSON that breaks the client parser.
-    if not math.isfinite(q) or q < 0:
-        abort(422, description="quantity must be a finite, non-negative number")
+    from ..utils_validation import to_quantity
+    # to_quantity refuses NaN/Infinity (they slip past `< 0` and then 500 or
+    # serialize as the invalid-JSON token Infinity), more than 3 decimal places
+    # and > 999999999.999 — the Numeric(12, 3) column would otherwise round.
+    q = to_quantity(data["quantity"])
+    if q is None or q < 0:
+        abort(422, description="quantity must be a non-negative number with at "
+                               "most 3 decimal places")
     data["quantity"] = q
 
 

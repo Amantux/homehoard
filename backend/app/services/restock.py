@@ -19,6 +19,7 @@ def restock_state(item) -> dict | None:
     """The one low-stock computation. None when the item has no policy."""
     if item.min_quantity is None:
         return None
+    from ..schemas.serializers import num  # local: schemas imports services
     on_hand = item.quantity or 0
     threshold = item.min_quantity
     target = item.target_quantity if item.target_quantity is not None else threshold
@@ -27,10 +28,10 @@ def restock_state(item) -> dict | None:
     return {
         "id": item.id,
         "name": item.name,
-        "onHand": on_hand,
-        "threshold": threshold,
-        "target": target,
-        "suggestedQuantity": need,
+        "onHand": num(on_hand),
+        "threshold": num(threshold),
+        "target": num(target),
+        "suggestedQuantity": num(need),
         "isLow": on_hand <= threshold,
     }
 
