@@ -764,6 +764,9 @@ def describe_item(item_id):
                     "sources": result.get("sources", [])})
 
 
+_BARCODE_RE = re.compile(r"[0-9A-Za-z-]{1,64}")
+
+
 @bp.get("/items/identify/<code>")
 @limiter.limit("30/minute")
 @login_required
@@ -773,6 +776,8 @@ def identify_item(code):
     {name, brand, barcode, source} or not_found; 409 when barcode lookup is off."""
     from ..services.barcode import identify_barcode
 
+    if not _BARCODE_RE.fullmatch(code):
+        return jsonify({"error": "invalid barcode"}), 400
     if not current_app.config.get("BARCODE_LOOKUP"):
         return jsonify({"status": "disabled",
                         "error": "Barcode lookup is off (set HBOX_BARCODE_LOOKUP)."}), 409
