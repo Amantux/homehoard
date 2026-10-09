@@ -805,17 +805,19 @@ def _is_message_path(scope) -> bool:
     method == "POST" meant every rule below saw an empty tool list and allowed
     the request through.
     """
+    # Substring match is intentionally over-inclusive (safe direction: more requests hit the guard).
     return "/messages" in scope.get("path", "")
 
 
-def _tool_names(scope, body: bytes) -> list[str]:
-    """Tool names in a JSON-RPC body, or [] if this is not a message request."""
+def _tool_names(scope, body: bytes) -> list[str] | None:
+    """Tool names in a JSON-RPC body, [] if this is not a message request, or
+    None if the body is not parseable JSON (the guard denies that)."""
     if not _is_message_path(scope):
         return []
     try:
-        parsed = json.loads(body or b"{}")
-    except Exception:  # noqa: BLE001 — let the MCP layer return its own parse error
-        return []
+        parsed = json.loads(body.strip() or b"{}")  # whitespace-only == empty
+    except Exception:  # noqa: BLE001 — unparseable: the guard must not wave it through
+        return None
     calls = parsed if isinstance(parsed, list) else [parsed]  # JSON-RPC may batch
     out = []
     for m in calls:
@@ -868,6 +870,11 @@ def _guard(asgi_app, server_token: str):
             body, messages = await _buffer_body(receive)
             receive = _replay(messages)
         names = _tool_names(scope, body)
+        if _is_message_path(scope) and body.strip() and names is None:
+            # An unparseable body yields no tool names, which would skip every
+            # scope check below and forward it to FastMCP. Fail closed.
+            _audit([], raw, "denied")
+            return await _deny(send, 400, b"malformed JSON-RPC body")
         wants_debug = any(n in DEBUG_TOOLS for n in names)
         wants_domain = any(n and n not in DEBUG_TOOLS for n in names)
 

@@ -368,3 +368,41 @@ def test_a_malformed_params_list_does_not_500(app, monkeypatch):
     sent = _drive([], method="POST", path="/messages/", body=body, external=False)
 
     assert sent[0]["status"] in (200, 401, 403)
+
+
+# ---- Unparseable message bodies ---------------------------------------------
+#
+# An unparseable body used to yield an empty tool list, which skipped the
+# read-only and debug-scope checks and forwarded the request to FastMCP.
+
+_TRUNCATED = b'{"method":"tools/call",'
+
+
+def test_a_truncated_body_is_denied_for_a_read_only_key(app, auth_client, monkeypatch):
+    monkeypatch.setattr(mcp_server, "_app", app)
+    ro = _mint(auth_client, "mcp", "read")
+
+    sent = _drive([(b"authorization", f"Bearer {ro}".encode())],
+                  method="POST", path="/messages/", body=_TRUNCATED)
+
+    assert sent[0]["status"] == 400
+
+
+def test_a_truncated_body_is_denied_for_a_debug_key(app, auth_client, monkeypatch):
+    monkeypatch.setattr(mcp_server, "_app", app)
+    debug_raw = _mint(auth_client, "debug")
+
+    sent = _drive([(b"authorization", f"Bearer {debug_raw}".encode())],
+                  method="POST", path="/messages/", body=_TRUNCATED, external=False)
+
+    assert sent[0]["status"] == 400
+
+
+def test_an_empty_body_still_forwards(app, auth_client, monkeypatch):
+    monkeypatch.setattr(mcp_server, "_app", app)
+    ro = _mint(auth_client, "mcp", "read")
+
+    sent = _drive([(b"authorization", f"Bearer {ro}".encode())],
+                  method="POST", path="/messages/", body=b"")
+
+    assert sent[0]["status"] not in (400, 403)
