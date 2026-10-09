@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { api, apiUrl } from '../api'
 import { money, shortDate, loadCurrency } from '../format'
 import { useUI } from '../stores/ui'
+import { useConfirm } from '../composables/useConfirm'
 import QrPanel from '../components/QrPanel.vue'
 import PhotoCapture from '../components/PhotoCapture.vue'
 import ErrorState from '../components/ErrorState.vue'
@@ -12,6 +13,7 @@ import { useLoader } from '../components/useLoader'
 const route = useRoute()
 const router = useRouter()
 const ui = useUI()
+const confirm = useConfirm()
 const id = route.params.id
 const showCapture = ref(false)
 
@@ -118,7 +120,7 @@ async function editHolding(h, qty) {
 }
 async function removeHolding(h) {
   const where = h.bin?.name || h.location?.name || 'Unassigned'
-  if (!confirm(`Remove the placement in ${where}?`)) return
+  if (!(await confirm({ title: `Remove the placement in ${where}?`, body: `“${item.value.name}” is no longer recorded there.`, confirmLabel: 'Remove placement', danger: true }))) return
   try { await api.del(`/holdings/${h.id}`); await loadAll() } catch (e) { ui.error(e.message) }
 }
 function openMove(h) { moveFor.value = h; moveForm.value = { toBinId: '', quantity: h.quantity } }
@@ -133,7 +135,7 @@ async function doMove() {
 }
 
 async function remove() {
-  if (!confirm('Delete this item?')) return
+  if (!(await confirm({ title: `Delete “${item.value.name}”?`, body: 'Its placements, photos, maintenance and checkout history are deleted too. This can’t be undone.', confirmLabel: 'Delete item', danger: true }))) return
   try {
     await api.del('/items/' + id)
   } catch (e) {
@@ -250,7 +252,7 @@ async function uploadVideo(ev, entryId = null) {
 }
 
 async function removeVideo(v) {
-  if (!confirm(`Remove “${v.title || 'this video'}”? The item and its history are not affected.`)) return
+  if (!(await confirm({ title: `Remove “${v.title || 'this video'}”?`, body: 'The item and its history are not affected.', confirmLabel: 'Remove video', danger: true }))) return
   try {
     await api.del(`/videos/${v.id}`)
     await loadAll()

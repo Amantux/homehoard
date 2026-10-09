@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { api } from '../api'
 import { money, loadCurrency } from '../format'
 import { useUI } from '../stores/ui'
+import { useConfirm } from '../composables/useConfirm'
 import ItemCard from '../components/ItemCard.vue'
 import QrPanel from '../components/QrPanel.vue'
 import { indexById, pathString } from '../locationTree'
@@ -13,6 +14,7 @@ import { useLoader } from '../components/useLoader'
 const route = useRoute()
 const router = useRouter()
 const ui = useUI()
+const confirm = useConfirm()
 const id = route.params.id
 const loc = ref(null)
 const path = ref([])
@@ -114,7 +116,7 @@ async function save() {
   }
 }
 async function remove() {
-  if (!confirm('Delete this location and its bins?')) return
+  if (!(await confirm({ title: `Delete location “${loc.value.name}”?`, body: 'Its sub-locations and bins are deleted too.', confirmLabel: 'Delete location', danger: true }))) return
   try {
     await api.del('/locations/' + id)
   } catch (e) {

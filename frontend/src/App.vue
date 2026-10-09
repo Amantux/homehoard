@@ -5,6 +5,7 @@ import { useAuth } from './stores/auth'
 import { useUI } from './stores/ui'
 import { api } from './api'
 import Toasts from './components/Toasts.vue'
+import ConfirmDialog from './components/ConfirmDialog.vue'
 import QuickCreate from './components/QuickCreate.vue'
 import ScannerModal from './components/ScannerModal.vue'
 import SearchModal from './components/SearchModal.vue'
@@ -133,6 +134,7 @@ const nav = [
                @close="showReport = false; ui.closeBugReport()" />
     <ChatAssistant />
     <Toasts />
+    <ConfirmDialog />
   </template>
 
   <template v-else>

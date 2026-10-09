@@ -28,6 +28,8 @@ export default [
       'vue/multi-word-component-names': 'off',
       'vue/require-default-prop': 'off',
       'vue/no-v-html': 'warn',
+      // Use useConfirm() / ui.toast — native dialogs block the page and can't be styled.
+      'no-restricted-globals': ['error', 'confirm', 'alert'],
       'no-unused-vars': ['error', { argsIgnorePattern: '^_', caughtErrors: 'none' }],
     },
   },

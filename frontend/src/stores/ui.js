@@ -15,8 +15,27 @@ export const useUI = defineStore('ui', {
     // When set ({description, type?}), App.vue opens the Report-a-bug modal prefilled
     // (used by the chat assistant's bug-report walkthrough).
     bugReport: null,
+    // Pending in-app confirmation ({title, body, confirmLabel, cancelLabel,
+    // danger}); App.vue renders ConfirmDialog while set. See useConfirm().
+    confirmRequest: null,
   }),
   actions: {
+    // One confirmation at a time: a second request while one is open REJECTS
+    // (rather than queueing) — two stacked "are you sure?" prompts is a bug in
+    // the caller, and a queued one would fire after the context has changed.
+    requestConfirm(opts) {
+      if (this.confirmRequest) return Promise.reject(new Error('A confirmation is already open'))
+      return new Promise((resolve) => {
+        this._confirmResolve = resolve
+        this.confirmRequest = { confirmLabel: 'Confirm', cancelLabel: 'Cancel', danger: false, ...opts }
+      })
+    },
+    resolveConfirm(ok) {
+      const resolve = this._confirmResolve
+      this._confirmResolve = null
+      this.confirmRequest = null
+      if (resolve) resolve(!!ok)
+    },
     openCreate(kind = 'item') {
       this.createKind = kind
     },

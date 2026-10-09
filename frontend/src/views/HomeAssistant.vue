@@ -3,9 +3,11 @@ import { ref, computed, onMounted } from 'vue'
 import { api } from '../api'
 import { shortDate } from '../format'
 import { useUI } from '../stores/ui'
+import { useConfirm } from '../composables/useConfirm'
 import EmptyState from '../components/EmptyState.vue'
 
 const ui = useUI()
+const confirm = useConfirm()
 
 const tokens = ref([])
 const loading = ref(true)
@@ -71,7 +73,7 @@ async function create() {
 }
 
 async function revoke(t) {
-  if (!confirm(`Revoke the token “${t.name}”? Anything using it will stop working immediately.`))
+  if (!await confirm({ title: `Revoke the token “${t.name}”?`, body: 'Anything using it will stop working immediately.', confirmLabel: 'Revoke', danger: true }))
     return
   try {
     await api.del('/tokens/' + t.id)

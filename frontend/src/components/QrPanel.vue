@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { api, apiUrl, getToken } from '../api'
 import { useUI } from '../stores/ui'
+import { useConfirm } from '../composables/useConfirm'
 import { buildPrintHtml } from '../utils/html'
 
 const props = defineProps({
@@ -9,6 +10,7 @@ const props = defineProps({
   targetId: { type: String, required: true },
 })
 const ui = useUI()
+const confirm = useConfirm()
 const tags = ref([])
 const images = ref({})
 const loading = ref(true)
@@ -85,7 +87,7 @@ async function addOwn() {
 }
 
 async function remove(t) {
-  if (!confirm('Remove this code?')) return
+  if (!(await confirm({ title: `Remove the code “${t.code}”?`, body: 'Scanning it will no longer open this page.', confirmLabel: 'Remove code', danger: true }))) return
   await api.del('/qr-tags/' + t.id)
   await load()
 }

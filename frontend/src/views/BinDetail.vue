@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { api, apiUrl } from '../api'
 import { money, loadCurrency } from '../format'
 import { useUI } from '../stores/ui'
+import { useConfirm } from '../composables/useConfirm'
 import QrPanel from '../components/QrPanel.vue'
 import { findDuplicates } from '../composables/useDuplicateCheck'
 import PhotoCapture from '../components/PhotoCapture.vue'
@@ -13,6 +14,7 @@ import { useLoader } from '../components/useLoader'
 const route = useRoute()
 const router = useRouter()
 const ui = useUI()
+const confirm = useConfirm()
 const id = route.params.id
 const showCapture = ref(false)
 // The camera serves two things on this page — the BIN's own photo and a photo
@@ -180,7 +182,7 @@ async function removeItem(item) {
   }
 }
 async function remove() {
-  if (!confirm('Delete this bin? Items are kept but removed from the bin.')) return
+  if (!(await confirm({ title: `Delete bin “${bin.value.name}”?`, body: 'Items are kept but removed from the bin.', confirmLabel: 'Delete bin', danger: true }))) return
   try {
     await api.del('/bins/' + id)
   } catch (e) {

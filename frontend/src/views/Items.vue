@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { api } from '../api'
 import { money } from '../format'
 import { useUI } from '../stores/ui'
+import { useConfirm } from '../composables/useConfirm'
 import ItemCard from '../components/ItemCard.vue'
 import EmptyState from '../components/EmptyState.vue'
 import ErrorState from '../components/ErrorState.vue'
@@ -12,6 +13,7 @@ import { useLoader } from '../components/useLoader'
 const route = useRoute()
 const router = useRouter()
 const ui = useUI()
+const confirm = useConfirm()
 
 const items = ref([])
 const total = ref(0)
@@ -165,14 +167,14 @@ async function labelSelected() {
 
 async function archiveSelected() {
   const n = selectedItems.value.length
-  if (!confirm(`Archive ${n} item${n === 1 ? '' : 's'}? They’ll be hidden from the default list, not deleted.`))
+  if (!await confirm({ confirmLabel: 'Archive', title: `Archive ${n} item${n === 1 ? '' : 's'}? They’ll be hidden from the default list, not deleted.` }))
     return
   await runBulk('Archived', (it) => api.patch('/items/' + it.id, { archived: true }))
 }
 
 async function hideSelected() {
   const n = selectedItems.value.length
-  if (!confirm(`Hide ${n} item${n === 1 ? '' : 's'} in the vault? They disappear from every list, search and total until you unlock with the passphrase — not deleted.`))
+  if (!await confirm({ confirmLabel: 'Hide in vault', title: `Hide ${n} item${n === 1 ? '' : 's'} in the vault? They disappear from every list, search and total until you unlock with the passphrase — not deleted.` }))
     return
   await runBulk('Hidden', (it) => api.patch('/items/' + it.id, { hidden: true }))
   await loadVault()
@@ -234,7 +236,7 @@ async function loadVault() {
 
 async function deleteSelected() {
   const n = selectedItems.value.length
-  if (!confirm(`Delete ${n} item${n === 1 ? '' : 's'}? This can’t be undone.`)) return
+  if (!(await confirm({ title: `Delete ${n} item${n === 1 ? '' : 's'}?`, body: 'Their placements, photos, maintenance and checkout history are deleted too. This can’t be undone.', confirmLabel: 'Delete', danger: true }))) return
   await runBulk('Deleted', (it) => api.del('/items/' + it.id))
 }
 
