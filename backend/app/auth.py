@@ -25,6 +25,7 @@ from .logging_setup import request_id_var
 from .logsafe import scrub
 from .models import User, Group, ApiToken, hash_token
 from .models.api_token import TOKEN_PREFIX
+from .timeutil import as_utc, utcnow
 
 _LOGGER = logging.getLogger("homehoard.auth")
 
@@ -355,8 +356,8 @@ def _user_from_api_token(raw: str):
     # (enforced in login_required/owner_required). Stash it for that check.
     g.token_access = record.access or "write"
     # Record usage, but at most once a minute to avoid a write on every request.
-    now = datetime.utcnow()
-    if record.last_used_at is None or (now - record.last_used_at).total_seconds() > 60:
+    now = utcnow()
+    if record.last_used_at is None or (now - as_utc(record.last_used_at)).total_seconds() > 60:
         record.last_used_at = now
         db.session.commit()
     return db.session.get(User, record.user_id)

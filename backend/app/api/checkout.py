@@ -8,7 +8,8 @@ from ..models import Item, CheckoutEntry
 from ..auth import login_required, current_group
 from ._scoping import get_owned_or_404
 from ._validation import list_limit
-from ..schemas.serializers import item_out, item_summary, checkout_out
+from ..schemas.serializers import item_out, item_summary, checkout_out, iso
+from ..timeutil import as_utc, utcnow
 from ..services import vault
 
 bp = Blueprint("checkout", __name__)
@@ -40,7 +41,7 @@ def check_out(item_id):
     data = request.get_json(silent=True) or {}
     item.checked_out = True
     item.checked_out_to = (data.get("person") or "").strip()
-    item.checked_out_at = datetime.utcnow()
+    item.checked_out_at = utcnow()
     item.checkout_due = _parse_dt(data.get("due"))
     db.session.add(
         CheckoutEntry(
@@ -137,13 +138,13 @@ def all_checked_out():
         .limit(list_limit())
         .all()
     )
-    now = datetime.utcnow()
+    now = utcnow()
     out = []
     for i in items:
         data = item_summary(i)
         data["checkedOutTo"] = i.checked_out_to
-        data["checkedOutAt"] = i.checked_out_at.isoformat() if i.checked_out_at else None
-        data["checkoutDue"] = i.checkout_due.isoformat() if i.checkout_due else None
-        data["overdue"] = bool(i.checkout_due and i.checkout_due < now)
+        data["checkedOutAt"] = iso(i.checked_out_at)
+        data["checkoutDue"] = iso(i.checkout_due)
+        data["overdue"] = bool(i.checkout_due and as_utc(i.checkout_due) < now)
         out.append(data)
     return jsonify({"items": out, "total": len(out)})

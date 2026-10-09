@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 
 from flask import Blueprint, current_app, jsonify, request
 
+from ..timeutil import as_utc, utcnow
 from ..auth import (
     create_token,
     current_user,
@@ -45,10 +46,9 @@ def _valid_invitation(token: str):
             exp = datetime.fromisoformat(str(inv.expires_at).replace("Z", "+00:00"))
         except ValueError:
             return None  # unparseable expiry → fail closed, not open
-        # A naive utcnow() is deliberate: it pairs with a naive `exp`. Making it
-        # aware would change the comparison semantics, so the lint is suppressed.
-        now = datetime.now(exp.tzinfo) if exp.tzinfo else datetime.utcnow()  # noqa: DTZ003
-        if now > exp:
+        # A naive `exp` is UTC (how expiries are written); as_utc makes both
+        # sides aware so the comparison is offset-correct either way.
+        if utcnow() > as_utc(exp):
             return None
     return inv
 

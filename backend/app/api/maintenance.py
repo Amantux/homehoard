@@ -8,6 +8,7 @@ from ..models import Item, MaintenanceEntry
 from ..auth import login_required, current_group
 from ._scoping import get_owned_or_404
 from ..schemas.serializers import maintenance_out
+from ..timeutil import as_utc, utcnow
 from ..services import money
 from ..services import vault
 
@@ -71,7 +72,7 @@ def all_maintenance():
         .all()
     )
     status = request.args.get("status")  # scheduled | completed | both
-    now = datetime.utcnow()
+    now = utcnow()
     out = []
     for e in entries:
         is_completed = e.completed_date is not None
@@ -83,7 +84,7 @@ def all_maintenance():
         data["itemName"] = e.item.name if e.item else None
         data["status"] = "completed" if is_completed else "scheduled"
         data["overdue"] = bool(
-            not is_completed and e.scheduled_date and e.scheduled_date < now
+            not is_completed and e.scheduled_date and as_utc(e.scheduled_date) < now
         )
         out.append(data)
     out.sort(

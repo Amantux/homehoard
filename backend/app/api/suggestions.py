@@ -10,6 +10,7 @@ from ..extensions import db
 from ..models import AiSuggestion, Item
 from ..auth import login_required, current_group
 from ..services.tooling import apply_suggestion, reject_suggestion
+from ..timeutil import iso_utc
 
 bp = Blueprint("suggestions", __name__)
 
@@ -20,7 +21,7 @@ def _out(s, names=None) -> dict:
     d = {
         "id": s.id, "kind": s.kind, "status": s.status, "label": s.label,
         "confidence": s.confidence, "rationale": s.rationale,
-        "createdAt": s.created_at.isoformat() if s.created_at else None,
+        "createdAt": iso_utc(s.created_at),
     }
     if s.kind == "categorize":
         d["item"] = {"id": s.item.id, "name": s.item.name} if s.item else None
