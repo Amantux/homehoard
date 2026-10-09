@@ -1,12 +1,14 @@
 from flask import Blueprint, request, jsonify, abort
 
 from ..extensions import db
+from sqlalchemy import func
 from sqlalchemy.orm import selectinload, joinedload
 
-from ..models import Bin, Item, Location, QrTag
+from ..models import Bin, Item, ItemHolding, Location, QrTag
 from ..models.qrtag import gen_token
 from ..auth import login_required, current_group
 from ._scoping import get_owned_or_404
+from ._validation import list_limit
 from ..schemas.serializers import bin_out, bin_summary, item_summary
 from ..services.holdings import resync_item, primary_holding, resync_bin_holdings
 from ..services import vault
@@ -22,13 +24,22 @@ def _get(bin_id) -> Bin:
 @bp.get("/bins")
 @login_required
 def list_bins():
+    """Bins in this group (bare array). ``?location=`` filters; ``?limit=``
+    caps the result (1..1000, default 1000; non-integer → 400)."""
     q = (db.session.query(Bin).filter_by(group_id=current_group().id)
-         .options(selectinload(Bin.holdings), selectinload(Bin.attachments),
-                  joinedload(Bin.location)))
+         .options(selectinload(Bin.attachments), joinedload(Bin.location)))
     location_id = request.args.get("location")
     if location_id:
         q = q.filter(Bin.location_id == location_id)
-    return jsonify([bin_summary(b) | {"itemCount": len(b.holdings)} for b in q.all()])
+    bins = q.limit(list_limit()).all()
+    # itemCount from one grouped COUNT rather than hydrating every holding row.
+    counts = dict(
+        db.session.query(ItemHolding.bin_id, func.count(ItemHolding.id))
+        .filter(ItemHolding.bin_id.in_([b.id for b in bins]))
+        .group_by(ItemHolding.bin_id)
+        .all()
+    ) if bins else {}
+    return jsonify([bin_summary(b) | {"itemCount": counts.get(b.id, 0)} for b in bins])
 
 
 def _owned_location(loc_id):

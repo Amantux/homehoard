@@ -7,6 +7,7 @@ message under its input instead of a single toast.
 """
 from typing import NoReturn
 
+from flask import abort, request
 from werkzeug.exceptions import UnprocessableEntity
 
 
@@ -20,3 +21,23 @@ class FieldValidationError(UnprocessableEntity):
 
 def abort_fields(fields: dict[str, str], message: str = "validation failed") -> NoReturn:
     raise FieldValidationError(fields, message)
+
+
+LIST_LIMIT_MAX = 1000
+
+
+def list_limit() -> int:
+    """The ``?limit=`` cap for a bare-array list route: 1..1000, default 1000.
+
+    Clamped like items' ``pageSize`` so a list is never unbounded; a non-integer
+    is a 400 (rather than items' silent fallback) because a caller asking for a
+    cap they didn't get would otherwise not notice.
+    """
+    raw = request.args.get("limit")
+    if raw is None or raw == "":
+        return LIST_LIMIT_MAX
+    try:
+        n = int(raw)
+    except ValueError:
+        abort(400, description="limit must be an integer")
+    return min(max(1, n), LIST_LIMIT_MAX)

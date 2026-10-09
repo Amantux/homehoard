@@ -4,6 +4,7 @@ from ..extensions import db
 from ..models import Label
 from ..auth import login_required, current_group
 from ._scoping import get_owned_or_404
+from ._validation import list_limit
 from ..schemas.serializers import label_out, label_summary
 
 bp = Blueprint("labels", __name__)
@@ -17,7 +18,10 @@ def _get(label_id):
 @bp.get("/labels")
 @login_required
 def list_labels():
-    labels = db.session.query(Label).filter_by(group_id=current_group().id).all()
+    """Labels in this group (bare array). ``?limit=`` caps the result
+    (1..1000, default 1000; non-integer → 400)."""
+    labels = (db.session.query(Label).filter_by(group_id=current_group().id)
+              .limit(list_limit()).all())
     return jsonify([label_summary(lbl) for lbl in labels])
 
 

@@ -7,6 +7,7 @@ from ..extensions import db
 from ..models import Item, CheckoutEntry
 from ..auth import login_required, current_group
 from ._scoping import get_owned_or_404
+from ._validation import list_limit
 from ..schemas.serializers import item_out, item_summary, checkout_out
 from ..services import vault
 
@@ -125,11 +126,15 @@ def history(item_id):
 @bp.get("/checkouts")
 @login_required
 def all_checked_out():
-    """Every item currently checked out — 'who has what'."""
+    """Every item currently checked out — 'who has what'.
+
+    ``?limit=`` caps ``items`` (1..1000, default 1000; non-integer → 400);
+    ``total`` is the length of ``items`` as before."""
     items = (
         vault.visible(db.session.query(Item))
         .filter_by(group_id=current_group().id, checked_out=True)
         .order_by(Item.checked_out_at.asc())
+        .limit(list_limit())
         .all()
     )
     now = datetime.utcnow()
