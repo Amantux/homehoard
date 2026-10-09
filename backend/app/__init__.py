@@ -516,7 +516,19 @@ def _register_errors(app):
         from werkzeug.exceptions import HTTPException
 
         if isinstance(e, HTTPException):
-            return e  # 404/413/429 etc. keep their own handlers and status
+            # 404/413/429 have their own handlers above. Any other HTTP error
+            # (400/405/422 …) under /api/ gets JSON instead of Werkzeug's HTML
+            # page; e.description is the curated abort() text, never a traceback.
+            if request.path.startswith("/api/") and e.code not in (404, 413, 429):
+                resp = jsonify({"error": e.description,
+                                "requestId": request_id_var.get()})
+                # Keep the exception's own headers (405's Allow) but not its
+                # text/html Content-Type.
+                for k, v in e.get_headers():
+                    if k.lower() != "content-type":
+                        resp.headers[k] = v
+                return resp, e.code
+            return e
 
         rid = request_id_var.get()
         _LOGGER.exception("unhandled error [%s] %s %s", rid,
