@@ -123,11 +123,18 @@ if os.environ.get('MINT_TOKEN') == 'true':
 # but a silent failure is a mystery.
 #
 # ha_discovery.py returns 0 on EVERY path and prints its own reason (no token /
-# registered / failed non-fatally), so this branch fires only if the script
-# itself crashed. It used to claim "not running under Supervisor", which is the
-# one thing that cannot be true here — that case exits 0 with its own message.
-$RUN_AS python3 ha_discovery.py \
-  || echo "HomeHoard: ha_discovery.py failed to run; HA discovery not attempted." >&2
+# registered / failed non-fatally, each retry with its attempt number).
+#
+# Backgrounded: HA Core may not be up yet when the add-on boots, so the script
+# retries with bounded backoff (~2 min per call) — that must not delay gunicorn.
+# It is expected to exit, so the supervise loop below does NOT watch it;
+# shutdown() only signals it in case it is still retrying. It is launched
+# directly (gosu execs, so $! is the python process) rather than wrapped in a
+# `( … || echo "failed to run" )` subshell: TERM to the subshell would not reach
+# python. The only case that echo covered — the script itself crashing — still
+# surfaces as a Python traceback on stderr in the add-on log.
+$RUN_AS python3 ha_discovery.py &
+DISCOVERY_PID=$!
 
 # ---------------------------------------------------------------------------
 # MCP server. Previously backgrounded and then orphaned by `exec gunicorn`, so a
@@ -157,6 +164,7 @@ GUNICORN_PID=""
 shutdown() {
   [ -n "$GUNICORN_PID" ] && kill -TERM "$GUNICORN_PID" 2>/dev/null || true
   [ -n "$MCP_PID" ] && kill -TERM "$MCP_PID" 2>/dev/null || true
+  [ -n "$DISCOVERY_PID" ] && kill -TERM "$DISCOVERY_PID" 2>/dev/null || true
   wait
   exit 0
 }

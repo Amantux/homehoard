@@ -90,3 +90,67 @@ def test_payload_token_is_blank_when_none_minted_yet(monkeypatch, tmp_path):
     payload = ha_discovery.build_payload("local-homehoard")
 
     assert payload["config"]["token"] == ""
+
+
+class _FakeResponse:
+    def __init__(self, body: bytes):
+        self._body = body
+
+    def read(self):
+        return self._body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+def _discovery_env(monkeypatch, outcomes):
+    """Run main() under a fake Supervisor whose /discovery answers per ``outcomes``
+    (an exception instance = that attempt fails). Returns (posts, sleeps)."""
+    posts, sleeps = [], []
+    remaining = list(outcomes)
+
+    def fake_urlopen(req, timeout=None):
+        assert req.full_url.endswith("/discovery")
+        posts.append(req)
+        outcome = remaining.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return _FakeResponse(outcome)
+
+    monkeypatch.setattr(ha_discovery, "TOKEN", "sup-token")
+    monkeypatch.delenv("HBOX_DISCOVERY_HOST", raising=False)
+    monkeypatch.setattr(
+        ha_discovery, "_supervisor_self_info", lambda: {"hostname": "local-homehoard"})
+    monkeypatch.setattr(ha_discovery.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(ha_discovery.time, "sleep", sleeps.append)
+    return posts, sleeps
+
+
+def test_discovery_retries_until_ha_core_is_up(monkeypatch):
+    """HA Core may still be booting: transient failures are retried, and the
+    registration happens exactly once when the Supervisor finally answers."""
+    posts, sleeps = _discovery_env(monkeypatch, [
+        OSError("connection refused"),
+        OSError("connection refused"),
+        b'{"data": {"uuid": "abc"}}',
+    ])
+
+    assert ha_discovery.main() == 0
+
+    assert len(posts) == 3  # two failures, then the one successful POST
+    assert sleeps == [2.0, 4.0]
+
+
+def test_discovery_gives_up_non_fatally_after_bounded_retries(monkeypatch, capsys):
+    posts, sleeps = _discovery_env(monkeypatch, [OSError("down")] * 6)
+
+    assert ha_discovery.main() == 0  # never blocks or fails startup
+
+    assert len(posts) == 6
+    assert sleeps == [2.0, 4.0, 8.0, 16.0, 32.0]  # ~62 s of backoff, capped at 60
+    out = capsys.readouterr().out
+    assert "attempt 6/6" in out
+    assert "Discovery registration failed (non-fatal)" in out

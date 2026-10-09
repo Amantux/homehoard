@@ -11,6 +11,7 @@ import json
 import os
 import socket
 import sys
+import time
 import urllib.request
 
 from app.settings import load_settings
@@ -20,6 +21,25 @@ TOKEN = os.environ.get("SUPERVISOR_TOKEN", "")
 _SETTINGS = load_settings()
 PORT = _SETTINGS.PORT
 DATA_DIR = _SETTINGS.data_dir
+
+
+def _retry(fn, what: str, attempts: int = 6, base: float = 2.0, cap: float = 60.0):
+    """Call ``fn()`` until it succeeds, sleeping ``min(cap, base * 2**i)`` between tries.
+
+    HA Core / the Supervisor may not be up yet when the add-on boots; six
+    attempts span ~2 minutes (62 s of sleeps plus up to 10 s timeout per try).
+    Every failure is printed with its attempt number and the last exception is
+    re-raised so the caller decides how to degrade. ``time.sleep`` is looked up
+    on the module so tests can patch it.
+    """
+    for i in range(attempts):
+        try:
+            return fn()
+        except Exception as exc:  # noqa: BLE001 - best effort; caller degrades
+            print(f"HomeHoard: {what} failed (attempt {i + 1}/{attempts}): {exc}")
+            if i == attempts - 1:
+                raise
+            time.sleep(min(cap, base * 2 ** i))
 
 
 def _integration_token() -> str:
@@ -43,13 +63,17 @@ def _supervisor_self_info():
     """
     if not TOKEN:
         return None
-    try:
-        req = urllib.request.Request(
-            f"{SUPERVISOR_API}/addons/self/info",
-            headers={"Authorization": f"Bearer {TOKEN}"},
-        )
+    req = urllib.request.Request(
+        f"{SUPERVISOR_API}/addons/self/info",
+        headers={"Authorization": f"Bearer {TOKEN}"},
+    )
+
+    def _get():
         with urllib.request.urlopen(req, timeout=10) as resp:
             return json.loads(resp.read() or b"{}").get("data", {})
+
+    try:
+        return _retry(_get, "Supervisor self-info lookup")
     except Exception as exc:  # noqa: BLE001 - best effort; caller falls back
         print(f"HomeHoard: could not read add-on hostname from Supervisor ({exc}).")
         return None
@@ -103,10 +127,14 @@ def main() -> int:
             "Content-Type": "application/json",
         },
     )
-    try:
+
+    def _post():
         with urllib.request.urlopen(req, timeout=10) as resp:
-            body = json.loads(resp.read() or b"{}")
-            print("HomeHoard discovery registered:", body.get("data", {}).get("uuid"))
+            return json.loads(resp.read() or b"{}")
+
+    try:
+        body = _retry(_post, "discovery registration")
+        print("HomeHoard discovery registered:", body.get("data", {}).get("uuid"))
         return 0
     except Exception as exc:  # noqa: BLE001 - best effort, never block startup
         print(f"Discovery registration failed (non-fatal): {exc}")
