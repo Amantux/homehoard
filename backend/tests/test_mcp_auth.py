@@ -420,3 +420,43 @@ def test_a_truncated_body_from_an_unauthenticated_client_is_401_not_audited(
 
     assert sent[0]["status"] == 401
     assert audited == []
+
+
+# --- mcp_require_key: keys on the Home Assistant network too -------------------
+
+def test_require_key_rejects_a_keyless_internal_request(app, auth_client, monkeypatch):
+    monkeypatch.setattr(mcp_server, "_app", app)
+    monkeypatch.setattr(mcp_server, "_require_key", lambda: True)
+    assert _drive([], "GET", "/sse", external=False)[0]["status"] == 401
+    assert _drive([], "POST", "/messages/", _call("where_is"),
+                  external=False)[0]["status"] == 401
+
+
+def test_require_key_forwards_a_valid_full_key(app, auth_client, monkeypatch):
+    monkeypatch.setattr(mcp_server, "_app", app)
+    monkeypatch.setattr(mcp_server, "_require_key", lambda: True)
+    hdr = [(b"authorization", f"Bearer {_mint(auth_client, 'full')}".encode())]
+    assert _drive(hdr, "POST", "/messages/", _call("add_item_placement"),
+                  external=False)[0]["status"] == 200
+
+
+def test_require_key_holds_a_read_key_to_read_tools(app, auth_client, monkeypatch):
+    monkeypatch.setattr(mcp_server, "_app", app)
+    monkeypatch.setattr(mcp_server, "_require_key", lambda: True)
+    hdr = [(b"authorization", f"Bearer {_mint(auth_client, 'mcp', 'read')}".encode())]
+    assert _drive(hdr, "POST", "/messages/", _call("where_is"),
+                  external=False)[0]["status"] == 200
+    assert _drive(hdr, "POST", "/messages/", _call("add_item_placement"),
+                  external=False)[0]["status"] == 403
+
+
+def test_require_key_off_keeps_the_internal_path_open(app, monkeypatch):
+    """Regression guard: default off + no server token = today's open HA path."""
+    monkeypatch.setattr(mcp_server, "_app", app)
+    monkeypatch.setattr(mcp_server, "_require_key", lambda: False)
+    assert _drive([], "POST", "/messages/", _call("where_is"),
+                  external=False, server_token="")[0]["status"] == 200
+
+
+def test_require_key_setting_defaults_off():
+    assert mcp_server._SETTINGS.MCP_KEY_REQUIRED is False
