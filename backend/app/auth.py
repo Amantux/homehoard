@@ -196,6 +196,34 @@ def _request_from_ingress() -> bool:
     return _raw_peer() == _INGRESS_SOURCE
 
 
+# Open-mode exposure warning: DISABLE_AUTH is meant for HA ingress only, so a
+# request that reaches the open-mode fallback from any other peer means the port
+# is published off the Home Assistant network. Warn once per peer per process.
+# The set is bounded (no new dependency, no unbounded growth from a scan): once
+# _OPEN_MODE_WARNED_CAP peers have been recorded, further NEW peers are not
+# added and not warned about — the log already shows the exposure many times.
+_OPEN_MODE_WARNED: set[str] = set()
+_OPEN_MODE_WARNED_CAP = 256
+# Loopback is expected: the Docker healthcheck and the MCP sidecar call the API
+# from inside the container.
+_LOOPBACK_PEERS = frozenset({"127.0.0.1", "::1"})
+
+
+def _warn_open_mode_exposure() -> None:
+    peer = _raw_peer() or "unknown"
+    if peer == _INGRESS_SOURCE or peer in _LOOPBACK_PEERS:
+        return
+    if peer in _OPEN_MODE_WARNED or len(_OPEN_MODE_WARNED) >= _OPEN_MODE_WARNED_CAP:
+        return
+    _OPEN_MODE_WARNED.add(peer)
+    _LOGGER.warning(
+        "unauthenticated access from %s: disable_auth is on and the port is "
+        "reachable off the Home Assistant network — anyone who can reach it is "
+        "the household owner",
+        scrub(peer),
+    )
+
+
 def _ingress_user():
     """Provision (or fetch) the HomeHoard user for the HA user behind an ingress
     request. Returns None with no trusted ingress identity, so the caller falls
@@ -292,6 +320,7 @@ def _resolve_current_user():
         return ingress
 
     if current_app.config["DISABLE_AUTH"]:
+        _warn_open_mode_exposure()
         return _default_user()
 
     return None
