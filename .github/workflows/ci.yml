@@ -164,6 +164,11 @@ jobs:
         run: |
           pip install "ruff==0.15.12"
           ruff check backend
+      - name: Ruff advisory tier (never fails)
+        # Warn-only rules surfaced as PR annotations; see the header of ruff.toml.
+        # Promote a rule into ruff.toml's blocking `select` only after its
+        # backlog is fixed in its own commit.
+        run: ruff check --select BLE,S608,DTZ --exit-zero --output-format=github backend
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "20"
@@ -264,13 +269,19 @@ jobs:
         with:
           python-version: "3.13"
       - name: Install harness
+        # Into a dedicated venv, never the runner's interpreter: the harness pins
+        # an older dependency set (pydantic 1.x) that breaks `mcp` and stops the
+        # backend suite collecting. This job already runs on its own VM, so today
+        # the venv is belt-and-braces — it is here so that a future "merge the
+        # test jobs" change cannot silently poison the backend interpreter.
         run: |
-          python -m pip install --upgrade pip
-          pip install -r custom_components/homehoard/tests/requirements_test.txt
+          python -m venv .venv-ha
+          .venv-ha/bin/python -m pip install --upgrade pip
+          .venv-ha/bin/python -m pip install -r custom_components/homehoard/tests/requirements_test.txt
       - name: Run integration tests
         # asyncio_mode=auto: the async test fns have no per-test marker. sys.path
         # is fixed in the tests' conftest so `custom_components.homehoard` imports.
-        run: pytest custom_components/homehoard/tests -q -o asyncio_mode=auto
+        run: .venv-ha/bin/python -m pytest custom_components/homehoard/tests -q -o asyncio_mode=auto
 
   # Auto-bump the patch version on every push to main (skips its own commit).
   bump-version:

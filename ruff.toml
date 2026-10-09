@@ -17,5 +17,16 @@
 # RUF100 judges every `# noqa` for a disabled rule "unused" and deletes it,
 # silently removing suppressions the CI rule set still needs. (This has broken
 # the build once already.) Plain `ruff check --fix` respects this config.
+#
+# ADVISORY TIER (warn-only). Ruff has no native "warn" severity, so the second
+# tier lives in CI, not here: the lint job runs
+#   ruff check --select BLE,S608,DTZ --exit-zero --output-format=github backend
+# which annotates the PR but never fails. That `--select` is read-only (no
+# --fix), so the RUF100 hazard above does not apply. Rules:
+#   BLE  - blind `except Exception` (raw-exception leaks start here)
+#   S608 - SQL built by string formatting
+#   DTZ  - naive datetimes (utcnow(), datetime() without tzinfo)
+# To promote one to blocking, fix its backlog in its own commit, then add it to
+# `select` below. Do NOT add these to `select`/`extend-select` directly.
 [lint]
 select = ["E4", "E7", "E9", "F"]
