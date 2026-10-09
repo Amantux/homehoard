@@ -166,9 +166,17 @@ def _round_trip_0019(app):
 
         command.downgrade(cfg, "0018_maintenance_recurrence")
         assert set(_quantity_types(db.engine).values()) <= {"FLOAT", "DOUBLE_PRECISION", "REAL"}
+        # A pre-migration float with 5 decimals: the upgrade must round it in
+        # the STORED value, not just on ORM read (raw SQL aggregates read the
+        # stored value).
+        with db.engine.begin() as c:
+            c.execute(text("UPDATE items SET quantity = 0.12345 WHERE name = 'Rice'"))
         command.upgrade(cfg, "head")
         assert set(_quantity_types(db.engine).values()) == {"NUMERIC"}
         assert _revision() == _head()
+        with db.engine.connect() as c:
+            raw = c.execute(text("SELECT quantity FROM items WHERE name = 'Rice'")).scalar()
+        assert float(raw) == 0.123
 
         flour = db.session.query(Item).filter_by(name="Flour").one()
         assert flour.quantity == 2.5 and flour.min_quantity == 1

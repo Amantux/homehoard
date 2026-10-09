@@ -6,8 +6,11 @@ restock thresholds compared against drifted totals. Numeric(12, 3) stores them
 exactly (3 decimals, 9 integer digits — the API refuses anything finer).
 
 Postgres: ALTER COLUMN ... TYPE numeric(12,3) needs no USING — float8 -> numeric
-is an assignment cast (and numeric -> float8 implicit for the downgrade). Values
-with more than 3 decimals are rounded once, here. No server_default: none of
+is an assignment cast (and numeric -> float8 implicit for the downgrade), and
+the cast rounds values with more than 3 decimals. SQLite has no real NUMERIC —
+the rebuild copies the REAL bit-for-bit and only SQLAlchemy's result processor
+quantises on read — so after the rebuild an explicit UPDATE ... ROUND(x, 3)
+makes raw-SQL aggregates agree with what the ORM returns. No server_default: none of
 these columns had one (Item.quantity's default=1 is Python-side), so create_all
 and migrated databases still agree.
 
@@ -68,6 +71,12 @@ def _convert(to_numeric: bool) -> None:
             if is_sqlite:
                 with op.get_context().autocommit_block():
                     op.execute("PRAGMA foreign_keys=ON")
+        if is_sqlite and to_numeric:
+            # Identifiers come from the _COLUMNS literal above, never from input.
+            for col, _nullable in todo:
+                op.execute(
+                    f'UPDATE "{table}" SET "{col}" = ROUND("{col}", 3) '
+                    f'WHERE "{col}" IS NOT NULL')
 
 
 def upgrade() -> None:
