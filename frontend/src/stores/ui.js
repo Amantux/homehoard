@@ -1,10 +1,11 @@
 import { defineStore } from 'pinia'
+import { THEME } from '../storageKeys'
 
 let toastId = 0
 
 export const useUI = defineStore('ui', {
   state: () => ({
-    theme: localStorage.getItem('easyinv_theme') || 'auto',
+    theme: localStorage.getItem(THEME) || 'auto',
     // Bumped whenever the server reports a data change (see startLiveSync) or a
     // surface knows it wrote. Every useLoader view watches this and quiet-
     // refreshes — no skeleton flash, last-good data kept on a transient failure.
@@ -59,7 +60,7 @@ export const useUI = defineStore('ui', {
     },
     setTheme(t) {
       this.theme = t
-      localStorage.setItem('easyinv_theme', t)
+      localStorage.setItem(THEME, t)
       this.applyTheme()
     },
     toggleTheme() {

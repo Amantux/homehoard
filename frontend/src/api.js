@@ -1,5 +1,5 @@
 // Thin fetch wrapper around the HomeHoard API.
-const TOKEN_KEY = 'easyinv_token'
+import { TOKEN as TOKEN_KEY } from './storageKeys'
 
 // Resolve the API root relative to the page so the app works both standalone
 // (served at "/") and behind a Home Assistant ingress path (e.g.

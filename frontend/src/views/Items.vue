@@ -2,6 +2,7 @@
 import { ref, watch, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '../api'
+import { ITEM_VIEW } from '../storageKeys'
 import { money } from '../format'
 import { useUI } from '../stores/ui'
 import { useConfirm } from '../composables/useConfirm'
@@ -27,7 +28,7 @@ const labelFilter = ref('')
 const orderBy = ref('name')
 const includeArchived = ref(false)
 const vault = ref({ configured: false, locked: true, hiddenCount: 0 })
-const view = ref(localStorage.getItem('easyinv_itemview') || 'grid')
+const view = ref(localStorage.getItem(ITEM_VIEW) || 'grid')
 const page = ref(1)
 const pageSize = 24
 
@@ -44,6 +45,7 @@ const selected = ref(new Set())
 const moveTarget = ref('')
 const labelTarget = ref('')
 const busy = ref(false)
+const busyLabel = ref('') // which bulk action is running, for the pending button label
 
 const selectedItems = computed(() => items.value.filter((i) => selected.value.has(i.id)))
 const allOnPageSelected = computed(
@@ -70,7 +72,7 @@ function clearSelection() {
 
 function setView(v) {
   view.value = v
-  localStorage.setItem('easyinv_itemview', v)
+  localStorage.setItem(ITEM_VIEW, v)
 }
 
 function resetFilters() {
@@ -119,6 +121,7 @@ async function runBulk(label, fn) {
   const targets = selectedItems.value
   if (!targets.length || busy.value) return
   busy.value = true
+  busyLabel.value = label
   let ok = 0
   try {
     for (const it of targets) {
@@ -322,9 +325,9 @@ watch(() => route.query.q, (v) => { if (v !== q.value) { q.value = v || '' } })
       <option value="">Add label…</option>
       <option v-for="l in labels" :key="l.id" :value="l.id">🏷️ {{ l.name }}</option>
     </select>
-    <button class="secondary sm" :disabled="busy" @click="archiveSelected">Archive</button>
-    <button class="secondary sm" :disabled="busy" @click="hideSelected">Hide</button>
-    <button class="danger secondary sm" :disabled="busy" @click="deleteSelected">Delete</button>
+    <button class="secondary sm" :disabled="busy" @click="archiveSelected">{{ busy && busyLabel === 'Archived' ? 'Archiving…' : 'Archive' }}</button>
+    <button class="secondary sm" :disabled="busy" @click="hideSelected">{{ busy && busyLabel === 'Hidden' ? 'Hiding…' : 'Hide' }}</button>
+    <button class="danger secondary sm" :disabled="busy" @click="deleteSelected">{{ busy && busyLabel === 'Deleted' ? 'Deleting…' : 'Delete' }}</button>
   </div>
 
   <div v-if="loading" class="card-grid">
