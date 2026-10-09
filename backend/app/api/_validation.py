@@ -7,7 +7,7 @@ message under its input instead of a single toast.
 """
 from typing import NoReturn
 
-from flask import abort, request
+from flask import request
 from werkzeug.exceptions import UnprocessableEntity
 
 
@@ -26,18 +26,18 @@ def abort_fields(fields: dict[str, str], message: str = "validation failed") -> 
 LIST_LIMIT_MAX = 1000
 
 
-def list_limit() -> int:
-    """The ``?limit=`` cap for a bare-array list route: 1..1000, default 1000.
-
-    Clamped like items' ``pageSize`` so a list is never unbounded; a non-integer
-    is a 400 (rather than items' silent fallback) because a caller asking for a
-    cap they didn't get would otherwise not notice.
+def list_limit() -> int | None:
+    """Optional ``?limit=`` for a bare-array list route: None (unbounded, the
+    original contract) unless the caller asks, then clamped to 1..1000 and a
+    non-integer is ignored — the same rules as items' ``pageSize`` so one API
+    has one way of reading a cap. A default cap was tried and rejected: a
+    silently truncated locations list orphans children in the tree view.
     """
     raw = request.args.get("limit")
     if raw is None or raw == "":
-        return LIST_LIMIT_MAX
+        return None
     try:
         n = int(raw)
     except ValueError:
-        abort(400, description="limit must be an integer")
+        return None
     return min(max(1, n), LIST_LIMIT_MAX)

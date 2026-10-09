@@ -129,7 +129,7 @@ def history(item_id):
 def all_checked_out():
     """Every item currently checked out — 'who has what'.
 
-    ``?limit=`` caps ``items`` (1..1000, default 1000; non-integer → 400);
+    ``?limit=`` caps ``items`` (1..1000; omitted = all, non-integer ignored);
     ``total`` is the length of ``items`` as before."""
     items = (
         vault.visible(db.session.query(Item))

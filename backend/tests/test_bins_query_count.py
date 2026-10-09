@@ -80,13 +80,13 @@ def test_list_limit(app, auth_client, gid, path):
     r = auth_client.get(f"{path}?limit=2")
     assert r.status_code == 200 and len(r.get_json()) == 2
     assert len(auth_client.get(path).get_json()) == 3
-    assert auth_client.get(f"{path}?limit=abc").status_code == 400
+    assert auth_client.get(f"{path}?limit=abc").status_code == 200  # ignored, like pageSize
     r = auth_client.get(f"{path}?limit=5000")
     assert r.status_code == 200 and len(r.get_json()) <= 1000
 
 
 def test_checkouts_limit(auth_client):
-    assert auth_client.get("/api/v1/checkouts?limit=abc").status_code == 400
+    assert auth_client.get("/api/v1/checkouts?limit=abc").status_code == 200  # ignored, like pageSize
     r = auth_client.get("/api/v1/checkouts?limit=5000")
     assert r.status_code == 200 and r.get_json()["items"] == []
 

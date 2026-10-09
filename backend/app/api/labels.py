@@ -19,9 +19,9 @@ def _get(label_id):
 @login_required
 def list_labels():
     """Labels in this group (bare array). ``?limit=`` caps the result
-    (1..1000, default 1000; non-integer → 400)."""
+    (1..1000; omitted = all, non-integer ignored). Ordered by name, id."""
     labels = (db.session.query(Label).filter_by(group_id=current_group().id)
-              .limit(list_limit()).all())
+              .order_by(Label.name, Label.id).limit(list_limit()).all())
     return jsonify([label_summary(lbl) for lbl in labels])
 
 

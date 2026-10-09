@@ -60,7 +60,7 @@ def list_locations():
     # rows actually returned.
     if filter_children:
         q = q.filter(Location.parent_id.is_(None))
-    locs = q.limit(list_limit()).all()
+    locs = q.order_by(Location.name, Location.id).limit(list_limit()).all()
     return jsonify([location_out(loc, with_items=False) for loc in locs])
 
 

@@ -25,13 +25,14 @@ def _get(bin_id) -> Bin:
 @login_required
 def list_bins():
     """Bins in this group (bare array). ``?location=`` filters; ``?limit=``
-    caps the result (1..1000, default 1000; non-integer → 400)."""
+    caps the result
+    (1..1000; omitted = all, non-integer ignored). Ordered by name, id."""
     q = (db.session.query(Bin).filter_by(group_id=current_group().id)
          .options(selectinload(Bin.attachments), joinedload(Bin.location)))
     location_id = request.args.get("location")
     if location_id:
         q = q.filter(Bin.location_id == location_id)
-    bins = q.limit(list_limit()).all()
+    bins = q.order_by(Bin.name, Bin.id).limit(list_limit()).all()
     # itemCount from one grouped COUNT rather than hydrating every holding row.
     counts = dict(
         db.session.query(ItemHolding.bin_id, func.count(ItemHolding.id))
