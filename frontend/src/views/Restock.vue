@@ -31,7 +31,7 @@ const { loading, error, reload: load } = useLoader(async () => {
       <tbody>
         <tr v-for="r in rows" :key="r.id" class="clickable"
             @click="router.push('/items/' + r.id)">
-          <td><strong>{{ r.name }}</strong></td>
+          <td><router-link :to="'/items/' + r.id" @click.stop><strong>{{ r.name }}</strong></router-link></td>
           <td>{{ r.onHand }}</td>
           <td>{{ r.threshold }}</td>
           <td><span class="badge warn">＋{{ r.suggestedQuantity }}</span></td>

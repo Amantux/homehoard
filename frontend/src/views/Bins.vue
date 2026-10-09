@@ -50,7 +50,7 @@ async function create() {
         <span v-else>🗃️</span>
       </div>
       <div class="body">
-        <div class="title">{{ b.name }}</div>
+        <router-link class="title" :to="'/bins/' + b.id" @click.stop>{{ b.name }}</router-link>
         <div class="sub">📍 {{ locName(b.locationId) }}</div>
         <div class="labels"><span class="chip">{{ b.itemCount }} items</span></div>
       </div>

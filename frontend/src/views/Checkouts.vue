@@ -56,7 +56,7 @@ async function checkIn(row) {
       <tbody>
         <tr v-for="r in sorted" :key="r.id" class="clickable"
             @click="router.push('/items/' + r.id)">
-          <td><strong>{{ r.name }}</strong></td>
+          <td><router-link :to="'/items/' + r.id" @click.stop><strong>{{ r.name }}</strong></router-link></td>
           <td>{{ r.checkedOutTo || '—' }}</td>
           <td>{{ shortDate(r.checkedOutAt) }}</td>
           <td>

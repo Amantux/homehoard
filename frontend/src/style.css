@@ -220,6 +220,7 @@ label.field > span {
 .item-card .body { padding: 12px 14px; flex: 1; display: flex; flex-direction: column; gap: 5px; }
 .item-card .title {
   font-weight: 650;
+  color: inherit; /* the title is a router-link; keep it text-coloured, not accent */
   /* A 90-char product name must not stretch its card out of the grid: clamp to
      two lines (persona test: the full DeWalt kit name made irregular boxes). */
   display: -webkit-box;

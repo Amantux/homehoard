@@ -370,7 +370,7 @@ watch(() => route.query.q, (v) => { if (v !== q.value) { q.value = v || '' } })
                      :aria-label="'Select ' + i.name" @change="toggle(i.id)" />
             </td>
             <td>
-              <strong>{{ i.name }}</strong>
+              <router-link :to="'/items/' + i.id" @click.stop><strong>{{ i.name }}</strong></router-link>
               <div class="muted" style="font-size:0.8rem">{{ i.description }}</div>
             </td>
             <!-- @click.stop like the checkbox cell: the ROW navigates to the
