@@ -232,8 +232,10 @@ while true; do
     MCP_PID=""
   fi
   if ! kill -0 "$GUNICORN_PID" 2>/dev/null; then
-    wait "$GUNICORN_PID"
-    status=$?
+    # `|| status=$?`: under set -e a bare `wait` on a non-zero exit would end
+    # the script right here and skip the MCP cleanup below.
+    status=0
+    wait "$GUNICORN_PID" || status=$?
     echo "HomeHoard: gunicorn exited with status $status; shutting down." >&2
     [ -n "$MCP_PID" ] && kill -TERM "$MCP_PID" 2>/dev/null || true
     [ -f "$MCP_CHILD_PIDFILE" ] && kill -TERM "$(cat "$MCP_CHILD_PIDFILE")" 2>/dev/null || true
