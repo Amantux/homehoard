@@ -1,0 +1,86 @@
+configuration:
+  disable_auth:
+    name: Disable login (ingress mode)
+    description: >-
+      Skip HomeHoard's own login because Home Assistant ingress already
+      authenticates you. Turn it off for username/password login — every HA
+      user then sees a login screen inside the panel.
+  allow_registration:
+    name: Allow new accounts
+    description: >-
+      Let people create new accounts on the login screen. Only matters when
+      login is enabled; leave it off once your household is set up.
+  enable_mcp:
+    name: Enable MCP server
+    description: >-
+      Run the MCP server (SSE on port 7766) used by the Home Assistant MCP
+      Client and Assist. Off = no voice/LLM access; the web app is unaffected.
+  mcp_expose_external:
+    name: Expose MCP outside Home Assistant
+    description: >-
+      Reach the MCP server from outside Home Assistant. Every MCP request then
+      needs a valid MCP/Full API key and the server refuses to start until you
+      mint one — then map port 7766 in the Network tab. Off = internal only.
+  mcp_require_key:
+    name: Require an API key for MCP
+    description: >-
+      Every MCP request needs an MCP/Full API key, even on the Home Assistant
+      network. Off keeps today's behaviour. The HomeHoard integration gets a
+      key via discovery and keeps working; other MCP clients need one set.
+  ollama_search_key:
+    name: Ollama API key
+    description: >-
+      Optional ollama.com API key to look items up online and generate a short
+      searchable description. Blank = the feature is off.
+  barcode_lookup:
+    name: Online barcode lookup
+    description: >-
+      Identify an unknown product barcode online to prefill a new item's
+      name/brand. Off = scans still resolve your own tags and items, just no
+      online product lookup.
+  barcode_db_key:
+    name: Barcode database API key
+    description: >-
+      Only needed if you pointed the barcode lookup at a keyed provider; the
+      default endpoint is keyless.
+  public_url:
+    name: Public URL
+    description: >-
+      The URL you open HomeHoard at from your phone. If you forget it,
+      notification digests still arrive — just as plain text with no
+      tap-through links.
+  database_url:
+    name: External Postgres URL
+    description: >-
+      Optional, e.g. postgresql+psycopg://user:pass@host:5432/homehoard.
+      Blank = built-in SQLite. Switching without "Migrate from SQLite" serves
+      an EMPTY database.
+  migrate_from_sqlite:
+    name: Migrate from SQLite
+    description: >-
+      When moving to Postgres with existing data, turn on and restart once to
+      copy it over (no-op once the target has data). Without it, switching to
+      Postgres serves an EMPTY database.
+  use_shared_postgres:
+    name: Use the Shared PostgreSQL add-on
+    description: >-
+      Auto-provision a private database on the Shared PostgreSQL add-on (must
+      be installed). Ignored if a database URL is set. Have SQLite data? Also
+      enable "Migrate from SQLite".
+  postgres_provision_token:
+    name: Shared PostgreSQL provisioning token
+    description: >-
+      Leave blank to obtain it from the add-on automatically (recommended); set
+      it only if auto-discovery can't reach the add-on's token.
+  mcp_debug_tools:
+    name: MCP log-reading tools
+    description: >-
+      Let an AI client read this add-on's logs over MCP. Needs a 'debug'-scope
+      API key even inside Home Assistant, because logs contain login emails and
+      errors that can include database credentials. Turn off when done.
+  log_level:
+    name: Log level
+    description: >-
+      Leave at INFO unless chasing a problem: DEBUG is noisy and can include
+      request paths. The startup line naming the storage backend stays visible
+      at WARNING.

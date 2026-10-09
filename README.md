@@ -533,7 +533,11 @@ runs the whole stack.
 | `HBOX_MCP_API` | `http://127.0.0.1:7745/api/v1` | API base the MCP server calls |
 | `HBOX_MCP_API_TOKEN` | _(none)_ | Bearer token for the MCP server's API calls (only if app auth is on) |
 
-Home Assistant add-on options: `disable_auth`, `allow_registration`, `enable_mcp`.
+Home Assistant add-on options: `disable_auth`, `allow_registration`, `enable_mcp`,
+`mcp_expose_external`, `mcp_require_key`, `ollama_search_key`, `barcode_lookup`,
+`barcode_db_key`, `public_url`, `database_url`, `migrate_from_sqlite`,
+`use_shared_postgres`, `postgres_provision_token`, `mcp_debug_tools`, `log_level`
+— see [`homehoard/DOCS.md`](homehoard/DOCS.md#options) for what each does.
 
 ## API
 

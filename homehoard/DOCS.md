@@ -27,6 +27,13 @@ server** so Assist can answer *"where is my drill?"*.
 | `ollama_search_key` | `""` | Optional [Ollama](https://ollama.com) API key to look items up online and generate a short searchable description. Blank = off. |
 | `barcode_lookup` | `false` | Identify an unknown scanned product barcode (UPC/EAN) online — product DB → Open Food Facts → Ollama web-search — to prefill a new item's name/brand. Off = scans still resolve your own QR tags and items, just no online product lookup. |
 | `barcode_db_key` | `""` | Optional API key for the product-barcode DB. The default lookup endpoint is keyless — set this only if you've pointed the lookup at a keyed provider. |
+| `database_url` | `""` | Optional external Postgres, e.g. `postgresql+psycopg://user:pass@host:5432/homehoard`. Blank = built-in SQLite (or the shared add-on below). Switching without `migrate_from_sqlite` serves an **empty** database. |
+| `migrate_from_sqlite` | `false` | One-shot copy of your built-in SQLite data into the (empty) Postgres when you move to `database_url` or `use_shared_postgres`. Turn it on and restart once; leaving it on is harmless (no-op once the target has data). Without it, switching to Postgres serves an **empty** database. |
+| `use_shared_postgres` | `false` | Auto-provision a private database on the **Shared PostgreSQL** add-on (must be installed). Ignored if `database_url` is set. Have existing SQLite data? Also enable `migrate_from_sqlite`. |
+| `postgres_provision_token` | `""` | Provisioning token for the Shared PostgreSQL add-on. Leave blank to auto-obtain it (recommended); set it only if auto-discovery can't reach the add-on's token. |
+| `mcp_debug_tools` | `false` | Let an AI client read this add-on's own logs over MCP. Needs an API key with the `debug` scope even inside HA, because logs contain login emails and errors that can include database credentials. Turn it off when you are done. |
+| `mcp_require_key` | `false` | Require an MCP or Full API key on **every** MCP request, even from the Home Assistant network. Off keeps today's behaviour. Discovery already hands the HomeHoard integration a key, so it keeps working; other internal MCP clients (e.g. the HA MCP Client) then need a key configured. |
+| `log_level` | `INFO` | How much detail goes into the add-on log (`DEBUG`/`INFO`/`WARNING`/`ERROR`). Leave at INFO unless chasing a problem: DEBUG is noisy and can include request paths. The startup line naming the storage backend in use is logged at WARNING so it survives a quieter level. |
 
 Data (SQLite database + attachments) is stored under `/share/homehoard`.
 
@@ -172,6 +179,14 @@ http://<slug>-homehoard:7766/sse
 
 Assist can then *find items, list checkouts, check things in/out, edit, and move*
 by voice or chat. Disable with the `enable_mcp` option.
+
+**If MCP stops answering:** the add-on restarts a crashed MCP server up to 5 times
+(waiting 1, 2, 4, 8, then 16 s), logging `MCP server exited (status N), restart
+k/5`. After that it logs `MCP server gave up after 5 restarts` and stops trying —
+the web app and REST API keep running; the lines above it in the log say why it
+crashed, and restarting the add-on starts it fresh. `GET /api/v1/ready` reports
+`checks.mcp` as `ok`, `down` or `disabled`; a `down` MCP does **not** make the
+add-on unhealthy, so Home Assistant won't restart the whole add-on for it.
 
 ### Reaching the MCP server from OUTSIDE Home Assistant
 

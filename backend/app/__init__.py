@@ -91,8 +91,10 @@ def create_app(config_object=Config):
     for warning in settings.warnings:
         _LOGGER.warning("Configuration: %s", warning)
     _db_uri = app.config["SQLALCHEMY_DATABASE_URI"]
-    _LOGGER.info("HomeHoard storage backend: %s",
-                 "sqlite" if _db_uri.startswith("sqlite") else _db_uri.split("://", 1)[0])
+    # WARNING, not INFO: support asks for this line first, and it must survive
+    # `log_level: warning`.
+    _LOGGER.warning("HomeHoard storage backend: %s",
+                    "sqlite" if _db_uri.startswith("sqlite") else _db_uri.split("://", 1)[0])
 
     # Resolve the signing key BEFORE the fail-closed check below: an operator
     # value wins, otherwise reuse (or generate once and persist) a key under
