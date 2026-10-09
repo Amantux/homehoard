@@ -3,6 +3,7 @@ import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api'
 import { useUI } from '../stores/ui'
+import BaseModal from './BaseModal.vue'
 
 const props = defineProps({ initialMode: { type: String, default: '' } })
 const emit = defineEmits(['close'])
@@ -288,10 +289,9 @@ onBeforeUnmount(stopCamera)
 </script>
 
 <template>
-  <div class="modal-backdrop" @click.self="close">
-    <div class="card modal" style="width:460px;max-width:96vw">
+  <BaseModal width="460px" @close="close" v-slot="{ titleId }">
       <div class="modal-head">
-        <h2 style="flex:1">📷 Scan</h2>
+        <h2 :id="titleId" style="flex:1">📷 Scan</h2>
         <button class="ghost icon-btn" @click="close">✕</button>
       </div>
 
@@ -369,8 +369,7 @@ onBeforeUnmount(stopCamera)
         <input v-model="manual" placeholder="…or paste / type a code" @keyup.enter="onCode(manual); manual=''" />
         <button :disabled="!manual" @click="onCode(manual); manual=''">Go</button>
       </div>
-    </div>
-  </div>
+  </BaseModal>
 </template>
 
 <style scoped>

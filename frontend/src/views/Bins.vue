@@ -6,6 +6,7 @@ import { useUI } from '../stores/ui'
 import EmptyState from '../components/EmptyState.vue'
 import ErrorState from '../components/ErrorState.vue'
 import { useLoader } from '../components/useLoader'
+import BaseModal from '../components/BaseModal.vue'
 
 const router = useRouter()
 const ui = useUI()
@@ -63,9 +64,8 @@ async function create() {
     </EmptyState>
   </div>
 
-  <div v-if="showCreate" class="modal-backdrop" @click.self="showCreate = false">
-    <div class="card modal">
-      <div class="modal-head"><h2>New bin</h2>
+  <BaseModal v-if="showCreate" @close="showCreate = false" v-slot="{ titleId }">
+      <div class="modal-head"><h2 :id="titleId">New bin</h2>
         <button class="ghost icon-btn" @click="showCreate = false">✕</button></div>
       <label class="field"><span>Name</span><input v-model="form.name" autofocus @keyup.enter="create" /></label>
       <label class="field"><span>Description</span><textarea v-model="form.description" rows="2"></textarea></label>
@@ -76,6 +76,5 @@ async function create() {
         <button class="secondary" @click="showCreate = false">Cancel</button>
         <button :disabled="!form.name" @click="create">Create</button>
       </div>
-    </div>
-  </div>
+  </BaseModal>
 </template>
