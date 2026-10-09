@@ -167,6 +167,11 @@ label.field > span {
   display: block; font-size: 0.8rem; font-weight: 600;
   color: var(--muted); margin-bottom: 5px;
 }
+/* Inline validation message under a field (Field.vue). Beats the label-span rule above. */
+label.field > span.field-error, .field-error {
+  display: block; font-size: 0.8rem; font-weight: 500;
+  color: var(--danger); margin: 4px 0 0;
+}
 
 /* ---------- Layout helpers ---------- */
 .grid { display: grid; gap: 16px; }

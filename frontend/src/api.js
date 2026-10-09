@@ -22,6 +22,39 @@ export function setToken(t) {
   else localStorage.removeItem(TOKEN_KEY)
 }
 
+// Every failed request throws this. `status` is 0 when the server was
+// unreachable; `fields` maps form field -> message for 422 validation errors.
+export class ApiError extends Error {
+  constructor({ status, message, fields = {}, requestId = null }) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status // lets views tell a 404 ("deleted or never existed") from other failures
+    this.fields = fields
+    this.requestId = requestId
+  }
+}
+
+export const NETWORK_ERROR_MESSAGE = "Can't reach HomeHoard. Check the add-on is running."
+
+// Message for a failure whose body isn't our JSON (proxy HTML page, plain text).
+function curatedMessage(status, requestId) {
+  if (status === 401) return 'Sign in again.'
+  if (status === 403) return "You don't have permission to do that."
+  if (status === 404) return 'Not found.'
+  if (status === 413) return 'That upload is too large.'
+  if (status === 429) return 'Too many requests — try again in a moment.'
+  if (status >= 500) return `HomeHoard hit an error${requestId ? ` (request ${requestId})` : ''}. Try again.`
+  return `Request failed (${status}).`
+}
+
+export function errorFromResponse(status, data) {
+  if (data && typeof data === 'object' && data.error) {
+    return new ApiError({ status, message: data.error, fields: data.fields || {}, requestId: data.requestId || null })
+  }
+  const requestId = (data && typeof data === 'object' && data.requestId) || null
+  return new ApiError({ status, message: curatedMessage(status, requestId), requestId })
+}
+
 async function request(method, path, body, isForm = false) {
   const headers = {}
   const token = getToken()
@@ -33,18 +66,19 @@ async function request(method, path, body, isForm = false) {
     headers['Content-Type'] = 'application/json'
     payload = JSON.stringify(body)
   }
-  const res = await fetch(apiUrl(path), { method, headers, body: payload })
+  let res
+  try {
+    res = await fetch(apiUrl(path), { method, headers, body: payload })
+  } catch (e) {
+    throw new ApiError({ status: 0, message: NETWORK_ERROR_MESSAGE })
+  }
   if (res.status === 401) {
     setToken(null)
     if (!location.hash.includes('/login')) location.hash = '#/login'
   }
   const ct = res.headers.get('content-type') || ''
   const data = ct.includes('application/json') ? await res.json() : await res.text()
-  if (!res.ok) {
-    const err = new Error((data && data.error) || res.statusText)
-    err.status = res.status // lets views tell a 404 ("deleted or never existed") from other failures
-    throw err
-  }
+  if (!res.ok) throw errorFromResponse(res.status, data)
   return data
 }
 

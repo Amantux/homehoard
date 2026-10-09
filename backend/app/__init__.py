@@ -520,8 +520,10 @@ def _register_errors(app):
             # (400/405/422 …) under /api/ gets JSON instead of Werkzeug's HTML
             # page; e.description is the curated abort() text, never a traceback.
             if request.path.startswith("/api/") and e.code not in (404, 413, 429):
-                resp = jsonify({"error": e.description,
-                                "requestId": request_id_var.get()})
+                body = {"error": e.description, "requestId": request_id_var.get()}
+                if getattr(e, "fields", None):  # abort_fields() (api/_validation.py)
+                    body["fields"] = e.fields
+                resp = jsonify(body)
                 # Keep the exception's own headers (405's Allow) but not its
                 # text/html Content-Type.
                 for k, v in e.get_headers():
