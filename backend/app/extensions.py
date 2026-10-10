@@ -32,4 +32,7 @@ def _sqlite_pragmas(dbapi_conn, _record):
 
 # Rate limiter — keyed on the client IP (see PROXY_HOPS for X-Forwarded-For
 # handling). Sensitive endpoints opt in via @limiter.limit(...).
+# No RATELIMIT_STORAGE_URI is set, so counters live in memory PER GUNICORN
+# WORKER: with `-w 2` (docker-entrypoint.sh) a client's effective limit is ×2.
+# The add-on ships no redis, so this is accepted rather than "fixed".
 limiter = Limiter(key_func=get_remote_address, default_limits=[])
