@@ -46,9 +46,11 @@ EXPOSE 7745
 
 # Readiness-based healthcheck (not just "process alive"): probes /api/v1/ready,
 # which verifies DB connectivity + data-dir writability. urlopen raises on 503,
-# so a degraded dependency marks the container unhealthy.
+# so a degraded dependency marks the container unhealthy. The port follows
+# HBOX_PORT the way settings.py reads it (PORT has no add-on option, so the env
+# is its only source; blank = unset = 7745).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD python3 -c "import urllib.request,sys; urllib.request.urlopen('http://127.0.0.1:7745/api/v1/ready', timeout=3)" || exit 1
+  CMD python3 -c "import os,urllib.request; urllib.request.urlopen('http://127.0.0.1:%d/api/v1/ready' % int((os.environ.get('HBOX_PORT') or '').strip() or 7745), timeout=3)" || exit 1
 
 # The entrypoint works both standalone and as a Home Assistant add-on
 # (it reads /data/options.json and registers Supervisor discovery when present).

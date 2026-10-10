@@ -110,6 +110,6 @@ schema:
   # credentials. Turn it off again when you are done.
   mcp_debug_tools: bool
   # How much detail goes into this add-on's log. Leave at INFO unless you are
-  # chasing a problem: DEBUG is noisy and can include request paths. Raising it
-  # to WARNING hides the startup summary that says which database is in use.
+  # chasing a problem: DEBUG is noisy and can include request paths. The startup
+  # line naming the database backend is printed regardless of log_level.
   log_level: list(DEBUG|INFO|WARNING|ERROR)?

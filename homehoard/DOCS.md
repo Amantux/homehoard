@@ -33,9 +33,10 @@ server** so Assist can answer *"where is my drill?"*.
 | `postgres_provision_token` | `""` | Provisioning token for the Shared PostgreSQL add-on. Leave blank to auto-obtain it (recommended); set it only if auto-discovery can't reach the add-on's token. |
 | `mcp_debug_tools` | `false` | Let an AI client read this add-on's own logs over MCP. Needs an API key with the `debug` scope even inside HA, because logs contain login emails and errors that can include database credentials. Turn it off when you are done. |
 | `mcp_require_key` | `false` | Require an MCP or Full API key on **every** MCP request, even from the Home Assistant network. Off keeps today's behaviour. Discovery already hands the HomeHoard integration a key, so it keeps working; other internal MCP clients (e.g. the HA MCP Client) then need a key configured. |
-| `log_level` | `INFO` | How much detail goes into the add-on log (`DEBUG`/`INFO`/`WARNING`/`ERROR`). Leave at INFO unless chasing a problem: DEBUG is noisy and can include request paths. The startup line naming the storage backend in use is logged at WARNING so it survives a quieter level. |
+| `log_level` | `INFO` | How much detail goes into the add-on log (`DEBUG`/`INFO`/`WARNING`/`ERROR`). Leave at INFO unless chasing a problem: DEBUG is noisy and can include request paths. The startup line naming the database backend is printed regardless of `log_level`. |
 
-Data (SQLite database + attachments) is stored under `/share/homehoard`.
+Data (SQLite database + attachments) is stored in the add-on's private `/data`
+directory — see "Backup and restore" below.
 
 ## Highlights
 
@@ -150,9 +151,14 @@ Install the **HomeHoard** HACS integration for one **HomeHoard** device with:
 - **Voice & chat** — ask *"where is my drill?"*, *"check out the drill"*. The
   easiest way is the **MCP server** below with an LLM Assist pipeline (no setup).
   A no-LLM option (plain Assist sentences) also ships in **English, German,
-  Spanish, French and Dutch** — depending on your setup the sentence file for
-  your language may need a one-time copy into your HA config's
-  `custom_sentences/<lang>/` directory; see the main README.
+  Spanish, French and Dutch** — it needs a one-time copy of the sentence file
+  for your Assist language:
+  1. Find `custom_components/homehoard/custom_sentences/<lang>/homehoard.yaml`
+     in your HA config (HACS put it there; `<lang>` is `en`, `de`, `es`, `fr`
+     or `nl`).
+  2. Copy it to `<your HA config>/custom_sentences/<lang>/homehoard.yaml`.
+  3. Restart Home Assistant, then say *"where is my …"*, *"check out the …"* or
+     *"what's in the …"* (each language uses natural equivalents).
 - **Service** — `homehoard.locate` for notifications / messaging (Telegram, …).
 
 When this add-on is running, Home Assistant offers the integration automatically
@@ -213,3 +219,47 @@ both, in this order:
 ⚠️ Anything reachable over MCP includes **mutating** tools (move/check-in/out/edit).
 The bearer key is the only control — put it behind TLS (a reverse proxy) if you
 expose it beyond your LAN, and revoke the key in the token list if it leaks.
+
+## Backup and restore
+
+Everything HomeHoard keeps lives in the add-on's `/data` directory: the SQLite
+database, uploaded photos and documents, and the add-on's own key files
+(`.secret_key`, which signs logins, and `.integration_token`, which the HA
+integration uses). A normal Home Assistant backup includes all of it.
+
+- **HA backups are consistent.** The add-on is backed up *cold*: the Supervisor
+  stops HomeHoard while the backup runs and starts it again afterwards, so the
+  database is never copied mid-write. Expect HomeHoard to be unavailable for
+  those few seconds.
+- **Pre-upgrade copies.** Before an update changes the database layout, the
+  add-on saves a copy of the SQLite database to
+  `/data/backups/pre-upgrade-<revision>-<time>.db` and keeps the newest two. If
+  that copy can't be written, the update refuses to migrate rather than risk
+  your data. These copies are for a manual rollback; restoring an HA backup is
+  the normal path.
+- **Restoring.** Stop the HomeHoard add-on, then restore the HA backup (or just
+  the HomeHoard add-on from it) under **Settings → System → Backups**, and
+  start the add-on again.
+- **Restore the whole `/data`, not just the database.** The signing key travels
+  with the backup. Putting only the database file onto a fresh install gives it
+  a newly generated key, which signs everyone out; they log in again with their
+  usual passwords. API keys keep working (they are stored as hashes). Hidden
+  (vault) items and the vault passphrase live in the database, so they come
+  along either way. The vault is not encryption, so a backup holds hidden
+  items in plain text. Store backups somewhere safe.
+- **External Postgres is not included.** With `database_url` or
+  `use_shared_postgres`, your inventory lives in that Postgres server. Back it
+  up there. The HA backup still covers attachments and the key files.
+- **On-demand copy.** As owner, open **Database → Download full backup** for a
+  ZIP with a consistent database snapshot plus all attachments (built-in SQLite
+  only). For a standalone Docker install, `scripts/backup.py` in the repository
+  does the same from the command line
+  (`python scripts/backup.py --data-dir /data --out <dir>`).
+
+## Time zone
+
+HomeHoard runs in UTC. The add-on log is timestamped in UTC. Overdue and
+expiring-soon checks (checkouts, warranties, maintenance) compare against the
+current UTC time, so for notifications and the HA sensors "today" rolls over
+at 00:00 UTC rather than your local midnight. The add-on does not pick up Home
+Assistant's time zone, and there is no option to change this yet.
