@@ -9,6 +9,7 @@ Two endpoints keep HA polling cheap and power the richer entities:
 from datetime import datetime, timedelta
 
 from flask import Blueprint, jsonify, request
+from sqlalchemy import or_
 
 from ..extensions import db
 from ..models import Item, Bin, Label, Location
@@ -29,9 +30,11 @@ def _parse(value):
     if not value:
         return None
     try:
-        return datetime.fromisoformat(str(value).replace("Z", "+00:00").replace("+00:00", ""))
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     except ValueError:
         return None
+    # Any offset (not just a literal "+00:00") → naive UTC, how rows are stored.
+    return as_utc(parsed).replace(tzinfo=None)
 
 
 @bp.get("/ha/summary")
@@ -39,12 +42,19 @@ def _parse(value):
 def summary():
     gid = current_group().id
     now = utcnow()
-    items = vault.visible(db.session.query(Item).filter_by(group_id=gid)).all()
+    # Aggregates and short lists in SQL: the summary never loads every item.
+    def items():
+        return vault.visible(db.session.query(Item).filter(Item.group_id == gid))
 
-    total_value = money.total((i.purchase_price, i.quantity) for i in items)
-    insured_value = money.total(
-        (i.purchase_price, i.quantity) for i in items if i.insured
-    )
+    # Value stays a Python sum over (price, qty) columns only: money.total
+    # rounds each line to cents, which a SQL SUM(price * qty) would not.
+    priced = vault.visible(
+        db.session.query(Item.purchase_price, Item.quantity, Item.insured)
+        .filter(Item.group_id == gid)
+    ).all()
+    total_value = money.total((p, q) for p, q, _ in priced)
+    insured_value = money.total((p, q) for p, q, ins in priced if ins)
+    item_count = len(priced)
 
     warranty_items = _active_warranty_items(gid)
     exp_30 = [i for i in warranty_items if now <= as_utc(i.warranty_expires) <= now + timedelta(days=30)]
@@ -55,10 +65,8 @@ def summary():
     upcoming_30 = [m for m in maint if now <= as_utc(m.scheduled_date) <= now + timedelta(days=30)]
 
     # Overview lists — power the Home Assistant "Overview" dashboard cards.
-    recent_items = sorted(
-        items, key=lambda i: as_utc(i.created_at) or now, reverse=True
-    )[:6]
-    checked_out_items = [i for i in items if i.checked_out]
+    recent_items = items().order_by(Item.created_at.desc()).limit(6).all()
+    checked_out_items = items().filter(Item.checked_out.is_(True)).all()
     locations = (
         db.session.query(Location)
         .filter_by(group_id=gid)
@@ -99,21 +107,21 @@ def summary():
             "locations": [
                 {
                     "id": loc.id, "name": loc.name,
-                    "itemCount": len(loc.items), "binCount": len(loc.bins),
+                    "itemCount": len(vault.readable_items(loc.items)), "binCount": len(loc.bins),
                 }
                 for loc in locations[:12]
             ],
             "totals": {
-                "items": len(items),
+                "items": item_count,
                 "bins": db.session.query(Bin).filter_by(group_id=gid).count(),
                 "locations": db.session.query(Location).filter_by(group_id=gid).count(),
                 "labels": db.session.query(Label).filter_by(group_id=gid).count(),
                 "value": money.out(total_value),
                 "insuredValue": money.out(insured_value),
-                "withWarranty": sum(
-                    1 for i in items if i.lifetime_warranty or i.warranty_expires
-                ),
-                "checkedOut": sum(1 for i in items if i.checked_out),
+                "withWarranty": items().filter(or_(
+                    Item.lifetime_warranty.is_(True), Item.warranty_expires.isnot(None)
+                )).count(),
+                "checkedOut": len(checked_out_items),
             },
             "warrantiesExpiring": {
                 "days30": len(exp_30),
