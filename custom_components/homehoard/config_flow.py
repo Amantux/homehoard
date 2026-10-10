@@ -88,6 +88,35 @@ class HomeHoardConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             updates[CONF_TOKEN] = token
         self._abort_if_unique_id_configured(updates=updates)
 
+        # A manual entry for the same server (unique_id "host:port", set in
+        # async_step_user) would otherwise be duplicated by this discovered
+        # one. Fold the discovery into it instead: refresh its token (same
+        # empty-token rule as above) and abort. Its unique_id is left alone —
+        # re-keying existing entries would need a migration. A manual entry
+        # made by IP still won't match the advertised hostname; the confirm
+        # step's text tells the user to remove it first.
+        discovered = f"{host}:{port}".lower()
+        for entry in self._async_current_entries(include_ignore=False):
+            if entry.unique_id == self.unique_id:
+                continue
+            existing = f"{entry.data.get(CONF_HOST, '')}:{entry.data.get(CONF_PORT, '')}"
+            if existing.lower() != discovered:
+                continue
+            # Reload only a running entry, as _abort_if_unique_id_configured does.
+            if (
+                token
+                and self.hass.config_entries.async_update_entry(
+                    entry, data={**entry.data, CONF_TOKEN: token}
+                )
+                and entry.state
+                in (
+                    config_entries.ConfigEntryState.LOADED,
+                    config_entries.ConfigEntryState.SETUP_RETRY,
+                )
+            ):
+                self.hass.config_entries.async_schedule_reload(entry.entry_id)
+            return self.async_abort(reason="already_configured")
+
         try:
             await self._async_validate(host, port, token)
         except (ClientError, asyncio.TimeoutError):

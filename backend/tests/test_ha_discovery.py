@@ -126,6 +126,8 @@ def _discovery_env(monkeypatch, outcomes):
         ha_discovery, "_supervisor_self_info", lambda: {"hostname": "local-homehoard"})
     monkeypatch.setattr(ha_discovery.urllib.request, "urlopen", fake_urlopen)
     monkeypatch.setattr(ha_discovery.time, "sleep", sleeps.append)
+    # The local app is ready at once unless a test says otherwise.
+    monkeypatch.setattr(ha_discovery, "_ready_probe", lambda: None)
     return posts, sleeps
 
 
@@ -154,3 +156,41 @@ def test_discovery_gives_up_non_fatally_after_bounded_retries(monkeypatch, capsy
     out = capsys.readouterr().out
     assert "attempt 6/6" in out
     assert "Discovery registration failed (non-fatal)" in out
+
+
+def test_discovery_waits_for_local_readiness_before_posting(monkeypatch):
+    """HA must not be offered a setup before the app can serve it: the POST
+    happens only after the /ready probe succeeds."""
+    posts, sleeps = _discovery_env(monkeypatch, [b'{"data": {"uuid": "abc"}}'])
+    events = []
+    probes = [OSError("refused"), OSError("refused"), None]
+
+    def fake_probe():
+        events.append(("probe", len(posts)))
+        outcome = probes.pop(0)
+        if outcome is not None:
+            raise outcome
+
+    monkeypatch.setattr(ha_discovery, "_ready_probe", fake_probe)
+
+    assert ha_discovery.main() == 0
+
+    # Every probe ran while nothing had been posted; the POST came after.
+    assert events == [("probe", 0)] * 3
+    assert len(posts) == 1
+    assert sleeps == [2.0, 4.0]  # readiness backoff only; the POST succeeded first try
+
+
+def test_discovery_posts_anyway_when_never_ready(monkeypatch, capsys):
+    posts, sleeps = _discovery_env(monkeypatch, [b'{"data": {"uuid": "abc"}}'])
+
+    def never_ready():
+        raise OSError("refused")
+
+    monkeypatch.setattr(ha_discovery, "_ready_probe", never_ready)
+
+    assert ha_discovery.main() == 0
+
+    assert len(posts) == 1  # a late offer beats none
+    assert sleeps == [2.0, 4.0, 8.0, 16.0, 30.0, 30.0, 30.0, 30.0, 30.0]  # ~3 min, capped at 30
+    assert "registering discovery anyway" in capsys.readouterr().out

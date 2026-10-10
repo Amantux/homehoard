@@ -12,7 +12,7 @@
       },
       "hassio_confirm": {
         "title": "HomeHoard add-on discovered",
-        "description": "Do you want to set up the **{addon}** add-on?"
+        "description": "Do you want to set up the **{addon}** add-on?\n\nIf you already added HomeHoard manually, remove that entry first so it is not set up twice."
       }
     },
     "error": {
