@@ -160,3 +160,32 @@ def test_force_requires_owner_but_normal_dispatch_does_not(auth_client, app):
     # ... but a normal dispatch still works (no alerts → skipped, not 403)
     r = auth_client.post("/api/v1/notifiers/dispatch")
     assert r.status_code == 200 and r.get_json()["skipped"] == "no alerts"
+
+
+def test_apprise_failure_is_logged_without_the_url(monkeypatch, caplog):
+    """A failing Apprise send used to be swallowed silently. It must now log one
+    warning naming the exception type and scheme — and never the URL, whose
+    authority is the provider secret (str(exc) can echo it, so not that either)."""
+    import logging
+    import sys
+
+    from app.services.notify import _apprise_send
+
+    secret_url = "tgram://123456:SECRET-BOT-TOKEN@example/987654"
+
+    class _Boom:
+        def add(self, url):
+            return True
+
+        def notify(self, **kw):
+            raise ConnectionError(f"upstream refused {secret_url}")
+
+    monkeypatch.setitem(sys.modules, "apprise", SimpleNamespace(Apprise=_Boom))
+    with caplog.at_level(logging.WARNING, logger="homehoard.notify"):
+        assert _apprise_send(secret_url, "t", "b") is False
+
+    records = [r for r in caplog.records if r.name == "homehoard.notify"]
+    assert len(records) == 1
+    msg = records[0].getMessage()
+    assert "ConnectionError" in msg and "tgram" in msg
+    assert "SECRET-BOT-TOKEN" not in msg and "123456" not in msg

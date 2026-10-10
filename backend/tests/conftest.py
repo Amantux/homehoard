@@ -50,8 +50,13 @@ def noauth_app(tmp_path):
         SECRET_KEY = "test-secret-key-that-is-long-enough-32b"
         RATELIMIT_ENABLED = False
         PROXY_HOPS = 0
+        WORKER_ENABLED = False  # a live poller would outlive the drop_all below
 
-    return create_app(NoAuthConfig)
+    app = create_app(NoAuthConfig)
+    yield app
+    with app.app_context():
+        db.session.remove()
+        db.drop_all()
 
 
 @pytest.fixture()
