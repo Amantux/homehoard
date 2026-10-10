@@ -1,13 +1,21 @@
 # --- Stage 1: build the Vue frontend ---
-FROM node:26-alpine AS frontend
+# Base images are pinned by multi-arch index digest so a rebuild of the same
+# commit is reproducible; the tag kept alongside lets Dependabot (docker
+# ecosystem) keep proposing digest bumps. Keep the tag INSIDE the reference
+# (name:tag@sha256:...): Docker resolves by digest, Dependabot reads the tag.
+# Never put a trailing comment on a FROM line — Dockerfiles only allow
+# full-line comments, so it would become an extra FROM argument.
+FROM node:26-alpine@sha256:143494b1da2945f061539253adc65e4f1569ddf07da2d384c022c791a9d90a4a AS frontend
 WORKDIR /build
 COPY frontend/package*.json ./
-RUN npm install --no-audit --no-fund
+# npm ci installs exactly what package-lock.json records (and fails if the lock
+# and package.json disagree) instead of re-resolving ranges on every build.
+RUN npm ci --no-audit --no-fund
 COPY frontend/ ./
 RUN npm run build
 
 # --- Stage 2: python runtime ---
-FROM python:3.14-slim
+FROM python:3.14-slim@sha256:a2b82f3c48559aa0a8446d9af49826b6e2b2016f4cd2afabfe6013ec53729170
 WORKDIR /app
 
 ENV PYTHONUNBUFFERED=1 \

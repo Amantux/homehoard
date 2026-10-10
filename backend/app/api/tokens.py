@@ -5,11 +5,12 @@ hint, and usage timestamp are visible. Tokens are group-scoped like the rest of
 the API. Primarily used to connect the Home Assistant integration when app auth
 is enabled (the add-on runs auth-disabled and needs none).
 """
-from flask import Blueprint, request, jsonify, abort
+from flask import Blueprint, request, jsonify
 
 from ..extensions import db
 from ..models import ApiToken, TOKEN_SCOPES, TOKEN_ACCESS, generate_raw_token, hash_token
 from ..auth import owner_required, current_user, current_group
+from ._scoping import get_owned_or_404
 from ..schemas.serializers import iso
 
 bp = Blueprint("tokens", __name__)
@@ -79,9 +80,7 @@ def create_token_endpoint():
 @bp.delete("/tokens/<token_id>")
 @owner_required
 def revoke_token(token_id):
-    token = db.session.get(ApiToken, token_id)
-    if not token or token.group_id != current_group().id:
-        abort(404)
+    token = get_owned_or_404(ApiToken, token_id)
     db.session.delete(token)
     db.session.commit()
     return "", 204

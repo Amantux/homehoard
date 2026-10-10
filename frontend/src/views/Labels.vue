@@ -2,11 +2,14 @@
 import { ref } from 'vue'
 import { api } from '../api'
 import { useUI } from '../stores/ui'
+import { useConfirm } from '../composables/useConfirm'
 import EmptyState from '../components/EmptyState.vue'
 import ErrorState from '../components/ErrorState.vue'
 import { useLoader } from '../components/useLoader'
+import BaseModal from '../components/BaseModal.vue'
 
 const ui = useUI()
+const confirm = useConfirm()
 const labels = ref([])
 const showModal = ref(false)
 const form = ref({ name: '', description: '', color: '#0d9488' })
@@ -27,7 +30,7 @@ async function submit() {
   ui.toast('Label saved'); showModal.value = false; await load()
 }
 async function remove(l) {
-  if (!confirm(`Delete label "${l.name}"?`)) return
+  if (!(await confirm({ title: `Delete label "${l.name}"?`, body: 'It is removed from every item that carries it. The items themselves are kept.', confirmLabel: 'Delete label', danger: true }))) return
   await api.del('/labels/' + l.id); ui.toast('Deleted'); await load()
 }
 </script>
@@ -57,10 +60,9 @@ async function remove(l) {
   <div v-else class="card"><EmptyState icon="🏷️" title="No labels" hint="Create labels to tag and filter items.">
     <button @click="openNew">Add label</button></EmptyState></div>
 
-  <div v-if="showModal" class="modal-backdrop" @click.self="showModal = false">
-    <div class="card modal">
-      <div class="modal-head"><h2>{{ editing ? 'Edit' : 'New' }} label</h2>
-        <button class="ghost icon-btn" @click="showModal = false">✕</button></div>
+  <BaseModal v-if="showModal" @close="showModal = false" v-slot="{ titleId }">
+      <div class="modal-head"><h2 :id="titleId">{{ editing ? 'Edit' : 'New' }} label</h2>
+        <button aria-label="Close" class="ghost icon-btn" @click="showModal = false">✕</button></div>
       <label class="field"><span>Name</span><input v-model="form.name" autofocus @keyup.enter="submit" /></label>
       <label class="field"><span>Description</span><input v-model="form.description" /></label>
       <label class="field"><span>Color</span><input type="color" v-model="form.color" /></label>
@@ -68,6 +70,5 @@ async function remove(l) {
         <button class="secondary" @click="showModal = false">Cancel</button>
         <button :disabled="!form.name" @click="submit">Save</button>
       </div>
-    </div>
-  </div>
+  </BaseModal>
 </template>

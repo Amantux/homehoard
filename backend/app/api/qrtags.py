@@ -14,6 +14,7 @@ from flask import Blueprint, request, jsonify, abort, send_file
 from ..extensions import db
 from ..models import QrTag, Item, Bin, Location, KINDS, gen_token
 from ..auth import login_required, current_group
+from ._scoping import get_owned_or_404
 from ..schemas.serializers import qrtag_out
 
 bp = Blueprint("qrtags", __name__)
@@ -43,9 +44,7 @@ def _target_or_404(kind: str, target_id: str):
 
 
 def _get_tag(tag_id) -> QrTag:
-    tag = db.session.get(QrTag, tag_id)
-    if not tag or tag.group_id != current_group().id:
-        abort(404)
+    tag = get_owned_or_404(QrTag, tag_id)
     return tag
 
 

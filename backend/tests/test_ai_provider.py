@@ -58,3 +58,20 @@ def test_get_provider_raises_when_unset(app):
         with pytest.raises(ProviderError):
             get_provider()
         assert get_provider_or_none() is None
+
+
+def test_provider_error_redacts_credentials_at_construction():
+    # Patterns app.logsafe.SECRETISH genuinely covers: a vendor key with >= 8
+    # chars after the prefix, scheme://user:pass@ userinfo, and name=value.
+    err = ProviderError(
+        "key sk-abc12345678 at https://u:s3cret@x/?api_key=s3cret\nbody")
+    text = str(err)
+    assert "sk-abc12345678" not in text
+    assert "s3cret" not in text
+    assert "\n" not in text
+    assert text.startswith("key [redacted] at")
+
+
+def test_provider_error_keeps_curated_message():
+    msg = "AI provider 'openai' is selected but not fully configured (missing API key)."
+    assert str(ProviderError(msg)) == msg

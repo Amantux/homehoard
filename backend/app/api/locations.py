@@ -1,18 +1,18 @@
-from flask import Blueprint, request, jsonify, abort
+from flask import Blueprint, request, jsonify
 from sqlalchemy.orm import selectinload
 
 from ..extensions import db
 from ..models import Location, Bin
 from ..auth import login_required, current_group
+from ._scoping import get_owned_or_404
+from ._validation import list_limit
 from ..schemas.serializers import location_out, location_tree
 
 bp = Blueprint("locations", __name__)
 
 
 def _get(location_id):
-    loc = db.session.get(Location, location_id)
-    if not loc or loc.group_id != current_group().id:
-        abort(404)
+    loc = get_owned_or_404(Location, location_id)
     return loc
 
 
@@ -41,6 +41,9 @@ def _validate_parent(parent_id, moving=None):
 @bp.get("/locations")
 @login_required
 def list_locations():
+    """Locations in this group (bare array). ``?filterChildren=true`` keeps
+    top-level only; ``?limit=`` caps the result (1..1000, default 1000;
+    non-integer → 400)."""
     filter_children = request.args.get("filterChildren", "false").lower() == "true"
     # Eager-load the collections location_out counts/lists so a list of N
     # locations stays a handful of queries, not ~4N lazy loads.
@@ -53,9 +56,11 @@ def list_locations():
             selectinload(Location.bins).selectinload(Bin.items),
         )
     )
-    locs = q.all()
+    # Filter in SQL (was a post-query list filter) so ?limit applies to the
+    # rows actually returned.
     if filter_children:
-        locs = [loc for loc in locs if loc.parent_id is None]
+        q = q.filter(Location.parent_id.is_(None))
+    locs = q.order_by(Location.name, Location.id).limit(list_limit()).all()
     return jsonify([location_out(loc, with_items=False) for loc in locs])
 
 

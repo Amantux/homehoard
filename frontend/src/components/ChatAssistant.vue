@@ -2,7 +2,7 @@
 // Ambient inventory assistant — a floating button on every page, matching the
 // Edibl / myMeal chat experience. Reuses HomeHoard's /chat backend (streaming
 // optional) and shows suggestion chips + a proactive setup state.
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { api, streamPost } from '../api'
 import { useUI } from '../stores/ui'
 import { hideMarker, finalizeReply } from '../utils/bugMarker'
@@ -33,7 +33,15 @@ async function loadStatus() {
 const householdDefault = ref(false)
 const streaming = computed(() => householdDefault.value)
 
+// Esc closes the panel. It is a non-modal side panel (the page stays usable),
+// so no aria-modal / focus trap; and Esc is left to a real modal when one is open.
+function onKeydown(e) {
+  if (e.key === 'Escape' && open.value && !document.querySelector('[aria-modal="true"]')) open.value = false
+}
+onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
+
 onMounted(async () => {
+  document.addEventListener('keydown', onKeydown)
   try { householdDefault.value = !!(await api.get('/settings/chat')).stream } catch (e) { /* default false */ }
   loadStatus()
 })
@@ -175,7 +183,7 @@ async function send(text) {
                  :placeholder="notConfigured ? 'Set up an AI provider to chat' : 'Ask the assistant…'"
                  :disabled="busy || notConfigured" @keyup.enter="send()"
                  aria-label="Message the assistant" />
-          <button class="send" :disabled="busy || notConfigured || !input.trim()" @click="send()">Send</button>
+          <button class="send" :disabled="busy || notConfigured || !input.trim()" @click="send()">{{ busy ? 'Sending…' : 'Send' }}</button>
         </div>
       </section>
     </transition>

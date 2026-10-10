@@ -2,13 +2,17 @@ from datetime import datetime
 
 from decimal import Decimal
 
-from sqlalchemy import (String, Text, Boolean, Float, Integer, DateTime, ForeignKey,
+from sqlalchemy import (String, Text, Boolean, Integer, Numeric, DateTime, ForeignKey,
                         Index, text)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..extensions import db
 from .base import MONEY, IDMixin, TimestampMixin
 from .label import item_labels
+
+# Exact fractional quantity: 9 integer digits, 3 decimals (see migration 0019;
+# the API refuses more precision rather than letting the column round it).
+QUANTITY = Numeric(12, 3)
 
 
 class Item(IDMixin, TimestampMixin, db.Model):
@@ -25,8 +29,9 @@ class Item(IDMixin, TimestampMixin, db.Model):
     notes: Mapped[str] = mapped_column(Text, default="")
     # AI-generated (Ollama web search) searchable description; included in search.
     search_text: Mapped[str] = mapped_column(Text, default="")
-    # quantity is a float to match homebox (supports fractional/bulk quantities)
-    quantity: Mapped[float] = mapped_column(Float, default=1)
+    # quantity is fractional (bulk amounts, homebox parity) but EXACT: Numeric
+    # so 0.1 + 0.2 holdings sum to 0.3, not 0.30000000000000004 (migration 0019).
+    quantity: Mapped[Decimal] = mapped_column(QUANTITY, default=1)
     insured: Mapped[bool] = mapped_column(Boolean, default=False)
     archived: Mapped[bool] = mapped_column(Boolean, default=False)
     # Vault: hidden items are invisible on EVERY read surface until the caller's
@@ -37,10 +42,10 @@ class Item(IDMixin, TimestampMixin, db.Model):
         Boolean, default=False, server_default=text("0"), nullable=False, index=True)
     # Consumables policy (both optional): an item with a min_quantity is a
     # tracked consumable — at/below it, the restock list suggests topping up to
-    # target_quantity (or back to the threshold when no target is set). Floats
-    # to match `quantity` (fractional/bulk amounts).
-    min_quantity: Mapped[float] = mapped_column(Float, nullable=True)
-    target_quantity: Mapped[float] = mapped_column(Float, nullable=True)
+    # target_quantity (or back to the threshold when no target is set). Same
+    # exact Numeric as `quantity` (fractional/bulk amounts).
+    min_quantity: Mapped[Decimal] = mapped_column(QUANTITY, nullable=True)
+    target_quantity: Mapped[Decimal] = mapped_column(QUANTITY, nullable=True)
     # When set, moving this item's container moves its children with it.
     sync_child_locations: Mapped[bool] = mapped_column(Boolean, default=False)
 
@@ -143,7 +148,7 @@ class ItemHolding(IDMixin, TimestampMixin, db.Model):
 
     __tablename__ = "item_holdings"
 
-    quantity: Mapped[float] = mapped_column(Float, default=1)
+    quantity: Mapped[Decimal] = mapped_column(QUANTITY, default=1)
     notes: Mapped[str] = mapped_column(String(255), default="")
 
     item_id: Mapped[str] = mapped_column(

@@ -137,6 +137,7 @@ def test_register_rejects_short_password(client):
     "http://2130706433/",                          # decimal-encoded 127.0.0.1
 ])
 def test_notifier_blocks_internal_urls(auth_client, url):
+    """Mutation-checked 2026-10-09: removing the url_is_safe() guard in create_notifier (or making url_is_safe return True) fails all 7 cases."""
     r = auth_client.post("/api/v1/notifiers", json={"name": "x", "url": url})
     assert r.status_code == 422
 
@@ -236,7 +237,9 @@ def _reg(app, client, email):
 
 def test_item_rejects_cross_group_location(app):
     """Binding an item to another household's location is refused (IDOR): the FK
-    alone would accept a foreign id and item_out would then leak its name."""
+    alone would accept a foreign id and item_out would then leak its name.
+
+    Mutation-checked 2026-10-09: dropping the group_id check in _require_owned, or only its update-path call, fails this test."""
     a, b = app.test_client(), app.test_client()
     _reg(app, a, "a@a.com")
     _reg(app, b, "b@b.com")

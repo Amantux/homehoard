@@ -22,7 +22,8 @@ function thumb() {
             style="position:absolute;top:6px;right:6px;background:var(--surface)">📤 Out</span>
     </div>
     <div class="body">
-      <div class="title">{{ item.name }}</div>
+      <!-- A real link (middle-click / open-in-new-tab); the card stays clickable too. -->
+      <router-link class="title" :to="'/items/' + item.id" @click.stop>{{ item.name }}</router-link>
       <!-- The whole card navigates to the item, so the place needs @click.stop
            or clicking it would open the item instead of the place. -->
       <div class="sub" v-if="item.location || item.bin" @click.stop>

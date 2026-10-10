@@ -2,8 +2,10 @@
 import { ref, onMounted } from 'vue'
 import { api, getToken, apiUrl } from '../api'
 import { useUI } from '../stores/ui'
+import { useConfirm } from '../composables/useConfirm'
 
 const ui = useUI()
+const confirm = useConfirm()
 const busy = ref(false)
 
 // Migrate to PostgreSQL: copy the whole SQLite DB into an empty Postgres.
@@ -28,7 +30,7 @@ function copyDbCoords() {
 }
 async function migratePg() {
   if (!pgUrl.value.trim()) return
-  if (!confirm('Copy all data into this PostgreSQL database? It must be empty. Your current SQLite data is left untouched.')) return
+  if (!(await confirm({ title: 'Copy all data into this PostgreSQL database?', body: 'It must be empty. Your current SQLite data is left untouched.', confirmLabel: 'Copy data' }))) return
   pgBusy.value = true; pgResult.value = null
   try {
     pgResult.value = await api.post('/migrate/postgres', { targetUrl: pgUrl.value.trim() })

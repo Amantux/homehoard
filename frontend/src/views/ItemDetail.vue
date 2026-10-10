@@ -1,15 +1,19 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api, apiUrl } from '../api'
 import { money, shortDate, loadCurrency } from '../format'
 import { useUI } from '../stores/ui'
+import { useConfirm } from '../composables/useConfirm'
 import QrPanel from '../components/QrPanel.vue'
 import PhotoCapture from '../components/PhotoCapture.vue'
+import ErrorState from '../components/ErrorState.vue'
+import { useLoader } from '../components/useLoader'
 
 const route = useRoute()
 const router = useRouter()
 const ui = useUI()
+const confirm = useConfirm()
 const id = route.params.id
 const showCapture = ref(false)
 
@@ -52,35 +56,46 @@ async function loadAll() {
     api.get(`/items/${id}/maintenance`),
   ])
 }
-onMounted(async () => {
-  await loadCurrency()
-  await loadAll()
-  ;[locations.value, bins.value, allLabels.value] = await Promise.all([
-    api.get('/locations'), api.get('/bins'), api.get('/labels'),
-  ])
+const notFound = ref(false)
+const { loading, error, reload } = useLoader(async () => {
+  notFound.value = false
+  try {
+    await loadCurrency()
+    await loadAll()
+    ;[locations.value, bins.value, allLabels.value] = await Promise.all([
+      api.get('/locations'), api.get('/bins'), api.get('/labels'),
+    ])
+  } catch (e) {
+    notFound.value = e.status === 404
+    throw e
+  }
 })
 
 async function save() {
   const i = item.value
-  item.value = await api.put('/items/' + id, {
-    name: i.name, description: i.description, notes: i.notes,
-    quantity: Number(i.quantity) || 1, insured: i.insured, archived: i.archived,
-    serialNumber: i.serialNumber, modelNumber: i.modelNumber, manufacturer: i.manufacturer,
-    barcode: i.barcode || '',
-    purchaseFrom: i.purchaseFrom, purchasePrice: Number(i.purchasePrice) || 0,
-    purchaseDate: i.purchaseDate || null, warrantyExpires: i.warrantyExpires || null,
-    lifetimeWarranty: i.lifetimeWarranty, warrantyDetails: i.warrantyDetails,
-    // '' (cleared field) and null both mean "stop tracking" — the server
-    // treats a null as an explicit clear, unlike absent keys.
-    minQuantity: i.minQuantity === '' || i.minQuantity == null ? null : Number(i.minQuantity),
-    targetQuantity: i.targetQuantity === '' || i.targetQuantity == null ? null : Number(i.targetQuantity),
-    binId: binId.value || null,
-    locationId: binId.value ? null : (locationId.value || null),
-    labelIds: i.labels.map((l) => l.id),
-  })
-  editing.value = false
-  ui.toast('Item saved')
-  await loadAll()
+  try {
+    item.value = await api.put('/items/' + id, {
+      name: i.name, description: i.description, notes: i.notes,
+      quantity: Number(i.quantity) || 1, insured: i.insured, archived: i.archived,
+      serialNumber: i.serialNumber, modelNumber: i.modelNumber, manufacturer: i.manufacturer,
+      barcode: i.barcode || '',
+      purchaseFrom: i.purchaseFrom, purchasePrice: Number(i.purchasePrice) || 0,
+      purchaseDate: i.purchaseDate || null, warrantyExpires: i.warrantyExpires || null,
+      lifetimeWarranty: i.lifetimeWarranty, warrantyDetails: i.warrantyDetails,
+      // '' (cleared field) and null both mean "stop tracking" — the server
+      // treats a null as an explicit clear, unlike absent keys.
+      minQuantity: i.minQuantity === '' || i.minQuantity == null ? null : Number(i.minQuantity),
+      targetQuantity: i.targetQuantity === '' || i.targetQuantity == null ? null : Number(i.targetQuantity),
+      binId: binId.value || null,
+      locationId: binId.value ? null : (locationId.value || null),
+      labelIds: i.labels.map((l) => l.id),
+    })
+    editing.value = false
+    ui.toast('Item saved')
+    await loadAll()
+  } catch (e) {
+    ui.error(e.message)
+  }
 }
 
 // ── Placements (multi-location quantities) ───────────────────────────────────
@@ -105,7 +120,7 @@ async function editHolding(h, qty) {
 }
 async function removeHolding(h) {
   const where = h.bin?.name || h.location?.name || 'Unassigned'
-  if (!confirm(`Remove the placement in ${where}?`)) return
+  if (!(await confirm({ title: `Remove the placement in ${where}?`, body: `“${item.value.name}” is no longer recorded there.`, confirmLabel: 'Remove placement', danger: true }))) return
   try { await api.del(`/holdings/${h.id}`); await loadAll() } catch (e) { ui.error(e.message) }
 }
 function openMove(h) { moveFor.value = h; moveForm.value = { toBinId: '', quantity: h.quantity } }
@@ -120,8 +135,13 @@ async function doMove() {
 }
 
 async function remove() {
-  if (!confirm('Delete this item?')) return
-  await api.del('/items/' + id)
+  if (!(await confirm({ title: `Delete “${item.value.name}”?`, body: 'Its placements, photos, maintenance and checkout history are deleted too. This can’t be undone.', confirmLabel: 'Delete item', danger: true }))) return
+  try {
+    await api.del('/items/' + id)
+  } catch (e) {
+    ui.error(e.message)
+    return
+  }
   ui.toast('Item deleted')
   router.push('/items')
 }
@@ -232,7 +252,7 @@ async function uploadVideo(ev, entryId = null) {
 }
 
 async function removeVideo(v) {
-  if (!confirm(`Remove “${v.title || 'this video'}”? The item and its history are not affected.`)) return
+  if (!(await confirm({ title: `Remove “${v.title || 'this video'}”?`, body: 'The item and its history are not affected.', confirmLabel: 'Remove video', danger: true }))) return
   try {
     await api.del(`/videos/${v.id}`)
     await loadAll()
@@ -270,7 +290,13 @@ async function addMaint() {
 </script>
 
 <template>
-  <div v-if="item">
+  <div v-if="loading" class="card"><div class="skeleton" style="height:300px"></div></div>
+  <template v-else-if="notFound">
+    <ErrorState message="This item was deleted or never existed." @retry="reload" />
+    <div style="margin-top:12px"><router-link to="/items">Go to items</router-link></div>
+  </template>
+  <ErrorState v-else-if="error" :message="error" @retry="reload" />
+  <div v-else-if="item">
     <div class="breadcrumb" style="margin-bottom:10px">
       <router-link to="/items">Items</router-link>
       <template v-for="p in path" :key="p.id">
@@ -414,7 +440,7 @@ async function addMaint() {
                 <span v-if="h.bin && h.location" class="muted sm">·
                   <router-link :to="'/locations/' + h.location.id">{{ h.location.name }}</router-link>
                 </span></span>
-              <input type="number" min="0" step="1" style="width:76px" :value="h.quantity"
+              <input aria-label="Quantity" type="number" min="0" step="1" style="width:76px" :value="h.quantity"
                 @change="(e) => editHolding(h, e.target.value)" />
               <button class="secondary sm" @click="openMove(h)">Move</button>
               <button v-if="item.holdings.length > 1" class="danger secondary sm"
@@ -536,7 +562,7 @@ async function addMaint() {
                     @click="videoFor = (videoFor === m.id ? null : m.id)">
               {{ videoFor === m.id ? 'Cancel' : '+ Video' }}</button>
             <div v-if="videoFor === m.id" class="row wrap" style="gap:6px;margin-top:6px">
-              <input v-model="newVideoUrl" placeholder="https://youtu.be/…" style="min-width:160px" />
+              <input aria-label="Video URL" v-model="newVideoUrl" placeholder="https://youtu.be/…" style="min-width:160px" />
               <button :disabled="videoBusy" @click="addVideo(m.id); videoFor = null">Add</button>
               <label class="secondary btnlike sm">Upload
                 <input type="file" accept="video/*" hidden :disabled="videoBusy"
@@ -611,8 +637,6 @@ async function addMaint() {
       <QrPanel kind="item" :target-id="item.id" />
     </div>
   </div>
-
-  <div v-else class="card"><div class="skeleton" style="height:300px"></div></div>
 
   <!-- Move a placement -->
   <div v-if="moveFor" @click.self="moveFor = null"

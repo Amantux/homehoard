@@ -1,5 +1,6 @@
 <script setup>
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
+import BaseModal from './BaseModal.vue'
 
 const emit = defineEmits(['captured', 'close'])
 
@@ -56,10 +57,9 @@ onUnmounted(stop)
 </script>
 
 <template>
-  <div class="modal-backdrop" @click.self="close">
-    <div class="card modal" style="width:min(520px,100%)">
+  <BaseModal card-style="width:min(520px,100%)" @close="close" v-slot="{ titleId }">
       <div class="modal-head">
-        <h2>📷 Take a photo</h2>
+        <h2 :id="titleId">📷 Take a photo</h2>
         <button class="ghost icon-btn" aria-label="Close" @click="close">✕</button>
       </div>
 
@@ -88,8 +88,7 @@ onUnmounted(stop)
           </template>
         </div>
       </template>
-    </div>
-  </div>
+  </BaseModal>
 </template>
 
 <style scoped>

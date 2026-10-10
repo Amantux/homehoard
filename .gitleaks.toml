@@ -4,11 +4,22 @@
 useDefault = true
 
 [allowlist]
-description = "Test fixtures and env-var references are not real secrets"
-paths = [
-  '''backend/tests/.*''',
-]
+description = "Named test fixtures and env-var references are not real secrets"
+# No path allowlist: backend/tests used to be exempt wholesale, which would also
+# have hidden a REAL key pasted into a test. Each fake fixture value is instead
+# allowlisted by its exact literal (gitleaks matches `regexes` against the
+# captured secret), derived from a gitleaks v8.21.2 scan of backend/tests with
+# no allowlist (2026-10-09, 11 findings, all generic-api-key, all below).
 regexes = [
+  # Shared test SECRET_KEY: conftest.py, test_ingress_auth.py,
+  # test_integration_auth.py, test_self_delete_owner_guard.py, test_security.py
+  '''^test-secret-key-that-is-long-enough-32b$''',
+  # GOOD_SECRET fixture (a well-formed key that must PASS validation):
+  # test_config_contract.py, test_logging.py
+  '''^u7Qf2xR9mKpL3vNwZaB5cDeF8gHjT1sYoP4iU6rE0nX$''',
+  # Fake provider keys fed to the error-redaction tests: test_security_hardening.py
+  '''^sk-proj-AbCdEf123456789$''',
+  '''^AIzaSyD1234567890abcdefghijklmnopqrs$''',
   # docker-compose env-var reference, not a literal secret
   '''\$\{HBOX_SECRET_KEY[^}]*\}''',
   # dummy values used only to make timing constant / illustrate config

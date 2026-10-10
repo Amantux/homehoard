@@ -1,6 +1,7 @@
 """Miscellaneous endpoints: status, currency, qrcode, actions, reporting, import/export."""
 import io
 import os
+import socket
 import tempfile
 import time
 
@@ -132,6 +133,19 @@ def ready():
     except Exception:  # noqa: BLE001
         checks["storage"] = "error"
         ok = False
+
+    # Reported, but deliberately NOT part of `ok`: the REST API still serves
+    # with the MCP sidecar down, and a failing healthcheck would restart the
+    # whole container for it (the entrypoint already restarts MCP itself).
+    settings = current_app.config["SETTINGS"]
+    if not settings.MCP_ENABLED:
+        checks["mcp"] = "disabled"
+    else:
+        try:
+            with socket.create_connection(("127.0.0.1", settings.MCP_PORT), timeout=0.5):
+                checks["mcp"] = "ok"
+        except OSError:
+            checks["mcp"] = "down"
 
     return jsonify({"ready": ok, "checks": checks}), (200 if ok else 503)
 

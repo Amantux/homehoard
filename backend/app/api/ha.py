@@ -20,6 +20,7 @@ from ..services import money
 from ..services.alerts import active_warranty_items as _active_warranty_items
 from ..services.alerts import open_maintenance as _open_maintenance
 from ..services import vault
+from ..timeutil import as_utc, utcnow
 
 bp = Blueprint("ha", __name__)
 
@@ -37,7 +38,7 @@ def _parse(value):
 @login_required
 def summary():
     gid = current_group().id
-    now = datetime.utcnow()
+    now = utcnow()
     items = vault.visible(db.session.query(Item).filter_by(group_id=gid)).all()
 
     total_value = money.total((i.purchase_price, i.quantity) for i in items)
@@ -46,16 +47,16 @@ def summary():
     )
 
     warranty_items = _active_warranty_items(gid)
-    exp_30 = [i for i in warranty_items if now <= i.warranty_expires <= now + timedelta(days=30)]
-    exp_90 = [i for i in warranty_items if now <= i.warranty_expires <= now + timedelta(days=90)]
+    exp_30 = [i for i in warranty_items if now <= as_utc(i.warranty_expires) <= now + timedelta(days=30)]
+    exp_90 = [i for i in warranty_items if now <= as_utc(i.warranty_expires) <= now + timedelta(days=90)]
 
     maint = _open_maintenance(gid)
-    overdue = [m for m in maint if m.scheduled_date < now]
-    upcoming_30 = [m for m in maint if now <= m.scheduled_date <= now + timedelta(days=30)]
+    overdue = [m for m in maint if as_utc(m.scheduled_date) < now]
+    upcoming_30 = [m for m in maint if now <= as_utc(m.scheduled_date) <= now + timedelta(days=30)]
 
     # Overview lists — power the Home Assistant "Overview" dashboard cards.
     recent_items = sorted(
-        items, key=lambda i: i.created_at or now, reverse=True
+        items, key=lambda i: as_utc(i.created_at) or now, reverse=True
     )[:6]
     checked_out_items = [i for i in items if i.checked_out]
     locations = (
@@ -91,7 +92,7 @@ def summary():
             "checkedOutItems": [
                 {
                     "id": i.id, "name": i.name, "to": i.checked_out_to,
-                    "overdue": bool(i.checkout_due and i.checkout_due < now),
+                    "overdue": bool(i.checkout_due and as_utc(i.checkout_due) < now),
                 }
                 for i in checked_out_items
             ],
@@ -131,7 +132,7 @@ def summary():
                         "id": m.id, "name": m.name, "itemId": m.item_id,
                         "itemName": m.item.name if m.item else None,
                         "scheduled": m.scheduled_date.date().isoformat(),
-                        "overdue": m.scheduled_date < now,
+                        "overdue": as_utc(m.scheduled_date) < now,
                     }
                     for m in sorted(maint, key=lambda x: x.scheduled_date)
                 ],

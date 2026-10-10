@@ -387,6 +387,11 @@ FIELDS: tuple[Field, ...] = (
           "refuses to start until such a key exists — so it is never open. You "
           "must also map the MCP port in the add-on's Network tab.",
           ha_option="mcp_expose_external"),
+    Field("MCP_KEY_REQUIRED", parse_bool, False,
+          "Require a Full- or MCP-scoped API key on EVERY MCP request, even from "
+          "the Home Assistant network. Off keeps the HA network open so Assist "
+          "works without setup.",
+          ha_option="mcp_require_key"),
 
     Field("MCP_DEBUG_TOOLS", parse_bool, False,
           "Expose read-only debugging tools over MCP (recent logs, error "

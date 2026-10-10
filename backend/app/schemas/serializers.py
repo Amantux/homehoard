@@ -1,17 +1,29 @@
 """Serialization helpers producing homebox-compatible camelCase JSON."""
 import json
 from datetime import datetime, date
+from decimal import Decimal
 from ..services.videos import embed_url, video_mime
 from ..services import money
 from ..services import vault
+from ..timeutil import iso_utc
 
 
 def iso(dt):
+    """Timestamps leave the API with an explicit +00:00 offset (see timeutil)."""
     if dt is None:
         return None
     if isinstance(dt, (datetime, date)):
-        return dt.isoformat()
+        return iso_utc(dt)
     return dt
+
+
+def num(v):
+    """A Numeric quantity as a JSON NUMBER. Flask's JSON provider writes Decimal
+    as a STRING ("2.500"), which would change the wire type for every client;
+    whole values go out as int (2), fractional as float (2.5)."""
+    if not isinstance(v, Decimal):
+        return v  # None (and an unflushed int/float) pass through
+    return int(v) if v == v.to_integral_value() else float(v)
 
 
 def job_out(j):
@@ -125,7 +137,7 @@ def location_out(loc, with_items=True):
     data["itemCount"] = len(holdings)
     data["childCount"] = len(loc.children)
     if with_items:
-        data["items"] = [item_summary(h.item) | {"quantityHere": h.quantity}
+        data["items"] = [item_summary(h.item) | {"quantityHere": num(h.quantity)}
                          for h in holdings]
         data["totalPrice"] = money.out(money.total(
             (h.item.purchase_price, h.quantity) for h in holdings))
@@ -211,7 +223,7 @@ def item_summary(i):
         "id": i.id,
         "name": i.name,
         "description": i.description,
-        "quantity": i.quantity,
+        "quantity": num(i.quantity),
         # Number of distinct placements (bins/locations) this item is stocked in.
         "placementCount": len(i.holdings),
         "insured": i.insured,
@@ -241,8 +253,8 @@ def item_out(i):
             "purchaseFrom": i.purchase_from,
             "purchaseDate": iso(i.purchase_date),
             "syncChildLocations": i.sync_child_locations,
-            "minQuantity": i.min_quantity,
-            "targetQuantity": i.target_quantity,
+            "minQuantity": num(i.min_quantity),
+            "targetQuantity": num(i.target_quantity),
             "soldPrice": money.out(i.sold_price),
             "soldTo": i.sold_to,
             "soldDate": iso(i.sold_date),
@@ -272,7 +284,7 @@ def item_out(i):
 def holding_out(h):
     return {
         "id": h.id,
-        "quantity": h.quantity,
+        "quantity": num(h.quantity),
         "notes": h.notes,
         "location": location_summary(h.location) if h.location else None,
         "bin": bin_summary(h.bin) if h.bin else None,
@@ -313,7 +325,7 @@ def bin_out(b):
     holdings = vault.readable_holdings(
         sorted((h for h in b.holdings if h.item),
                key=lambda h: (h.item.name or "").lower()))
-    data["items"] = [item_summary(h.item) | {"quantityHere": h.quantity}
+    data["items"] = [item_summary(h.item) | {"quantityHere": num(h.quantity)}
                      for h in holdings]
     data["itemCount"] = len(holdings)
     data["totalPrice"] = money.out(money.total(

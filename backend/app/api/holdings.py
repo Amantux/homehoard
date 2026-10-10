@@ -2,33 +2,30 @@
 Holdings are the source of truth; item.quantity (total) + item.location/bin
 (primary) are resynced after every change (services/holdings.py). All handlers are
 group-scoped (IDOR-safe)."""
-import math
 
 from flask import Blueprint, request, jsonify, abort
 
 from ..extensions import db
 from ..models import Item, ItemHolding, Bin, Location
 from ..auth import login_required, current_group
+from ._scoping import get_owned_or_404
 from ..schemas.serializers import holding_out, item_out
 from ..services.holdings import resync_item
 from ..services import vault
+from ..utils_validation import to_quantity
 
 bp = Blueprint("holdings", __name__)
 
 
 def _item(item_id) -> Item:
-    it = db.session.get(Item, item_id)
-    if it is not None and not vault.readable(it):
-        it = None  # hidden: indistinguishable from absent
-    if not it or it.group_id != current_group().id:
-        abort(404)
+    it = get_owned_or_404(Item, item_id)
+    if not vault.readable(it):
+        abort(404)  # hidden: indistinguishable from absent
     return it
 
 
 def _holding(holding_id) -> ItemHolding:
-    h = db.session.get(ItemHolding, holding_id)
-    if not h or h.group_id != current_group().id:
-        abort(404)
+    h = get_owned_or_404(ItemHolding, holding_id)
     # A holding is a window onto its item: reaching one whose item is hidden
     # would surface the item's placement (and, through it, the item).
     if not vault.readable(h.item):
@@ -55,14 +52,13 @@ def _placement(data):
 
 
 def _positive_qty(value):
-    try:
-        qty = float(value)
-    except (TypeError, ValueError):
-        return None, (jsonify({"error": "quantity must be a number"}), 422)
-    # isfinite: NaN/Infinity pass `<= 0` (both False) and also slip the
-    # over-move check (nan > h.quantity is False), corrupting stock.
-    if not math.isfinite(qty) or qty <= 0:
-        return None, (jsonify({"error": "quantity must be a positive number"}), 422)
+    # Exact Decimal (the column is Numeric(12, 3)) so 0.1 + 0.2 sums to 0.3.
+    # to_quantity refuses NaN/Infinity (they pass `<= 0` and slip the over-move
+    # check, corrupting stock), > 3 decimal places and > 999999999.999.
+    qty = to_quantity(value)
+    if qty is None or qty <= 0:
+        return None, (jsonify({"error": "quantity must be a positive number with "
+                                        "at most 3 decimal places"}), 422)
     return qty, None
 
 

@@ -1,16 +1,20 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '../api'
 import { money, loadCurrency } from '../format'
 import { useUI } from '../stores/ui'
+import { useConfirm } from '../composables/useConfirm'
 import ItemCard from '../components/ItemCard.vue'
 import QrPanel from '../components/QrPanel.vue'
 import { indexById, pathString } from '../locationTree'
+import ErrorState from '../components/ErrorState.vue'
+import { useLoader } from '../components/useLoader'
 
 const route = useRoute()
 const router = useRouter()
 const ui = useUI()
+const confirm = useConfirm()
 const id = route.params.id
 const loc = ref(null)
 const path = ref([])
@@ -52,29 +56,44 @@ async function load() {
   path.value = await api.get(`/locations/${id}/path`)
 }
 async function refreshItems() { allItems.value = (await api.get('/items?pageSize=500')).items }
-onMounted(async () => {
-  await loadCurrency()
-  await load()
-  ;[allLocations.value] = await Promise.all([api.get('/locations'), refreshItems()])
+const notFound = ref(false)
+const { loading, error, reload } = useLoader(async () => {
+  notFound.value = false
+  try {
+    await loadCurrency()
+    await load()
+    ;[allLocations.value] = await Promise.all([api.get('/locations'), refreshItems()])
+  } catch (e) {
+    notFound.value = e.status === 404
+    throw e
+  }
 })
 
 async function createItemHere() {
   if (!newItemName.value.trim()) return
-  await api.post('/items', {
-    name: newItemName.value.trim(), quantity: Number(newItemQty.value) || 1, locationId: id,
-  })
-  newItemName.value = ''
-  newItemQty.value = 1
-  ui.toast('Item created here')
-  await load(); await refreshItems()
+  try {
+    await api.post('/items', {
+      name: newItemName.value.trim(), quantity: Number(newItemQty.value) || 1, locationId: id,
+    })
+    newItemName.value = ''
+    newItemQty.value = 1
+    ui.toast('Item created here')
+    await load(); await refreshItems()
+  } catch (e) {
+    ui.error(e.message)
+  }
 }
 async function addItem() {
   if (!addItemId.value) return
   // Directly in a location means it's not in a bin.
-  await api.patch('/items/' + addItemId.value, { locationId: id, binId: null })
-  addItemId.value = ''
-  ui.toast('Item moved here')
-  await load(); await refreshItems()
+  try {
+    await api.patch('/items/' + addItemId.value, { locationId: id, binId: null })
+    addItemId.value = ''
+    ui.toast('Item moved here')
+    await load(); await refreshItems()
+  } catch (e) {
+    ui.error(e.message)
+  }
 }
 
 const editParentId = ref('')
@@ -97,15 +116,26 @@ async function save() {
   }
 }
 async function remove() {
-  if (!confirm('Delete this location and its bins?')) return
-  await api.del('/locations/' + id)
+  if (!(await confirm({ title: `Delete location “${loc.value.name}”?`, body: 'Its sub-locations and bins are deleted too.', confirmLabel: 'Delete location', danger: true }))) return
+  try {
+    await api.del('/locations/' + id)
+  } catch (e) {
+    ui.error(e.message)
+    return
+  }
   ui.toast('Location deleted')
   router.push('/locations')
 }
 </script>
 
 <template>
-  <div v-if="loc">
+  <div v-if="loading" class="card"><div class="skeleton" style="height:240px"></div></div>
+  <template v-else-if="notFound">
+    <ErrorState message="This location was deleted or never existed." @retry="reload" />
+    <div style="margin-top:12px"><router-link to="/locations">Go to locations</router-link></div>
+  </template>
+  <ErrorState v-else-if="error" :message="error" @retry="reload" />
+  <div v-else-if="loc">
     <div class="breadcrumb" style="margin-bottom:10px">
       <router-link to="/locations">Locations</router-link>
       <template v-for="(p, idx) in path" :key="p.id">
@@ -149,13 +179,13 @@ async function remove() {
 
     <div v-show="tab==='items'">
       <div class="toolbar" style="flex-wrap:wrap;gap:8px">
-        <input v-model="newItemName" style="max-width:200px" placeholder="New item name…"
+        <input aria-label="New item name" v-model="newItemName" style="max-width:200px" placeholder="New item name…"
                @keyup.enter="createItemHere" />
-        <input type="number" min="1" v-model.number="newItemQty" style="max-width:76px"
+        <input aria-label="Quantity" type="number" min="1" v-model.number="newItemQty" style="max-width:76px"
                title="Quantity" @keyup.enter="createItemHere" />
         <button :disabled="!newItemName.trim()" @click="createItemHere">＋ Create here</button>
         <span class="muted" style="align-self:center">or</span>
-        <select v-model="addItemId" style="max-width:240px">
+        <select aria-label="Move an existing item here" v-model="addItemId" style="max-width:240px">
           <option value="">Move an existing item here…</option>
           <option v-for="i in allItems" :key="i.id" :value="i.id">{{ i.name }}</option>
         </select>
@@ -184,5 +214,4 @@ async function remove() {
     <!-- v-if so the panel's scan field can autofocus on open (see BinDetail). -->
     <div v-if="tab==='qr'"><QrPanel kind="location" :target-id="loc.id" /></div>
   </div>
-  <div v-else class="card"><div class="skeleton" style="height:240px"></div></div>
 </template>

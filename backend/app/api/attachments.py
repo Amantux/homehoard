@@ -5,6 +5,7 @@ from flask import Blueprint, abort, current_app, jsonify, request, send_file
 from werkzeug.utils import secure_filename
 
 from ..auth import current_group, login_required
+from ._scoping import get_owned_or_404
 from ..extensions import db
 from ..services import thumbnails, videos
 from ..models import Attachment, Bin, Document, Item, MaintenanceEntry
@@ -15,11 +16,9 @@ bp = Blueprint("attachments", __name__)
 
 
 def _get_item(item_id) -> Item:
-    item = db.session.get(Item, item_id)
-    if item is not None and not vault.readable(item):
-        item = None  # hidden: indistinguishable from absent
-    if not item or item.group_id != current_group().id:
-        abort(404)
+    item = get_owned_or_404(Item, item_id)
+    if not vault.readable(item):
+        abort(404)  # hidden: indistinguishable from absent
     return item
 
 
@@ -108,9 +107,7 @@ def delete(item_id, attachment_id):
 # Bin attachments — same behavior as item attachments.
 # ---------------------------------------------------------------------------
 def _get_bin(bin_id) -> Bin:
-    b = db.session.get(Bin, bin_id)
-    if not b or b.group_id != current_group().id:
-        abort(404)
+    b = get_owned_or_404(Bin, bin_id)
     return b
 
 
@@ -197,9 +194,7 @@ def bin_delete(bin_id, attachment_id):
 @bp.get("/documents/<document_id>")
 @login_required
 def get_document(document_id):
-    doc = db.session.get(Document, document_id)
-    if not doc or doc.group_id != current_group().id:
-        abort(404)
+    doc = get_owned_or_404(Document, document_id)
     if request.args.get("thumb"):
         # Serve the sibling thumbnail when one exists; pre-pipeline photos and
         # non-image files fall through to the original, so ?thumb=1 is always

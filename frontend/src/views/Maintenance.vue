@@ -27,7 +27,7 @@ const scheduled = computed(() => data.value.entries.filter((e) => e.status === '
     <h1>Maintenance</h1>
     <div class="grow"></div>
     <span class="badge">Total spent: {{ money(data.costTotal) }}</span>
-    <select v-model="filter" style="width:auto" @change="load">
+    <select aria-label="Filter" v-model="filter" style="width:auto" @change="load">
       <option value="both">All</option>
       <option value="scheduled">Scheduled</option>
       <option value="completed">Completed</option>
@@ -41,7 +41,7 @@ const scheduled = computed(() => data.value.entries.filter((e) => e.status === '
       <h2>Upcoming</h2>
       <table><tbody>
         <tr v-for="m in scheduled" :key="m.id" class="clickable" @click="router.push('/items/'+m.itemId)">
-          <td><strong>{{ m.name }}</strong> <span v-if="m.recurMonths" class="badge" :title="`Repeats every ${m.recurMonths} months`">↻ {{ m.recurMonths }}mo</span></td>
+          <td><router-link :to="'/items/' + m.itemId" @click.stop><strong>{{ m.name }}</strong></router-link> <span v-if="m.recurMonths" class="badge" :title="`Repeats every ${m.recurMonths} months`">↻ {{ m.recurMonths }}mo</span></td>
           <td>{{ m.itemName }}</td>
           <td><span v-if="m.overdue" class="badge danger">Overdue</span> {{ shortDate(m.scheduledDate) }}</td>
           <td>{{ money(m.cost) }}</td>
@@ -54,7 +54,7 @@ const scheduled = computed(() => data.value.entries.filter((e) => e.status === '
         <thead><tr><th>Task</th><th>Item</th><th>Status</th><th>Date</th><th>Cost</th></tr></thead>
         <tbody>
           <tr v-for="m in data.entries" :key="m.id" class="clickable" @click="router.push('/items/'+m.itemId)">
-            <td><strong>{{ m.name }}</strong> <span v-if="m.recurMonths" class="badge" :title="`Repeats every ${m.recurMonths} months`">↻ {{ m.recurMonths }}mo</span><div class="muted" style="font-size:0.8rem">{{ m.description }}</div></td>
+            <td><router-link :to="'/items/' + m.itemId" @click.stop><strong>{{ m.name }}</strong></router-link> <span v-if="m.recurMonths" class="badge" :title="`Repeats every ${m.recurMonths} months`">↻ {{ m.recurMonths }}mo</span><div class="muted" style="font-size:0.8rem">{{ m.description }}</div></td>
             <td>{{ m.itemName }}</td>
             <td><span class="badge" :class="m.status==='completed'?'ok':(m.overdue?'danger':'')">{{ m.status }}</span></td>
             <td>{{ shortDate(m.completedDate || m.scheduledDate) }}</td>

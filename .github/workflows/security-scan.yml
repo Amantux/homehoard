@@ -11,15 +11,22 @@ on:
   schedule:
     - cron: "27 6 * * 1" # weekly, Monday 06:27 UTC — catch newly-disclosed CVEs
 
+# Least privilege: read-only by default. Only the two jobs that upload SARIF
+# (codeql, trivy-fs) get security-events: write — the audit jobs install
+# third-party packages and must not hold a write token. actions: read is needed
+# by codeql-action/init.
 permissions:
   contents: read
-  security-events: write
   actions: read
 
 jobs:
   codeql:
     name: CodeQL (${{ matrix.language }})
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
     strategy:
       fail-fast: false
       matrix:
@@ -49,7 +56,10 @@ jobs:
         continue-on-error: true
         run: |
           pip install pip-audit
-          pip-audit -r backend/requirements.txt --desc
+          # The step is continue-on-error, so a finding only shows as a quiet
+          # orange mark; the summary line makes it visible on the run page.
+          pip-audit -r backend/requirements.txt --desc \
+            || { echo "### pip-audit found issues (advisory)" >> "$GITHUB_STEP_SUMMARY"; exit 1; }
 
   npm-deps:
     name: npm dependency audit
@@ -62,7 +72,10 @@ jobs:
       - name: npm audit (high+)
         continue-on-error: true
         working-directory: frontend
-        run: npm audit --audit-level=high
+        # continue-on-error hides a finding; the summary line surfaces it.
+        run: |
+          npm audit --audit-level=high \
+            || { echo "### npm audit found high+ issues (advisory)" >> "$GITHUB_STEP_SUMMARY"; exit 1; }
 
   dependency-review:
     name: Dependency review (PRs)
@@ -77,6 +90,10 @@ jobs:
   trivy-fs:
     name: Trivy filesystem + config scan
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install Trivy

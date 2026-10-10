@@ -2,6 +2,7 @@
 import { ref, onMounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api'
+import BaseModal from './BaseModal.vue'
 
 const emit = defineEmits(['close'])
 const router = useRouter()
@@ -50,14 +51,12 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="modal-backdrop" style="align-items:flex-start;padding-top:10vh"
-       @click.self="emit('close')">
-    <div class="card modal" style="width:min(560px,100%);padding:0;overflow:hidden">
+  <BaseModal aria-label="Search items" backdrop-style="align-items:flex-start;padding-top:10vh"
+             card-style="width:min(560px,100%);padding:0;overflow:hidden" @close="emit('close')">
       <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;gap:10px;align-items:center">
         <span>🔍</span>
-        <input ref="input" v-model="q" placeholder="Find an item — where is my…?"
-               style="border:none;background:none;box-shadow:none;padding:4px 0"
-               @keyup.esc="emit('close')" />
+        <input aria-label="Find an item" ref="input" v-model="q" placeholder="Find an item — where is my…?"
+               style="border:none;background:none;box-shadow:none;padding:4px 0" />
         <button class="ghost sm" @click="emit('close')">Esc</button>
       </div>
 
@@ -85,8 +84,7 @@ onMounted(async () => {
           <span class="search-go">→</span>
         </button>
       </div>
-    </div>
-  </div>
+  </BaseModal>
 </template>
 
 <style scoped>

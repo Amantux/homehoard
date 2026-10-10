@@ -21,9 +21,11 @@ from passlib.hash import bcrypt
 from sqlalchemy.exc import IntegrityError
 
 from .extensions import db
+from .logging_setup import request_id_var
 from .logsafe import scrub
 from .models import User, Group, ApiToken, hash_token
 from .models.api_token import TOKEN_PREFIX
+from .timeutil import as_utc, utcnow
 
 _LOGGER = logging.getLogger("homehoard.auth")
 
@@ -195,6 +197,34 @@ def _request_from_ingress() -> bool:
     return _raw_peer() == _INGRESS_SOURCE
 
 
+# Open-mode exposure warning: DISABLE_AUTH is meant for HA ingress only, so a
+# request that reaches the open-mode fallback from any other peer means the port
+# is published off the Home Assistant network. Warn once per peer per process.
+# The set is bounded (no new dependency, no unbounded growth from a scan): once
+# _OPEN_MODE_WARNED_CAP peers have been recorded, further NEW peers are not
+# added and not warned about — the log already shows the exposure many times.
+_OPEN_MODE_WARNED: set[str] = set()
+_OPEN_MODE_WARNED_CAP = 256
+# Loopback is expected: the Docker healthcheck and the MCP sidecar call the API
+# from inside the container.
+_LOOPBACK_PEERS = frozenset({"127.0.0.1", "::1"})
+
+
+def _warn_open_mode_exposure() -> None:
+    peer = _raw_peer() or "unknown"
+    if peer == _INGRESS_SOURCE or peer in _LOOPBACK_PEERS:
+        return
+    if peer in _OPEN_MODE_WARNED or len(_OPEN_MODE_WARNED) >= _OPEN_MODE_WARNED_CAP:
+        return
+    _OPEN_MODE_WARNED.add(peer)
+    _LOGGER.warning(
+        "unauthenticated access from %s: disable_auth is on and the port is "
+        "reachable off the Home Assistant network — anyone who can reach it is "
+        "the household owner",
+        scrub(peer),
+    )
+
+
 def _ingress_user():
     """Provision (or fetch) the HomeHoard user for the HA user behind an ingress
     request. Returns None with no trusted ingress identity, so the caller falls
@@ -243,6 +273,15 @@ def _ingress_user():
 
 
 def load_current_user():
+    """Resolve the current user once per request; the read-only hook and the
+    route decorator both ask, and resolution may hit the DB (key lookup, ingress
+    provisioning). See _resolve_current_user for the sources."""
+    if "_auth_user" not in g:
+        g._auth_user = _resolve_current_user()
+    return g._auth_user
+
+
+def _resolve_current_user():
     """Resolve the current user from three INDEPENDENT sources, in order — so a
     machine client (the HA integration, MCP) can authenticate by token whether or
     not DISABLE_AUTH is set, while the browser keeps working behind ingress.
@@ -260,9 +299,17 @@ def load_current_user():
        standalone open deployment and an ingress request with no identity
        headers.
     """
+    # Only an API key can be read-only; it overwrites this. JWT, ingress and the
+    # open-mode fallback are explicitly write.
+    g.token_access = "write"
     header = request.headers.get("Authorization", "")
-    if header.startswith("Bearer "):
-        token = header[len("Bearer "):].strip()
+    if header.strip():
+        token = _bearer_token(header)
+        # Any credential that isn't a Bearer token (wrong scheme, empty token)
+        # is "present but invalid" → 401, never a fall-through to ingress or
+        # the open-mode user. Otherwise `bearer <read-key>` escalated to write.
+        if not token:
+            return None
         # Long-lived API keys are prefixed so we can route them without a JWT decode.
         if token.startswith(TOKEN_PREFIX):
             return _user_from_api_token(token)
@@ -274,9 +321,21 @@ def load_current_user():
         return ingress
 
     if current_app.config["DISABLE_AUTH"]:
+        _warn_open_mode_exposure()
         return _default_user()
 
     return None
+
+
+def _bearer_token(header: str) -> str | None:
+    """The token from an ``Authorization: Bearer <token>`` header, or None when the
+    scheme isn't Bearer. The scheme is case-insensitive (RFC 7235); both the
+    resolver and the central read-only hook go through here so they can't
+    disagree about what counts as a Bearer credential."""
+    scheme, _, token = header.strip().partition(" ")
+    if scheme.lower() != "bearer":
+        return None
+    return token.strip() or None
 
 
 def _user_from_api_token(raw: str):
@@ -297,8 +356,8 @@ def _user_from_api_token(raw: str):
     # (enforced in login_required/owner_required). Stash it for that check.
     g.token_access = record.access or "write"
     # Record usage, but at most once a minute to avoid a write on every request.
-    now = datetime.utcnow()
-    if record.last_used_at is None or (now - record.last_used_at).total_seconds() > 60:
+    now = utcnow()
+    if record.last_used_at is None or (now - as_utc(record.last_used_at)).total_seconds() > 60:
         record.last_used_at = now
         db.session.commit()
     return db.session.get(User, record.user_id)
@@ -309,8 +368,21 @@ def _read_only_blocked():
     mutating method, else None. No-op for JWT/ingress users (no token → default write)."""
     if getattr(g, "token_access", "write") == "read" and \
             request.method not in ("GET", "HEAD", "OPTIONS"):
-        return jsonify({"error": "this API key is read-only"}), 403
+        return jsonify({"error": "this API key is read-only",
+                        "requestId": request_id_var.get()}), 403
     return None
+
+
+def enforce_read_only():
+    """App-level before_request: a read-only API key may not mutate anything under
+    /api/v1, decorated or not — so a new route can't forget the check. The
+    decorators keep their own check (belt and braces). Only an Authorization
+    header can carry a read-only key, so other requests aren't resolved here."""
+    if not request.path.startswith("/api/v1/") or \
+            not request.headers.get("Authorization", "").strip():
+        return None
+    load_current_user()
+    return _read_only_blocked()
 
 
 def login_required(fn):

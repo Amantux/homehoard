@@ -12,8 +12,10 @@ const props = defineProps({
   allowCreate: { type: Boolean, default: false },
   createNoun: { type: String, default: 'item' },
   ariaLabel: { type: String, default: '' },
+  // Parent fetches matches itself (via the `search` event); skip the local label filter.
+  remote: { type: Boolean, default: false },
 })
-const emit = defineEmits(['update:modelValue', 'create'])
+const emit = defineEmits(['update:modelValue', 'create', 'search'])
 
 const typed = ref('')
 const open = ref(false)
@@ -24,7 +26,7 @@ const display = computed(() => (selected.value ? selected.value.label : ''))
 
 const filtered = computed(() => {
   const term = typed.value.trim().toLowerCase()
-  if (!term) return props.options
+  if (!term || props.remote) return props.options
   return props.options.filter((o) => o.label.toLowerCase().includes(term))
 })
 const canCreate = computed(() => {
@@ -42,11 +44,13 @@ function onFocus() {
   open.value = true
   typed.value = ''
   highlight.value = -1
+  emit('search', '')
 }
 function onInput(e) {
   typed.value = e.target.value
   open.value = true
   highlight.value = 0
+  emit('search', typed.value.trim())
 }
 function close() {
   open.value = false

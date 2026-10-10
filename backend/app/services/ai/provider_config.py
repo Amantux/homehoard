@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 from types import SimpleNamespace
 
+from ...settings import FIELDS_BY_NAME
 from ..settings_store import get_overrides, set_values
 
 _LOGGER = logging.getLogger(__name__)
@@ -28,18 +29,23 @@ SECRET_KEYS = frozenset({"ollama_api_key", "openai_api_key", "claude_api_key",
 OLLAMA_CLOUD_HOST = "https://ollama.com"
 
 
+def _default(name: str):
+    """A field's declared default — the settings registry is the one source."""
+    return FIELDS_BY_NAME[name].default
+
+
 def _base(config) -> dict:
     """Env/add-on defaults for every AI attribute, from the app config."""
     g = config.get
     return {
         "AI_PROVIDER": (g("AI_PROVIDER") or ""),
         "OLLAMA_HOST": (g("OLLAMA_URL") or "http://localhost:11434"),
-        "OLLAMA_MODEL": (g("OLLAMA_MODEL") or "llama3.1"),
+        "OLLAMA_MODEL": (g("OLLAMA_MODEL") or _default("OLLAMA_MODEL")),
         "OLLAMA_API_KEY": (g("OLLAMA_API_KEY") or ""),
         "OPENAI_BASE_URL": (g("OPENAI_BASE_URL") or ""),
-        "OPENAI_MODEL": (g("OPENAI_MODEL") or "gpt-4o-mini"),
+        "OPENAI_MODEL": (g("OPENAI_MODEL") or _default("OPENAI_MODEL")),
         "OPENAI_API_KEY": (g("OPENAI_API_KEY") or ""),
-        "CLAUDE_MODEL": (g("CLAUDE_MODEL") or "claude-opus-4-8"),
+        "CLAUDE_MODEL": (g("CLAUDE_MODEL") or _default("CLAUDE_MODEL")),
         "ANTHROPIC_API_KEY": (g("ANTHROPIC_API_KEY") or ""),
         "AI_TIMEOUT_SECONDS": (g("AI_TIMEOUT_SECONDS") or 60),
         "OLLAMA_SEARCH_KEY": (g("OLLAMA_SEARCH_KEY") or ""),

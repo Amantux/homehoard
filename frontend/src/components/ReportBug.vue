@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { api } from '../api'
 import { recentErrors } from '../utils/errorLog'
+import BaseModal from './BaseModal.vue'
 import { buildDiagnostics, issueUrl, searchUrl, MAX_BODY, truncate } from '../utils/bugReport'
 
 const REPO = 'Amantux/homehoard'
@@ -102,10 +103,9 @@ async function submit() {
 </script>
 
 <template>
-  <div class="modal-backdrop" @click.self="emit('close')">
-    <div class="card modal" style="width:540px;max-width:96vw">
+  <BaseModal width="540px" @close="emit('close')" v-slot="{ titleId }">
       <div class="modal-head">
-        <h2 style="flex:1">🐞 Report a bug</h2>
+        <h2 :id="titleId" style="flex:1">🐞 Report a bug</h2>
         <button class="ghost icon-btn" aria-label="Close" @click="emit('close')">✕</button>
       </div>
 
@@ -148,7 +148,7 @@ async function submit() {
           {{ copied ? "It's on your clipboard — " : 'Copy the text below, then ' }}open a
           new issue and paste it in:
         </p>
-        <textarea readonly :value="body" rows="4" @focus="$event.target.select()"
+        <textarea aria-label="Report text" readonly :value="body" rows="4" @focus="$event.target.select()"
                   style="font-family:var(--mono,monospace);font-size:0.8rem"></textarea>
         <div class="row" style="gap:8px;margin-top:6px;align-items:center">
           <button class="secondary sm" @click="copyReport">{{ copied ? 'Copied ✓' : 'Copy report' }}</button>
@@ -163,6 +163,5 @@ async function submit() {
         <button class="secondary" @click="emit('close')">Cancel</button>
         <button :disabled="!canSubmit" @click="submit">Open GitHub issue ↗</button>
       </div>
-    </div>
-  </div>
+  </BaseModal>
 </template>

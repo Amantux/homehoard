@@ -2,8 +2,10 @@
 import { ref, watch, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '../api'
+import { ITEM_VIEW } from '../storageKeys'
 import { money } from '../format'
 import { useUI } from '../stores/ui'
+import { useConfirm } from '../composables/useConfirm'
 import ItemCard from '../components/ItemCard.vue'
 import EmptyState from '../components/EmptyState.vue'
 import ErrorState from '../components/ErrorState.vue'
@@ -12,6 +14,7 @@ import { useLoader } from '../components/useLoader'
 const route = useRoute()
 const router = useRouter()
 const ui = useUI()
+const confirm = useConfirm()
 
 const items = ref([])
 const total = ref(0)
@@ -25,7 +28,7 @@ const labelFilter = ref('')
 const orderBy = ref('name')
 const includeArchived = ref(false)
 const vault = ref({ configured: false, locked: true, hiddenCount: 0 })
-const view = ref(localStorage.getItem('easyinv_itemview') || 'grid')
+const view = ref(localStorage.getItem(ITEM_VIEW) || 'grid')
 const page = ref(1)
 const pageSize = 24
 
@@ -42,6 +45,7 @@ const selected = ref(new Set())
 const moveTarget = ref('')
 const labelTarget = ref('')
 const busy = ref(false)
+const busyLabel = ref('') // which bulk action is running, for the pending button label
 
 const selectedItems = computed(() => items.value.filter((i) => selected.value.has(i.id)))
 const allOnPageSelected = computed(
@@ -68,7 +72,7 @@ function clearSelection() {
 
 function setView(v) {
   view.value = v
-  localStorage.setItem('easyinv_itemview', v)
+  localStorage.setItem(ITEM_VIEW, v)
 }
 
 function resetFilters() {
@@ -117,6 +121,7 @@ async function runBulk(label, fn) {
   const targets = selectedItems.value
   if (!targets.length || busy.value) return
   busy.value = true
+  busyLabel.value = label
   let ok = 0
   try {
     for (const it of targets) {
@@ -165,14 +170,14 @@ async function labelSelected() {
 
 async function archiveSelected() {
   const n = selectedItems.value.length
-  if (!confirm(`Archive ${n} item${n === 1 ? '' : 's'}? They’ll be hidden from the default list, not deleted.`))
+  if (!await confirm({ confirmLabel: 'Archive', title: `Archive ${n} item${n === 1 ? '' : 's'}? They’ll be hidden from the default list, not deleted.` }))
     return
   await runBulk('Archived', (it) => api.patch('/items/' + it.id, { archived: true }))
 }
 
 async function hideSelected() {
   const n = selectedItems.value.length
-  if (!confirm(`Hide ${n} item${n === 1 ? '' : 's'} in the vault? They disappear from every list, search and total until you unlock with the passphrase — not deleted.`))
+  if (!await confirm({ confirmLabel: 'Hide in vault', title: `Hide ${n} item${n === 1 ? '' : 's'} in the vault? They disappear from every list, search and total until you unlock with the passphrase — not deleted.` }))
     return
   await runBulk('Hidden', (it) => api.patch('/items/' + it.id, { hidden: true }))
   await loadVault()
@@ -234,7 +239,7 @@ async function loadVault() {
 
 async function deleteSelected() {
   const n = selectedItems.value.length
-  if (!confirm(`Delete ${n} item${n === 1 ? '' : 's'}? This can’t be undone.`)) return
+  if (!(await confirm({ title: `Delete ${n} item${n === 1 ? '' : 's'}?`, body: 'Their placements, photos, maintenance and checkout history are deleted too. This can’t be undone.', confirmLabel: 'Delete', danger: true }))) return
   await runBulk('Deleted', (it) => api.del('/items/' + it.id))
 }
 
@@ -320,9 +325,9 @@ watch(() => route.query.q, (v) => { if (v !== q.value) { q.value = v || '' } })
       <option value="">Add label…</option>
       <option v-for="l in labels" :key="l.id" :value="l.id">🏷️ {{ l.name }}</option>
     </select>
-    <button class="secondary sm" :disabled="busy" @click="archiveSelected">Archive</button>
-    <button class="secondary sm" :disabled="busy" @click="hideSelected">Hide</button>
-    <button class="danger secondary sm" :disabled="busy" @click="deleteSelected">Delete</button>
+    <button class="secondary sm" :disabled="busy" @click="archiveSelected">{{ busy && busyLabel === 'Archived' ? 'Archiving…' : 'Archive' }}</button>
+    <button class="secondary sm" :disabled="busy" @click="hideSelected">{{ busy && busyLabel === 'Hidden' ? 'Hiding…' : 'Hide' }}</button>
+    <button class="danger secondary sm" :disabled="busy" @click="deleteSelected">{{ busy && busyLabel === 'Deleted' ? 'Deleting…' : 'Delete' }}</button>
   </div>
 
   <div v-if="loading" class="card-grid">
@@ -370,7 +375,7 @@ watch(() => route.query.q, (v) => { if (v !== q.value) { q.value = v || '' } })
                      :aria-label="'Select ' + i.name" @change="toggle(i.id)" />
             </td>
             <td>
-              <strong>{{ i.name }}</strong>
+              <router-link :to="'/items/' + i.id" @click.stop><strong>{{ i.name }}</strong></router-link>
               <div class="muted" style="font-size:0.8rem">{{ i.description }}</div>
             </td>
             <!-- @click.stop like the checkbox cell: the ROW navigates to the

@@ -368,3 +368,95 @@ def test_a_malformed_params_list_does_not_500(app, monkeypatch):
     sent = _drive([], method="POST", path="/messages/", body=body, external=False)
 
     assert sent[0]["status"] in (200, 401, 403)
+
+
+# ---- Unparseable message bodies ---------------------------------------------
+#
+# An unparseable body used to yield an empty tool list, which skipped the
+# read-only and debug-scope checks and forwarded the request to FastMCP.
+
+_TRUNCATED = b'{"method":"tools/call",'
+
+
+def test_a_truncated_body_is_denied_for_a_read_only_key(app, auth_client, monkeypatch):
+    monkeypatch.setattr(mcp_server, "_app", app)
+    ro = _mint(auth_client, "mcp", "read")
+
+    sent = _drive([(b"authorization", f"Bearer {ro}".encode())],
+                  method="POST", path="/messages/", body=_TRUNCATED)
+
+    assert sent[0]["status"] == 400
+
+
+def test_a_truncated_body_is_denied_for_a_debug_key(app, auth_client, monkeypatch):
+    monkeypatch.setattr(mcp_server, "_app", app)
+    debug_raw = _mint(auth_client, "debug")
+
+    sent = _drive([(b"authorization", f"Bearer {debug_raw}".encode())],
+                  method="POST", path="/messages/", body=_TRUNCATED, external=False)
+
+    assert sent[0]["status"] == 400
+
+
+def test_an_empty_body_still_forwards(app, auth_client, monkeypatch):
+    monkeypatch.setattr(mcp_server, "_app", app)
+    ro = _mint(auth_client, "mcp", "read")
+
+    sent = _drive([(b"authorization", f"Bearer {ro}".encode())],
+                  method="POST", path="/messages/", body=b"")
+
+    assert sent[0]["status"] not in (400, 403)
+
+
+def test_a_truncated_body_from_an_unauthenticated_client_is_401_not_audited(
+        app, monkeypatch):
+    """External exposure: garbage from a stranger must not reach the audit ring."""
+    monkeypatch.setattr(mcp_server, "_app", app)
+    audited = []
+    monkeypatch.setattr(mcp_server, "_audit", lambda *a, **k: audited.append(a))
+
+    sent = _drive([], method="POST", path="/messages/", body=_TRUNCATED,
+                  external=True)
+
+    assert sent[0]["status"] == 401
+    assert audited == []
+
+
+# --- mcp_require_key: keys on the Home Assistant network too -------------------
+
+def test_require_key_rejects_a_keyless_internal_request(app, auth_client, monkeypatch):
+    monkeypatch.setattr(mcp_server, "_app", app)
+    monkeypatch.setattr(mcp_server, "_require_key", lambda: True)
+    assert _drive([], "GET", "/sse", external=False)[0]["status"] == 401
+    assert _drive([], "POST", "/messages/", _call("where_is"),
+                  external=False)[0]["status"] == 401
+
+
+def test_require_key_forwards_a_valid_full_key(app, auth_client, monkeypatch):
+    monkeypatch.setattr(mcp_server, "_app", app)
+    monkeypatch.setattr(mcp_server, "_require_key", lambda: True)
+    hdr = [(b"authorization", f"Bearer {_mint(auth_client, 'full')}".encode())]
+    assert _drive(hdr, "POST", "/messages/", _call("add_item_placement"),
+                  external=False)[0]["status"] == 200
+
+
+def test_require_key_holds_a_read_key_to_read_tools(app, auth_client, monkeypatch):
+    monkeypatch.setattr(mcp_server, "_app", app)
+    monkeypatch.setattr(mcp_server, "_require_key", lambda: True)
+    hdr = [(b"authorization", f"Bearer {_mint(auth_client, 'mcp', 'read')}".encode())]
+    assert _drive(hdr, "POST", "/messages/", _call("where_is"),
+                  external=False)[0]["status"] == 200
+    assert _drive(hdr, "POST", "/messages/", _call("add_item_placement"),
+                  external=False)[0]["status"] == 403
+
+
+def test_require_key_off_keeps_the_internal_path_open(app, monkeypatch):
+    """Regression guard: default off + no server token = today's open HA path."""
+    monkeypatch.setattr(mcp_server, "_app", app)
+    monkeypatch.setattr(mcp_server, "_require_key", lambda: False)
+    assert _drive([], "POST", "/messages/", _call("where_is"),
+                  external=False, server_token="")[0]["status"] == 200
+
+
+def test_require_key_setting_defaults_off():
+    assert mcp_server._SETTINGS.MCP_KEY_REQUIRED is False

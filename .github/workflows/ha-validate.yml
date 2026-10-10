@@ -144,6 +144,19 @@ jobs:
               if not os.path.isfile(doc) or os.path.getsize(doc) < 200:
                   errors.append(f"missing or near-empty add-on doc: {doc}")
 
+          # The Changelog tab must describe the version being shipped. An
+          # "## Unreleased" section above it is fine (that is where a feature PR
+          # adds notes; the CI bump renames it to the next version).
+          import re
+          addon_ver = str(yaml.safe_load(open("homehoard/config.yaml"))["version"])
+          if os.path.isfile("homehoard/CHANGELOG.md"):
+              changelog = open("homehoard/CHANGELOG.md", encoding="utf-8").read()
+              if not re.search(rf"^## v?{re.escape(addon_ver)}\b", changelog, re.M):
+                  errors.append(
+                      f"homehoard/CHANGELOG.md has no '## {addon_ver}' heading for the "
+                      f"version in homehoard/config.yaml — add one (or rename "
+                      f"'## Unreleased') so the add-on's Changelog tab matches the release")
+
           # The My Home Assistant buttons must point at the repo that hosts this
           # code, or one click sends users to someone else's repository.
           from urllib.parse import quote

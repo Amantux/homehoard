@@ -51,6 +51,9 @@ def test_all_miss_returns_none(app, monkeypatch):
 def test_product_db_parses(app, monkeypatch):
     with app.app_context():
         app.config["BARCODE_LOOKUP"] = True
+        # The default BARCODE_DB_URL is a hostname; the SSRF guard would resolve
+        # it, and this test has no network. The guard has its own tests.
+        monkeypatch.setattr(barcode, "url_is_safe", lambda u: True)
 
         class _R:
             def raise_for_status(self): pass

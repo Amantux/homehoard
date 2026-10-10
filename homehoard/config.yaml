@@ -40,6 +40,7 @@ options:
   allow_registration: false
   enable_mcp: true
   mcp_expose_external: false
+  mcp_require_key: false
   ollama_search_key: ""
   barcode_lookup: false
   barcode_db_key: ""
@@ -59,6 +60,10 @@ schema:
   # mint an MCP-scoped key — then map port 7766 in the Network tab. Off = MCP is
   # internal-only (HA Assist), unchanged.
   mcp_expose_external: bool
+  # When on, every MCP request needs an mcp/full API key even on the Home
+  # Assistant network. Default off keeps today's behaviour. Discovery already
+  # hands the integration a key, so it keeps working.
+  mcp_require_key: bool
   # Optional: an Ollama API key (ollama.com) to look items up online and generate
   # a short searchable description. Blank = the feature is off.
   ollama_search_key: password?

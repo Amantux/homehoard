@@ -9,7 +9,7 @@ quantity) — the data we actually hold; no depreciation/replacement is invented
 """
 import csv
 import io
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from flask import Blueprint, Response, jsonify
 from sqlalchemy.orm import selectinload
@@ -18,6 +18,8 @@ from ..auth import current_group, login_required
 from ..extensions import db
 from ..models import Item
 from ..schemas.serializers import iso
+from ..schemas.serializers import num
+from ..timeutil import as_utc, utcnow
 from ..services.csv_io import _csv_safe
 from ..services import money
 from ..services import vault
@@ -37,9 +39,9 @@ def _warranty_status(i, now) -> str:
         return "lifetime"
     if not i.warranty_expires:
         return "none"
-    if i.warranty_expires < now:
+    if as_utc(i.warranty_expires) < now:
         return "expired"
-    if i.warranty_expires < now + timedelta(days=_EXPIRING_SOON_DAYS):
+    if as_utc(i.warranty_expires) < now + timedelta(days=_EXPIRING_SOON_DAYS):
         return "expiring"
     return "active"
 
@@ -65,7 +67,7 @@ def _row(i, now):
         "purchaseFrom": i.purchase_from or "",
         "purchaseDate": iso(i.purchase_date),
         "purchasePrice": money.out(i.purchase_price) or 0,
-        "quantity": i.quantity or 1,
+        "quantity": num(i.quantity) or 1,
         "lineValue": _value(i),
         "insured": bool(i.insured),
         "warrantyStatus": _warranty_status(i, now),
@@ -77,7 +79,7 @@ def _row(i, now):
 @login_required
 def inventory_report():
     group = current_group()
-    now = datetime.utcnow()  # naive UTC, matches how dates are stored
+    now = utcnow()
     items = _items(group.id)
     rows = [_row(i, now) for i in items]
 
@@ -120,7 +122,7 @@ def inventory_report():
 @bp.get("/reports/inventory.csv")
 @login_required
 def inventory_report_csv():
-    now = datetime.utcnow()  # naive UTC, matches how dates are stored
+    now = utcnow()
     rows = [_row(i, now) for i in _items(current_group().id)]
     buf = io.StringIO()
     w = csv.writer(buf)

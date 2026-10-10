@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.1.50
 
 - **New: a vault for items you'd rather nobody saw.** Mark an item hidden and it
   disappears from every list, search, count, price total, export, HA sensor,

@@ -73,3 +73,25 @@ def test_checkout_overdue_flag(auth_client):
 
 def test_checkout_requires_auth(client):
     assert client.get("/api/v1/checkouts").status_code == 401
+
+
+def test_checkouts_overdue_with_aware_now(auth_client):
+    """The list compares naive stored dues against an aware now (as_utc), and
+    emits checkedOutAt/checkoutDue with an explicit +00:00 offset."""
+    import re
+    iso_utc = re.compile(r"^\d{4}-\d{2}-\d{2}T[\d:.]+\+00:00$")
+    late = auth_client.post("/api/v1/items", json={"name": "Late"}).get_json()
+    fine = auth_client.post("/api/v1/items", json={"name": "Fine"}).get_json()
+    zulu = auth_client.post("/api/v1/items", json={"name": "Zulu"}).get_json()
+    auth_client.post(f"/api/v1/items/{late['id']}/checkout", json={"due": "2000-01-01"})
+    auth_client.post(f"/api/v1/items/{fine['id']}/checkout", json={"due": "2999-01-01"})
+    auth_client.post(f"/api/v1/items/{zulu['id']}/checkout",
+                     json={"due": "2000-01-01T00:00:00Z"})
+
+    rows = {r["name"]: r for r in auth_client.get("/api/v1/checkouts").get_json()["items"]}
+    assert rows["Late"]["overdue"] is True
+    assert rows["Zulu"]["overdue"] is True
+    assert rows["Fine"]["overdue"] is False
+    for r in rows.values():
+        assert iso_utc.match(r["checkedOutAt"]), r["checkedOutAt"]
+        assert iso_utc.match(r["checkoutDue"]), r["checkoutDue"]

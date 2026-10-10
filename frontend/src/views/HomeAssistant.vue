@@ -3,9 +3,12 @@ import { ref, computed, onMounted } from 'vue'
 import { api } from '../api'
 import { shortDate } from '../format'
 import { useUI } from '../stores/ui'
+import { useConfirm } from '../composables/useConfirm'
 import EmptyState from '../components/EmptyState.vue'
+import { isIngress } from '../utils/bugReport'
 
 const ui = useUI()
+const confirm = useConfirm()
 
 const tokens = ref([])
 const loading = ref(true)
@@ -30,11 +33,34 @@ async function load() {
     loading.value = false
   }
 }
-const isOwner = ref(true)
-onMounted(async () => {
-  try { isOwner.value = (await api.get('/me')).isOwner } catch (e) { /* default owner */ }
+// Fail closed: until /me confirms ownership, no owner controls are shown. A /me
+// failure is surfaced as an error, not mistaken for "you're not the owner".
+const isOwner = ref(false)
+const meError = ref('')
+async function init() {
+  meError.value = ''
+  loading.value = true
+  try {
+    isOwner.value = !!(await api.get('/me')).isOwner
+  } catch (e) {
+    meError.value = e.message || 'Could not check your permissions.'
+    loading.value = false
+    return
+  }
   if (isOwner.value) load()
   else loading.value = false
+}
+onMounted(init)
+
+// Open mode published outside ingress = anyone who can reach the port is the owner.
+// /diagnostics may 403 for non-owners; that just means no banner.
+const openExposure = ref(false)
+onMounted(async () => {
+  try {
+    openExposure.value = !!(await api.get('/diagnostics')).authDisabled && !isIngress()
+  } catch {
+    openExposure.value = false
+  }
 })
 
 async function create() {
@@ -59,7 +85,7 @@ async function create() {
 }
 
 async function revoke(t) {
-  if (!confirm(`Revoke the token “${t.name}”? Anything using it will stop working immediately.`))
+  if (!await confirm({ title: `Revoke the token “${t.name}”?`, body: 'Anything using it will stop working immediately.', confirmLabel: 'Revoke', danger: true }))
     return
   try {
     await api.del('/tokens/' + t.id)
@@ -98,6 +124,12 @@ const mcpUrl = computed(() => {
     stuff and check things in and out.
   </p>
 
+  <div v-if="openExposure" class="card info-card warn" role="alert" style="margin-bottom:16px">
+    <strong>Login is disabled and this page isn't behind Home Assistant ingress.</strong>
+    Anyone who can reach this port is the household owner. Turn <code>disable_auth</code> off,
+    or stop publishing the port.
+  </div>
+
   <!-- Add-on users: zero-config reassurance -->
   <div class="card info-card" style="margin-bottom:16px">
     <strong>🎉 Running the HomeHoard add-on?</strong>
@@ -134,7 +166,15 @@ const mcpUrl = computed(() => {
   </div>
 
   <!-- API tokens -->
-  <div v-if="!isOwner" class="card">
+  <div v-if="meError" class="card">
+    <h2 style="margin-top:0">API tokens</h2>
+    <div class="load-error">
+      <span>Couldn’t check your permissions — {{ meError }}</span>
+      <button class="secondary sm" @click="init">Retry</button>
+    </div>
+  </div>
+
+  <div v-else-if="!isOwner" class="card">
     <h2 style="margin-top:0">API tokens</h2>
     <p class="muted" style="margin:0">Only the household owner can manage API keys.</p>
   </div>
@@ -184,7 +224,7 @@ const mcpUrl = computed(() => {
           <option value="read">Read only</option>
         </select>
       </label>
-      <button :disabled="creating" @click="create">Generate token</button>
+      <button :disabled="creating" @click="create">{{ creating ? 'Generating…' : 'Generate token' }}</button>
     </div>
 
     <p v-if="newScope === 'debug'" class="muted" style="margin:0 0 12px">
@@ -228,6 +268,7 @@ const mcpUrl = computed(() => {
 
 <style scoped>
 .info-card { border-left: 4px solid var(--accent); background: var(--accent-soft); }
+.info-card.warn { border-left-color: var(--danger); background: var(--danger-soft); }
 .steps { margin: 8px 0 12px; padding-left: 20px; }
 .steps li { margin-bottom: 4px; }
 .code-row {

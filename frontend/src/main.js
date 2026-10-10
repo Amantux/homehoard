@@ -4,7 +4,11 @@ import App from './App.vue'
 import router from './router'
 import { useUI } from './stores/ui'
 import { installErrorLog } from './utils/errorLog'
+import { migrateLegacyKeys } from './storageKeys'
 import './style.css'
+
+// Rename pre-HomeHoard storage keys before anything reads storage.
+migrateLegacyKeys()
 
 // Capture client-side errors early so a later bug report can include them.
 installErrorLog()

@@ -1,13 +1,15 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import { api } from '../api'
+import { api, ApiError } from '../api'
 import { findDuplicates } from '../composables/useDuplicateCheck'
 import { useUI } from '../stores/ui'
 import Combobox from './Combobox.vue'
 import PhotoCapture from './PhotoCapture.vue'
 import { indexById, pathString } from '../locationTree'
 import { parseQuickAdd } from '../quickParse'
+import BaseModal from './BaseModal.vue'
+import Field from './Field.vue'
 
 const props = defineProps({ initialKind: { type: String, default: 'item' } })
 const emit = defineEmits(['close', 'created'])
@@ -17,6 +19,7 @@ const ui = useUI()
 const kind = ref(props.initialKind)
 const smart = ref('')
 const name = ref('')
+const fieldErrors = ref({})
 const description = ref('')
 const quantity = ref(1)
 // The persona run's biggest measured friction: stocking 8 consumables cost 8
@@ -61,6 +64,7 @@ async function loadPlaces() {
 }
 onMounted(loadPlaces)
 watch(() => props.initialKind, (k) => (kind.value = k))
+watch(kind, () => (fieldErrors.value = {}))  // an item's field error isn't a bin's
 
 // An item placed in a bin inherits that bin's location, so mirror it in the UI.
 watch(binId, (id) => {
@@ -178,9 +182,12 @@ function resetPerItem() {
 }
 
 // stay = keep the modal open for the next item (bin/location stay selected).
+const submitStay = ref(false) // which submit button is pending
 async function submit(stay = false) {
   if (!name.value || busy.value) return
   busy.value = true
+  submitStay.value = stay
+  fieldErrors.value = {}
   try {
     let created
     if (kind.value === 'item') {
@@ -239,7 +246,11 @@ async function submit(stay = false) {
       emit('close')
     }
   } catch (e) {
-    ui.error(e.message)
+    // Reference usage of ApiError.fields: field messages render inline under
+    // the input; anything else (or a non-API failure) falls back to a toast.
+    const fields = e instanceof ApiError ? e.fields : {}
+    if (Object.keys(fields).length) fieldErrors.value = fields
+    else ui.error(e.message)
   } finally {
     busy.value = false
   }
@@ -247,11 +258,10 @@ async function submit(stay = false) {
 </script>
 
 <template>
-  <div class="modal-backdrop" @click.self="emit('close')">
-    <div class="card modal">
+  <BaseModal @close="emit('close')" v-slot="{ titleId }">
       <div class="modal-head">
-        <h2>Create</h2>
-        <button class="ghost icon-btn" @click="emit('close')">✕</button>
+        <h2 :id="titleId">Create</h2>
+        <button aria-label="Close" class="ghost icon-btn" @click="emit('close')">✕</button>
       </div>
 
       <div class="row wrap type-picker" style="gap:8px;margin-bottom:16px">
@@ -273,9 +283,10 @@ async function submit(stay = false) {
         </p>
       </template>
 
-      <label class="field"><span>Name</span>
-        <input ref="nameInput" v-model="name" autofocus placeholder="e.g. Cordless Drill"
-               @keyup.enter="submit(true)" /></label>
+      <Field label="Name" :error="fieldErrors.name">
+        <input aria-label="Name" ref="nameInput" v-model="name" autofocus placeholder="e.g. Cordless Drill"
+               :aria-invalid="fieldErrors.name ? 'true' : undefined"
+               @keyup.enter="submit(true)" /></Field>
       <label class="field"><span>Description</span>
         <textarea v-model="description" rows="2"></textarea></label>
 
@@ -367,12 +378,11 @@ async function submit(stay = false) {
         <span class="muted" style="font-size:0.85rem">{{ sessionCount ? sessionCount + ' added' : '' }}</span>
         <div class="row" style="gap:8px">
           <button class="secondary" @click="emit('close')">{{ sessionCount ? 'Done' : 'Cancel' }}</button>
-          <button class="secondary" :disabled="!name || busy" @click="submit(true)">Save &amp; add another</button>
-          <button :disabled="!name || busy" @click="submit(false)">Create {{ kind }}</button>
+          <button class="secondary" :disabled="!name || busy" @click="submit(true)">{{ busy && submitStay ? 'Saving…' : 'Save &amp; add another' }}</button>
+          <button :disabled="!name || busy" @click="submit(false)">{{ busy && !submitStay ? 'Creating…' : 'Create ' + kind }}</button>
         </div>
       </div>
-    </div>
-  </div>
+  </BaseModal>
 
   <PhotoCapture v-if="showCapture" @captured="onCaptured" @close="showCapture = false" />
 </template>

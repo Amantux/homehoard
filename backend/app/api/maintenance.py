@@ -6,7 +6,9 @@ from flask import Blueprint, request, jsonify, abort
 from ..extensions import db
 from ..models import Item, MaintenanceEntry
 from ..auth import login_required, current_group
+from ._scoping import get_owned_or_404
 from ..schemas.serializers import maintenance_out
+from ..timeutil import as_utc, utcnow
 from ..services import money
 from ..services import vault
 
@@ -53,11 +55,9 @@ def _spawn_next(entry: MaintenanceEntry) -> None:
 
 
 def _get_item(item_id) -> Item:
-    item = db.session.get(Item, item_id)
-    if item is not None and not vault.readable(item):
-        item = None  # hidden: indistinguishable from absent
-    if not item or item.group_id != current_group().id:
-        abort(404)
+    item = get_owned_or_404(Item, item_id)
+    if not vault.readable(item):
+        abort(404)  # hidden: indistinguishable from absent
     return item
 
 
@@ -72,7 +72,7 @@ def all_maintenance():
         .all()
     )
     status = request.args.get("status")  # scheduled | completed | both
-    now = datetime.utcnow()
+    now = utcnow()
     out = []
     for e in entries:
         is_completed = e.completed_date is not None
@@ -84,7 +84,7 @@ def all_maintenance():
         data["itemName"] = e.item.name if e.item else None
         data["status"] = "completed" if is_completed else "scheduled"
         data["overdue"] = bool(
-            not is_completed and e.scheduled_date and e.scheduled_date < now
+            not is_completed and e.scheduled_date and as_utc(e.scheduled_date) < now
         )
         out.append(data)
     out.sort(
@@ -150,7 +150,8 @@ def create_entry(item_id):
 def update_entry(item_id, entry_id):
     _get_item(item_id)
     entry = db.session.get(MaintenanceEntry, entry_id)
-    if not entry or entry.item_id != item_id:
+    if (not entry or entry.item_id != item_id
+            or entry.item.group_id != current_group().id):  # no group_id column; scope via item
         abort(404)
     data = request.get_json(force=True) or {}
     if "name" in data:
@@ -179,7 +180,8 @@ def update_entry(item_id, entry_id):
 def delete_entry(item_id, entry_id):
     _get_item(item_id)
     entry = db.session.get(MaintenanceEntry, entry_id)
-    if not entry or entry.item_id != item_id:
+    if (not entry or entry.item_id != item_id
+            or entry.item.group_id != current_group().id):  # no group_id column; scope via item
         abort(404)
     db.session.delete(entry)
     db.session.commit()

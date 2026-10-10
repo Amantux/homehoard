@@ -24,6 +24,13 @@ export function money(v) {
   )
 }
 
+// Date-only fields (purchaseDate, warrantyExpires, due dates…) arrive as
+// UTC midnight with an explicit +00:00. Formatting that instant in the
+// viewer's zone shows the previous day west of UTC, so take the calendar
+// date and format it as a LOCAL date instead.
 export function shortDate(v) {
-  return v ? new Date(v).toLocaleDateString() : '—'
+  if (!v) return '—'
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v))
+  const d = m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date(v)
+  return d.toLocaleDateString()
 }

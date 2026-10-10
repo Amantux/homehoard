@@ -6,7 +6,10 @@ from flask import Blueprint, request, jsonify, abort
 from ..extensions import db
 from ..models import Item, CheckoutEntry
 from ..auth import login_required, current_group
-from ..schemas.serializers import item_out, item_summary, checkout_out
+from ._scoping import get_owned_or_404
+from ._validation import list_limit
+from ..schemas.serializers import item_out, item_summary, checkout_out, iso
+from ..timeutil import as_utc, utcnow
 from ..services import vault
 
 bp = Blueprint("checkout", __name__)
@@ -22,11 +25,9 @@ def _parse_dt(value):
 
 
 def _get_item(item_id) -> Item:
-    item = db.session.get(Item, item_id)
-    if item is not None and not vault.readable(item):
-        item = None  # hidden: indistinguishable from absent
-    if not item or item.group_id != current_group().id:
-        abort(404)
+    item = get_owned_or_404(Item, item_id)
+    if not vault.readable(item):
+        abort(404)  # hidden: indistinguishable from absent
     return item
 
 
@@ -40,7 +41,7 @@ def check_out(item_id):
     data = request.get_json(silent=True) or {}
     item.checked_out = True
     item.checked_out_to = (data.get("person") or "").strip()
-    item.checked_out_at = datetime.utcnow()
+    item.checked_out_at = utcnow()
     item.checkout_due = _parse_dt(data.get("due"))
     db.session.add(
         CheckoutEntry(
@@ -126,20 +127,24 @@ def history(item_id):
 @bp.get("/checkouts")
 @login_required
 def all_checked_out():
-    """Every item currently checked out — 'who has what'."""
+    """Every item currently checked out — 'who has what'.
+
+    ``?limit=`` caps ``items`` (1..1000; omitted = all, non-integer ignored);
+    ``total`` is the length of ``items`` as before."""
     items = (
         vault.visible(db.session.query(Item))
         .filter_by(group_id=current_group().id, checked_out=True)
         .order_by(Item.checked_out_at.asc())
+        .limit(list_limit())
         .all()
     )
-    now = datetime.utcnow()
+    now = utcnow()
     out = []
     for i in items:
         data = item_summary(i)
         data["checkedOutTo"] = i.checked_out_to
-        data["checkedOutAt"] = i.checked_out_at.isoformat() if i.checked_out_at else None
-        data["checkoutDue"] = i.checkout_due.isoformat() if i.checkout_due else None
-        data["overdue"] = bool(i.checkout_due and i.checkout_due < now)
+        data["checkedOutAt"] = iso(i.checked_out_at)
+        data["checkoutDue"] = iso(i.checkout_due)
+        data["overdue"] = bool(i.checkout_due and as_utc(i.checkout_due) < now)
         out.append(data)
     return jsonify({"items": out, "total": len(out)})

@@ -7,8 +7,12 @@ HBOX_BARCODE_LOOKUP is set. Returns ``{name, brand, barcode, source}`` or None.
 """
 import logging
 import re
+from urllib.parse import quote, urlparse
 
 from flask import current_app
+
+from ..logsafe import scrub
+from .notify import url_is_safe
 
 _LOGGER = logging.getLogger("homehoard.barcode")
 
@@ -18,6 +22,15 @@ def _from_product_db(code):
 
     base = current_app.config.get("BARCODE_DB_URL")
     if not base:
+        return None
+    # SSRF guard at the point of use: BARCODE_DB_URL also arrives via env /
+    # add-on options, which bypass any API-side validation.
+    if not url_is_safe(base):
+        try:
+            host = urlparse(base).hostname or "<no host>"
+        except ValueError:  # url_is_safe already rejected it; keep degrading
+            host = "<unparseable>"
+        _LOGGER.warning("barcode db url blocked: %s", scrub(host))
         return None
     key = current_app.config.get("BARCODE_DB_KEY")
     headers = {"user_key": key, "key_type": "3scale"} if key else {}
@@ -41,7 +54,7 @@ def _from_product_db(code):
 def _from_off(code):
     import httpx
 
-    url = f"https://world.openfoodfacts.org/api/v2/product/{code}.json"
+    url = f"https://world.openfoodfacts.org/api/v2/product/{quote(code, safe='')}.json"
     try:
         r = httpx.get(url, timeout=6, headers={"User-Agent": "HomeHoard/1.0"})
         r.raise_for_status()

@@ -91,8 +91,10 @@ def create_app(config_object=Config):
     for warning in settings.warnings:
         _LOGGER.warning("Configuration: %s", warning)
     _db_uri = app.config["SQLALCHEMY_DATABASE_URI"]
-    _LOGGER.info("HomeHoard storage backend: %s",
-                 "sqlite" if _db_uri.startswith("sqlite") else _db_uri.split("://", 1)[0])
+    # WARNING, not INFO: support asks for this line first, and it must survive
+    # `log_level: warning`.
+    _LOGGER.warning("HomeHoard storage backend: %s",
+                    "sqlite" if _db_uri.startswith("sqlite") else _db_uri.split("://", 1)[0])
 
     # Resolve the signing key BEFORE the fail-closed check below: an operator
     # value wins, otherwise reuse (or generate once and persist) a key under
@@ -140,6 +142,8 @@ def create_app(config_object=Config):
     _init_schema(app)
 
     _register_request_context(app)
+    from .auth import enforce_read_only
+    app.before_request(enforce_read_only)  # after request-id: a 403 still gets an id
     _register_blueprints(app)
     _register_spa(app)
     _register_errors(app)
@@ -516,7 +520,21 @@ def _register_errors(app):
         from werkzeug.exceptions import HTTPException
 
         if isinstance(e, HTTPException):
-            return e  # 404/413/429 etc. keep their own handlers and status
+            # 404/413/429 have their own handlers above. Any other HTTP error
+            # (400/405/422 …) under /api/ gets JSON instead of Werkzeug's HTML
+            # page; e.description is the curated abort() text, never a traceback.
+            if request.path.startswith("/api/") and e.code not in (404, 413, 429):
+                body = {"error": e.description, "requestId": request_id_var.get()}
+                if getattr(e, "fields", None):  # abort_fields() (api/_validation.py)
+                    body["fields"] = e.fields
+                resp = jsonify(body)
+                # Keep the exception's own headers (405's Allow) but not its
+                # text/html Content-Type.
+                for k, v in e.get_headers():
+                    if k.lower() != "content-type":
+                        resp.headers[k] = v
+                return resp, e.code
+            return e
 
         rid = request_id_var.get()
         _LOGGER.exception("unhandled error [%s] %s %s", rid,

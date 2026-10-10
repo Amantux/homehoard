@@ -15,6 +15,7 @@ from ...extensions import db
 from ...models import CheckoutEntry, Item, Label, Location
 from .base import AIProvider
 from .. import vault
+from ...timeutil import as_utc, iso_utc, utcnow
 
 SYSTEM = (
     "You are the HomeHoard assistant, a practical home-inventory helper. Help the "
@@ -226,15 +227,16 @@ def _find_label(gid, name_or_id):
 
 def _item_brief(gid, it) -> dict:
     from ...api.lookup import item_where  # local: api imports services
+    from ...schemas.serializers import num  # local: Decimal would break json.dumps
     return {
         "id": it.id, "name": it.name, "description": it.description or "",
-        "quantity": it.quantity, "manufacturer": it.manufacturer or "",
+        "quantity": num(it.quantity), "manufacturer": it.manufacturer or "",
         "modelNumber": it.model_number or "",
         "labels": [lb.name for lb in it.labels],
-        "placements": [{"quantity": h.quantity,
+        "placements": [{"quantity": num(h.quantity),
                         "location": (h.location.name if h.location else None),
                         "bin": (h.bin.name if h.bin else None)} for h in it.holdings]
-        or [{"quantity": it.quantity, "where": item_where(it)}],
+        or [{"quantity": num(it.quantity), "where": item_where(it)}],
     }
 
 
@@ -321,13 +323,13 @@ def execute_tool(gid: str, name: str, args: dict):
 
     if name == "list_checkouts":
         from .. import vault  # local: the sibling branches shadow the module name
-        now = datetime.utcnow()
+        now = utcnow()
         rows = (vault.visible(db.session.query(Item))
                 .filter(Item.group_id == gid, Item.checked_out.is_(True))
                 .order_by(Item.checked_out_at.asc()).all())
         return [{"id": i.id, "name": i.name, "to": i.checked_out_to or "",
-                 "due": i.checkout_due.isoformat() if i.checkout_due else None,
-                 "overdue": bool(i.checkout_due and i.checkout_due < now)}
+                 "due": iso_utc(i.checkout_due),
+                 "overdue": bool(i.checkout_due and as_utc(i.checkout_due) < now)}
                 for i in rows]
 
     if name == "check_out_item":
@@ -340,7 +342,7 @@ def execute_tool(gid: str, name: str, args: dict):
         person = (args.get("person") or "").strip()
         it.checked_out = True
         it.checked_out_to = person
-        it.checked_out_at = datetime.utcnow()
+        it.checked_out_at = utcnow()
         it.checkout_due = _parse_dt(args.get("due"))
         db.session.add(CheckoutEntry(action="out", person=person,
                                      due=it.checkout_due, item_id=it.id))
@@ -382,8 +384,9 @@ def execute_tool(gid: str, name: str, args: dict):
         if source.id == keep.id:
             return {"error": "cannot merge an item into itself"}
         _merge_items(keep, source)
+        from ...schemas.serializers import num  # local: Decimal breaks json.dumps
         return {"ok": True, "kept": keep.name, "merged": source.name,
-                "quantity": keep.quantity}
+                "quantity": num(keep.quantity)}
 
     return {"error": f"unknown tool {name}"}
 

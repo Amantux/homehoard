@@ -2,11 +2,13 @@
 import { computed, ref } from 'vue'
 import { api } from '../api'
 import { useUI } from '../stores/ui'
+import { useConfirm } from '../composables/useConfirm'
 import EmptyState from '../components/EmptyState.vue'
 import ErrorState from '../components/ErrorState.vue'
 import { useLoader } from '../components/useLoader'
 
 const ui = useUI()
+const confirm = useConfirm()
 const items = ref([])
 const merging = ref('')
 
@@ -35,10 +37,10 @@ function where(i) {
 async function mergeInto(keep, source) {
   // Destructive: the confirm names both objects and says what merging means —
   // this is the ONE place a dialog belongs, not on every create.
-  if (!confirm(
+  if (!await confirm({ confirmLabel: 'Merge', danger: true, title: `Merge “${source.name}” into the one in ${where(keep)}?`, body:
     `Merge the “${source.name}” in ${where(source)} (qty ${source.quantity}) into ` +
     `the one in ${where(keep)}? Quantities and placements combine, labels and ` +
-    `photos carry over, and the ${where(source)} entry is removed.`)) return
+    `photos carry over, and the ${where(source)} entry is removed.` })) return
   merging.value = source.id
   try {
     const merged = await api.post(`/items/${keep.id}/merge`, { sourceId: source.id })

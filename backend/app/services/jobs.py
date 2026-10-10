@@ -18,6 +18,7 @@ import logging
 from sqlalchemy.exc import IntegrityError
 
 from ..extensions import db
+from .ai.base import safe_upstream_detail
 from .metrics import Timer
 from ..models import Job, utcnow
 
@@ -110,7 +111,12 @@ def run_job(job: Job) -> None:
             job = db.session.get(Job, job.id)  # reattach after rollback
             if job:
                 job.status = "error"
-                job.error = str(exc)[:500]
+                # job.error is returned to clients (job_out). A JobError carries a
+                # curated message by construction; anything else is raw library
+                # text (a DB driver echoes its DSN), so it is redacted. The full
+                # traceback is in the log above.
+                job.error = (str(exc) if isinstance(exc, JobError)
+                             else safe_upstream_detail(exc))[:500]
         db.session.commit()
 
 

@@ -13,6 +13,7 @@ from .holdings import ensure_holding
 from ..models import Item, Label, Location, ItemField
 from . import money
 from . import vault
+from ..schemas.serializers import num
 
 HEADERS = [
     "HB.import_ref",
@@ -41,15 +42,12 @@ HEADERS = [
 
 
 def _num_or(value, default):
-    """A CSV cell as a float, or the default — a junk quantity should not 500
-    the whole import, and quantity is Float so 2.5 must keep its fraction (the
-    old int(float()) dropped it)."""
-    try:
-        v = float(value)
-    except (TypeError, ValueError):
-        return default
-    import math
-    return v if math.isfinite(v) and v >= 0 else default
+    """A CSV cell as an exact Decimal quantity, or the default — a junk quantity
+    (or one the Numeric(12, 3) column can't hold) should not 500 the whole
+    import, and 2.5 must keep its fraction (the old int(float()) dropped it)."""
+    from ..utils_validation import to_quantity
+    v = to_quantity(value)
+    return v if v is not None and v >= 0 else default
 
 
 def _dt(value):
@@ -57,7 +55,8 @@ def _dt(value):
         return None
     for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%Y-%m-%dT%H:%M:%S"):
         try:
-            return datetime.strptime(value.strip(), fmt)
+            # Naive on purpose: storage is naive UTC (see app/timeutil.py).
+            return datetime.strptime(value.strip(), fmt)  # noqa: DTZ007
         except ValueError:
             continue
     try:
@@ -115,7 +114,7 @@ def export_items(group_id) -> str:
             i.import_ref,
             i.location.name if i.location else "",
             ";".join(lbl.name for lbl in i.labels),
-            i.quantity,
+            num(i.quantity),  # 2.5 / 3, not the Numeric's "2.500" / "3.000"
             i.name,
             i.description,
             i.insured,

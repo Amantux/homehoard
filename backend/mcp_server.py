@@ -805,17 +805,19 @@ def _is_message_path(scope) -> bool:
     method == "POST" meant every rule below saw an empty tool list and allowed
     the request through.
     """
+    # Substring match is intentionally over-inclusive (safe direction: more requests hit the guard).
     return "/messages" in scope.get("path", "")
 
 
-def _tool_names(scope, body: bytes) -> list[str]:
-    """Tool names in a JSON-RPC body, or [] if this is not a message request."""
+def _tool_names(scope, body: bytes) -> list[str] | None:
+    """Tool names in a JSON-RPC body, [] if this is not a message request, or
+    None if the body is not parseable JSON (the guard denies that)."""
     if not _is_message_path(scope):
         return []
     try:
-        parsed = json.loads(body or b"{}")
-    except Exception:  # noqa: BLE001 — let the MCP layer return its own parse error
-        return []
+        parsed = json.loads(body.strip() or b"{}")  # whitespace-only == empty
+    except Exception:  # noqa: BLE001 — unparseable: the guard must not wave it through
+        return None
     calls = parsed if isinstance(parsed, list) else [parsed]  # JSON-RPC may batch
     out = []
     for m in calls:
@@ -853,6 +855,7 @@ def _guard(asgi_app, server_token: str):
     Always wrapping also means minting a key takes effect without a restart.
     """
     external = _expose_external()
+    require_key = _require_key()
 
     async def wrapper(scope, receive, send):
         if scope["type"] != "http":
@@ -868,6 +871,16 @@ def _guard(asgi_app, server_token: str):
             body, messages = await _buffer_body(receive)
             receive = _replay(messages)
         names = _tool_names(scope, body)
+        if _is_message_path(scope) and body.strip() and names is None:
+            # An unparseable body yields no tool names, which would skip every
+            # scope check below and forward it to FastMCP. Fail closed — but
+            # authenticate first (same rule as the domain-tool branch), so an
+            # unauthenticated client cannot fill the audit ring with garbage.
+            if ((external or require_key or server_token)
+                    and not _authorized(header, server_token)):
+                return await _deny(send, 401, b"unauthorized")
+            _audit([], raw, "denied")
+            return await _deny(send, 400, b"malformed JSON-RPC body")
         wants_debug = any(n in DEBUG_TOOLS for n in names)
         wants_domain = any(n and n not in DEBUG_TOOLS for n in names)
 
@@ -889,8 +902,9 @@ def _guard(asgi_app, server_token: str):
                 _audit(names, raw, "denied")
                 return await _deny(
                     send, 403, b"a debug key may only call the debug tools")
-            # AUTHENTICATION depends on how the port is exposed.
-            if external:
+            # AUTHENTICATION depends on how the port is exposed — or on the
+            # operator opting in to keys on the HA network too (mcp_require_key).
+            if external or require_key:
                 if not _authorized(header, server_token):
                     return await _deny(send, 401, b"unauthorized")
             elif server_token and not _authorized(header, server_token):
@@ -938,6 +952,10 @@ def _audit(names, raw: str, outcome: str) -> None:
 
 def _expose_external() -> bool:
     return bool(_SETTINGS.MCP_EXPOSE_EXTERNAL)
+
+
+def _require_key() -> bool:
+    return bool(_SETTINGS.MCP_KEY_REQUIRED)
 
 
 if __name__ == "__main__":
@@ -989,6 +1007,23 @@ if __name__ == "__main__":
             sys.exit(1)
         print("homehoard-mcp: external exposure ON — every request must carry a valid "
               "MCP/Full API key.", file=sys.stderr)
+    elif _require_key():
+        # Not fail-closed like external exposure: the endpoint is internal and
+        # already denies every keyless request, so it is never open — but say
+        # loudly why every client is getting 401.
+        try:
+            has_key = _mcp_key_exists()
+        except Exception as exc:  # noqa: BLE001
+            print(f"ERROR: homehoard-mcp: could not verify an MCP key exists: {exc}.",
+                  file=sys.stderr)
+            has_key = True  # the specific failure is already logged above
+        if not has_key:
+            print("ERROR: mcp_require_key is on but no MCP-scoped API key exists, so "
+                  "every MCP request will be refused. Mint one in the app (Tools -> "
+                  "API tokens, scope 'MCP') and give it to your MCP clients.",
+                  file=sys.stderr)
+        print("homehoard-mcp: mcp_require_key ON — every request must carry a valid "
+              "MCP/Full API key, on every network.", file=sys.stderr)
     elif not server_token:
         print("NOTE: the MCP endpoint is open to the Home Assistant network so Assist "
               "works without setup. If you publish port %s in the add-on's Network tab "
