@@ -26,6 +26,18 @@
 - Behind the scenes: the secret scanner's test allowlist is anchored to exact
   values, CI tests the integration on Home Assistant 2024.11.0 and the latest
   release, and backend dependencies are pinned.
+- **Upgrades are safer.** Before migrating an existing database HomeHoard saves
+  a copy to `/data/backups/pre-upgrade-*.db` (the last two are kept) and refuses
+  to upgrade if that copy can't be written. Stopping the add-on during start-up
+  no longer kills it mid-migration. Home Assistant backups now stop HomeHoard
+  for a few seconds so the backup holds a consistent copy of your database —
+  expect a brief restart during nightly backups.
+- Fixed: installing on PostgreSQL no longer fails during database setup with
+  "default expression is of type integer". CI now boots a fresh install against
+  a real PostgreSQL on every change.
+- If you run the MCP server outside the add-on with your own API key as its
+  token, keyed tool calls are now rejected; the server says so at start-up.
+  Leave the token unset to use the integration token.
 
 ## 1.1.51
 
