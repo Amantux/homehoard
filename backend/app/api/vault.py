@@ -53,7 +53,9 @@ def set_passphrase():
     if vault.configured(group):
         current = (data.get("currentPhrase") or "").strip()
         if not vault.check_passphrase(group, current):
-            return jsonify({"error": "current passphrase is incorrect"}), 401
+            # 403, not 401: a wrong vault phrase is a refused action, not a
+            # dead session. The SPA treats every 401 as "signed out".
+            return jsonify({"error": "current passphrase is incorrect"}), 403
 
     vault.set_passphrase(group, phrase)
     db.session.commit()
@@ -74,7 +76,7 @@ def unlock():
     if not vault.unlock(group, current_user(), phrase):
         # Deliberately the same message whatever went wrong, and the attempted
         # value is never echoed or logged.
-        return jsonify({"error": "incorrect passphrase"}), 401
+        return jsonify({"error": "incorrect passphrase"}), 403
     return jsonify(vault.status(group))
 
 
