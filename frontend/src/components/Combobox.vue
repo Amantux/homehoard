@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, getCurrentInstance } from 'vue'
+import { ref, computed, getCurrentInstance, onBeforeUnmount } from 'vue'
 
 const uid = 'combo-' + getCurrentInstance().uid
 const listId = uid + '-list'
@@ -41,10 +41,12 @@ const canCreate = computed(() => {
 const rowCount = computed(() => filtered.value.length + (canCreate.value ? 1 : 0))
 
 function onFocus() {
+  clearTimeout(blurTimer)
   open.value = true
   typed.value = ''
   highlight.value = -1
-  emit('search', '')
+  // Only seed an empty list; refetching on every focus spams a remote parent.
+  if (!props.options.length) emit('search', '')
 }
 function onInput(e) {
   typed.value = e.target.value
@@ -58,9 +60,13 @@ function close() {
   highlight.value = -1
 }
 // Delay on focus-out so a mousedown on an option still registers first.
+// Stored so a quick refocus (or unmount) cancels the pending close.
+let blurTimer = null
 function onFocusOut() {
-  setTimeout(close, 120)
+  clearTimeout(blurTimer)
+  blurTimer = setTimeout(close, 120)
 }
+onBeforeUnmount(() => clearTimeout(blurTimer))
 function pick(option) {
   emit('update:modelValue', option.id)
   close()

@@ -2,6 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { api, apiUrl, getToken } from '../api'
 import { useUI } from '../stores/ui'
+import { shortDate } from '../format'
 
 const ui = useUI()
 const report = ref(null)
@@ -122,7 +123,7 @@ async function downloadCsv() {
             <td><strong>{{ it.name }}</strong></td>
             <td>{{ it.location || '—' }}</td>
             <td class="muted">{{ it.serialNumber || '—' }}</td>
-            <td>{{ it.purchaseDate ? it.purchaseDate.slice(0,10) : '—' }}</td>
+            <td>{{ shortDate(it.purchaseDate) }}</td>
             <td class="num">{{ it.quantity }}</td>
             <td class="num">{{ money(it.purchasePrice) }}</td>
             <td class="num">{{ money(it.lineValue) }}</td>
