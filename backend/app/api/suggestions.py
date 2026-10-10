@@ -3,7 +3,7 @@ accept (apply) or reject them. Accept/reject decisions become few-shot examples
 for later tooling runs. Group-scoped."""
 import json
 
-from flask import Blueprint, jsonify, request, abort
+from flask import Blueprint, jsonify, request
 from sqlalchemy.orm import selectinload
 
 from ..extensions import db
@@ -11,6 +11,7 @@ from ..models import AiSuggestion, Item
 from ..auth import login_required, current_group
 from ..services.tooling import apply_suggestion, reject_suggestion
 from ..timeutil import iso_utc
+from ._scoping import get_owned_or_404
 
 bp = Blueprint("suggestions", __name__)
 
@@ -41,10 +42,7 @@ def _member_names(ids, gid) -> dict:
 
 
 def _get(sugg_id) -> AiSuggestion:
-    s = db.session.get(AiSuggestion, sugg_id)
-    if not s or s.group_id != current_group().id:
-        abort(404)
-    return s
+    return get_owned_or_404(AiSuggestion, sugg_id)
 
 
 @bp.get("/suggestions")

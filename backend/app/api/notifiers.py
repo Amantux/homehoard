@@ -7,6 +7,7 @@ from ..schemas.serializers import notifier_out
 # The SSRF guard lives in the service so the API and the dispatcher share one
 # definition and both validate at the point of use.
 from ..services.notify import url_is_safe as _url_is_safe
+from ._scoping import get_owned_or_404
 
 bp = Blueprint("notifiers", __name__)
 
@@ -14,8 +15,8 @@ bp = Blueprint("notifiers", __name__)
 def _get(notifier_id):
     # Notifiers are per-user; scope by both user and group so a group peer can't
     # read/modify another member's notifier (which may hold a webhook secret).
-    n = db.session.get(Notifier, notifier_id)
-    if not n or n.group_id != current_group().id or n.user_id != current_user().id:
+    n = get_owned_or_404(Notifier, notifier_id)
+    if n.user_id != current_user().id:
         abort(404)
     return n
 
