@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { api, ApiError, NETWORK_ERROR_MESSAGE, setWriteHook } from './api.js'
+import { api, ApiError, NETWORK_ERROR_MESSAGE, setWriteHook, setUnauthorizedHook, streamPost } from './api.js'
 
 const res = (status, body, ct) => ({
   ok: status < 400, status, statusText: 'x',
@@ -64,5 +64,45 @@ describe('write hook', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(res(422, { error: 'bad' }, 'application/json')))
     await api.post('/items', {}).catch(() => {})
     expect(hook).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('401 handling', () => {
+  let removed
+  beforeEach(() => {
+    removed = []
+    vi.stubGlobal('window', { location: { pathname: '/' } })
+    vi.stubGlobal('location', { hash: '#/items/42?q=drill' })
+    vi.stubGlobal('localStorage', { getItem: () => 'tok', setItem() {}, removeItem: (k) => removed.push(k) })
+  })
+  afterEach(() => { setUnauthorizedHook(null); vi.unstubAllGlobals() })
+
+  it('401 -> clears the token, calls the hook once, and leaves the page where it is', async () => {
+    const hook = vi.fn()
+    setUnauthorizedHook(hook)
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(res(401, { error: 'Unauthorized' }, 'application/json')))
+    const e = await api.get('/items').catch((x) => x)
+    expect(e.status).toBe(401)
+    expect(hook).toHaveBeenCalledTimes(1)
+    expect(removed.length).toBe(1)
+    expect(location.hash).toBe('#/items/42?q=drill')
+  })
+
+  it('streaming 401 -> same: hook once, hash unchanged', async () => {
+    const hook = vi.fn()
+    setUnauthorizedHook(hook)
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ...res(401, { error: 'Unauthorized' }, 'application/json'), body: null }))
+    await streamPost('/chat', {}, () => {}).catch(() => {})
+    expect(hook).toHaveBeenCalledTimes(1)
+    expect(location.hash).toBe('#/items/42?q=drill')
+  })
+
+  it('non-401 errors do not end the session', async () => {
+    const hook = vi.fn()
+    setUnauthorizedHook(hook)
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(res(403, { error: 'Forbidden' }, 'application/json')))
+    await api.get('/items').catch(() => {})
+    expect(hook).not.toHaveBeenCalled()
+    expect(removed.length).toBe(0)
   })
 })

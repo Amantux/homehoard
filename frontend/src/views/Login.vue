@@ -1,10 +1,14 @@
 <script setup>
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useAuth } from '../stores/auth'
+import { useUI } from '../stores/ui'
+import { safeRedirect } from '../utils/safeRedirect'
 
 const auth = useAuth()
 const router = useRouter()
+const route = useRoute()
+const ui = useUI()
 const mode = ref('login')
 const email = ref('')
 const password = ref('')
@@ -18,7 +22,9 @@ async function submit() {
   try {
     if (mode.value === 'login') await auth.login(email.value, password.value)
     else await auth.register({ email: email.value, password: password.value, name: name.value })
-    router.push('/')
+    ui.sessionExpired = false
+    // ?redirect= comes from the URL, so it is untrusted: in-app paths only.
+    router.replace(safeRedirect(route.query.redirect))
   } catch (e) {
     error.value = e.message
   } finally {

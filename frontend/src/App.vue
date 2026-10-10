@@ -3,7 +3,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuth } from './stores/auth'
 import { useUI } from './stores/ui'
-import { api, setWriteHook } from './api'
+import { api, setWriteHook, setUnauthorizedHook } from './api'
 import Toasts from './components/Toasts.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
 import QuickCreate from './components/QuickCreate.vue'
@@ -32,6 +32,16 @@ const menuOpen = ref(false)
 watch(() => auth.isAuthed, (ok) => { if (ok) ui.startLiveSync(api); else ui.stopLiveSync() })
 // Any successful local write refreshes the open views immediately.
 setWriteHook(() => ui.dataChanged())
+// A 401 ends the session in place: no navigation, so the open view and any
+// unsaved input stay put; a banner offers sign-in and returns here afterwards.
+// expire() is false when there was no signed-in session (login form, bootstrap,
+// auth disabled), so those 401s raise no banner.
+setUnauthorizedHook(() => {
+  if (!auth.expire()) return
+  ui.stopLiveSync()
+  ui.sessionExpired = true
+})
+const showExpired = computed(() => ui.sessionExpired && !route.meta.public)
 
 // Close the drawer whenever the route changes (i.e. a nav link was tapped).
 watch(() => route.fullPath, () => { menuOpen.value = false })
@@ -123,6 +133,10 @@ const nav = [
           <!-- Key by path so navigating between two of the same route (e.g. item→item
                from search) remounts the view and loads the new record, instead of
                reusing the component and appearing stuck on the previous one. -->
+          <div v-if="showExpired" class="session-banner" role="alert">
+            Your session ended.
+            <router-link :to="{ path: '/login', query: { redirect: route.fullPath } }">Sign in again</router-link>
+          </div>
           <router-view :key="$route.path" />
         </div>
       </div>
@@ -140,7 +154,23 @@ const nav = [
   </template>
 
   <template v-else>
+    <div v-if="showExpired" class="session-banner" role="alert">
+      Your session ended.
+      <router-link :to="{ path: '/login', query: { redirect: route.fullPath } }">Sign in again</router-link>
+    </div>
     <router-view />
     <Toasts />
   </template>
 </template>
+
+<style>
+/* Persistent (never auto-dismissed) notice that a 401 ended the session; the
+   view below stays mounted so unsaved input is not lost. */
+.session-banner {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-bottom: 16px; padding: 10px 14px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-left: 3px solid var(--warning); border-radius: var(--radius);
+}
+.session-banner a { font-weight: 600; }
+</style>

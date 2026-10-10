@@ -64,6 +64,14 @@ export function setWriteHook(fn) {
   writeHook = fn
 }
 
+// Called on any 401 (the token is already cleared). App.vue wires it to end the
+// session in place — clear auth.user, stop the poller, show a sign-in banner —
+// instead of navigating, so the open view and its unsaved inputs survive.
+let unauthorizedHook = null
+export function setUnauthorizedHook(fn) {
+  unauthorizedHook = fn
+}
+
 async function request(method, path, body, isForm = false) {
   const headers = {}
   const token = getToken()
@@ -83,7 +91,7 @@ async function request(method, path, body, isForm = false) {
   }
   if (res.status === 401) {
     setToken(null)
-    if (!location.hash.includes('/login')) location.hash = '#/login'
+    if (unauthorizedHook) unauthorizedHook()
   }
   const ct = res.headers.get('content-type') || ''
   const data = ct.includes('application/json') ? await res.json() : await res.text()
@@ -114,7 +122,7 @@ export async function streamPost(path, body, onEvent) {
   })
   if (res.status === 401) {
     setToken(null)
-    if (!location.hash.includes('/login')) location.hash = '#/login'
+    if (unauthorizedHook) unauthorizedHook()
   }
   if (!res.ok || !res.body) {
     let msg = res.statusText

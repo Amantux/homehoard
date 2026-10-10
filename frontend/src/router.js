@@ -42,7 +42,8 @@ const router = createRouter({ history: createWebHashHistory(), routes })
 router.beforeEach(async (to) => {
   const auth = useAuth()
   if (!auth.ready) await auth.bootstrap()
-  if (!to.meta.public && !auth.isAuthed) return '/login'
+  // Remember where the user was going; Login.vue returns there (via safeRedirect).
+  if (!to.meta.public && !auth.isAuthed) return { path: '/login', query: { redirect: to.fullPath } }
   if (to.path === '/login' && auth.isAuthed) return '/'
 })
 

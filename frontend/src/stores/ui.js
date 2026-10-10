@@ -25,6 +25,9 @@ export const useUI = defineStore('ui', {
     // Pending in-app confirmation ({title, body, confirmLabel, cancelLabel,
     // danger}); App.vue renders ConfirmDialog while set. See useConfirm().
     confirmRequest: null,
+    // Set when a 401 ended a signed-in session; App.vue shows a sign-in banner
+    // over the still-mounted view. Cleared on the next successful login.
+    sessionExpired: false,
   }),
   actions: {
     // One confirmation at a time: a second request while one is open REJECTS
