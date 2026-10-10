@@ -34,7 +34,8 @@ export const useUI = defineStore('ui', {
     // (rather than queueing) — two stacked "are you sure?" prompts is a bug in
     // the caller, and a queued one would fire after the context has changed.
     requestConfirm(opts) {
-      if (this.confirmRequest) return Promise.reject(new Error('A confirmation is already open'))
+      // One dialog at a time: a second request is declined (callers never catch).
+      if (this.confirmRequest) return Promise.resolve(false)
       return new Promise((resolve) => {
         this._confirmResolve = resolve
         this.confirmRequest = { confirmLabel: 'Confirm', cancelLabel: 'Cancel', danger: false, ...opts }
