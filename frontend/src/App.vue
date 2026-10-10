@@ -1,17 +1,21 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, nextTick, defineAsyncComponent } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuth } from './stores/auth'
 import { useUI } from './stores/ui'
 import { api, setWriteHook, setUnauthorizedHook } from './api'
 import Toasts from './components/Toasts.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
-import QuickCreate from './components/QuickCreate.vue'
-import ScannerModal, { prefetchZxing } from './components/ScannerModal.vue'
-import SearchModal from './components/SearchModal.vue'
-import ReportBug from './components/ReportBug.vue'
+import { prefetchZxing } from './components/zxingPrefetch'
 import ChatAssistant from './components/ChatAssistant.vue'
 
+// Modals are only mounted on demand, so they load on demand too and stay out
+// of the main chunk. prefetchZxing comes from its own module for the same
+// reason: importing it from ScannerModal.vue would pull the modal back in.
+const QuickCreate = defineAsyncComponent(() => import('./components/QuickCreate.vue'))
+const ScannerModal = defineAsyncComponent(() => import('./components/ScannerModal.vue'))
+const SearchModal = defineAsyncComponent(() => import('./components/SearchModal.vue'))
+const ReportBug = defineAsyncComponent(() => import('./components/ReportBug.vue'))
 const route = useRoute()
 const auth = useAuth()
 const ui = useUI()
@@ -22,6 +26,20 @@ const showScanner = ref(false)
 const showSearch = ref(false)
 const showUserMenu = ref(false)
 const showReport = ref(false)
+
+// Account menu: Esc closes and returns focus to the toggle; a click or tap
+// anywhere outside closes it without moving focus.
+const userMenuWrap = ref(null)
+const userMenuToggle = ref(null)
+function toggleUserMenu() {
+  showUserMenu.value = !showUserMenu.value
+  if (showUserMenu.value) nextTick(() => userMenuWrap.value?.querySelector('[role="menuitem"]')?.focus())
+}
+function closeUserMenu(returnFocus) {
+  if (!showUserMenu.value) return
+  showUserMenu.value = false
+  if (returnFocus) userMenuToggle.value?.focus()
+}
 
 // Mobile nav drawer. The sidebar is off-canvas below 720px; this toggles it.
 // Previously the sidebar was simply display:none there, so no page except the
@@ -55,6 +73,9 @@ onMounted(() => {
   window
     .matchMedia('(prefers-color-scheme: dark)')
     .addEventListener('change', () => ui.applyTheme())
+  document.addEventListener('pointerdown', (e) => {
+    if (showUserMenu.value && !userMenuWrap.value?.contains(e.target)) closeUserMenu(false)
+  })
   // Press "/" anywhere to open search.
   window.addEventListener('keydown', (e) => {
     if (e.key === '/' && !/input|textarea|select/i.test(e.target.tagName)) {
@@ -121,15 +142,18 @@ const nav = [
           <button class="secondary icon-btn" title="Report a bug" aria-label="Report a bug"
                   @click="showReport = true">🐞</button>
           <button aria-label="Toggle theme" class="secondary icon-btn" title="Toggle theme" @click="ui.toggleTheme()">🌓</button>
-          <div v-if="!auth.authDisabled" class="dropdown">
-            <button aria-label="Account menu" class="secondary icon-btn" @click="showUserMenu = !showUserMenu">👤</button>
-            <div v-if="showUserMenu" class="dropdown-menu" @click="showUserMenu = false">
-              <button @click="auth.logout()">Sign out</button>
+          <div v-if="!auth.authDisabled" ref="userMenuWrap" class="dropdown"
+               @keydown.esc="closeUserMenu(true)">
+            <button ref="userMenuToggle" aria-label="Account menu" class="secondary icon-btn"
+                    aria-haspopup="menu" :aria-expanded="showUserMenu ? 'true' : 'false'"
+                    aria-controls="user-menu" @click="toggleUserMenu">👤</button>
+            <div v-if="showUserMenu" id="user-menu" class="dropdown-menu" role="menu" @click="showUserMenu = false">
+              <button role="menuitem" @click="auth.logout()">Sign out</button>
             </div>
           </div>
         </header>
 
-        <div class="content">
+        <main class="content">
           <!-- Key by path so navigating between two of the same route (e.g. item→item
                from search) remounts the view and loads the new record, instead of
                reusing the component and appearing stuck on the previous one. -->
@@ -138,7 +162,7 @@ const nav = [
             <router-link :to="{ path: '/login', query: { redirect: route.fullPath } }">Sign in again</router-link>
           </div>
           <router-view :key="$route.path" />
-        </div>
+        </main>
       </div>
     </div>
 
@@ -158,7 +182,7 @@ const nav = [
       Your session ended.
       <router-link :to="{ path: '/login', query: { redirect: route.fullPath } }">Sign in again</router-link>
     </div>
-    <router-view />
+    <main><router-view /></main>
     <Toasts />
   </template>
 </template>

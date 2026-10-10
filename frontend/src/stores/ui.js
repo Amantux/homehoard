@@ -8,6 +8,19 @@ let toastId = 0
 let liveTimer = null
 let liveTick = null
 let onVisible = null
+// Auto-dismiss timers for non-error toasts: id -> { handle, remaining, started }.
+// Kept off reactive state so Toasts.vue can pause them on hover/focus.
+const toastTimers = new Map()
+let toastsPaused = false
+
+function armToastTimer(store, id, ms) {
+  // First toast into an empty stack: nothing can be hovered or focused, and a
+  // region that shrank to nothing under the pointer never fired mouseleave.
+  if (toastsPaused && store.toasts.length === 1) toastsPaused = false
+  const t = { handle: null, remaining: ms, started: Date.now() }
+  if (!toastsPaused) t.handle = setTimeout(() => store.dismiss(id), ms)
+  toastTimers.set(id, t)
+}
 
 export const useUI = defineStore('ui', {
   state: () => ({
@@ -122,12 +135,39 @@ export const useUI = defineStore('ui', {
       const id = ++toastId
       this.toasts.push({ id, message, type, action })
       // Errors persist until dismissed; success/info auto-dismiss.
-      if (type !== 'error') setTimeout(() => this.dismiss(id), action ? 8000 : 3200)
+      if (type !== 'error') armToastTimer(this, id, action ? 8000 : 3200)
+    },
+    // Hover/focus on the toast region holds every pending auto-dismiss, so a
+    // toast can't vanish while it is being read or its action is focused.
+    pauseToasts() {
+      if (toastsPaused) return
+      toastsPaused = true
+      const now = Date.now()
+      for (const t of toastTimers.values()) {
+        clearTimeout(t.handle)
+        t.handle = null
+        t.remaining = Math.max(0, t.remaining - (now - t.started))
+      }
+    },
+    resumeToasts() {
+      if (!toastsPaused) return
+      toastsPaused = false
+      for (const [id, t] of toastTimers) {
+        t.started = Date.now()
+        t.handle = setTimeout(() => this.dismiss(id), t.remaining)
+      }
+    },
+    // Route change: an error toast is about the page being left, so it goes.
+    // Success/info toasts (e.g. "Deleted" after a navigating delete) stay.
+    clearErrorToasts() {
+      this.toasts = this.toasts.filter((t) => t.type !== 'error')
     },
     error(message) {
       this.toast(message, 'error')
     },
     dismiss(id) {
+      const timer = toastTimers.get(id)
+      if (timer) { clearTimeout(timer.handle); toastTimers.delete(id) }
       this.toasts = this.toasts.filter((t) => t.id !== id)
     },
   },

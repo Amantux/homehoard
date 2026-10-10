@@ -51,3 +51,46 @@ describe('ui live sync', () => {
     ui.stopLiveSync()
   })
 })
+
+describe('ui toasts', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.stubGlobal('localStorage', { getItem: () => null, setItem() {}, removeItem() {} })
+    setActivePinia(createPinia())
+  })
+  afterEach(() => { useUI().resumeToasts(); vi.useRealTimers(); vi.unstubAllGlobals() })
+
+  it('clearErrorToasts removes only error toasts', () => {
+    const ui = useUI()
+    ui.toast('Saved')
+    ui.error('Could not load bins')
+    ui.toast('Heads up', 'info')
+    ui.error('Second failure')
+    ui.clearErrorToasts()
+    expect(ui.toasts.map((t) => t.message)).toEqual(['Saved', 'Heads up'])
+  })
+
+  it('pauseToasts holds auto-dismiss until resumeToasts', async () => {
+    const ui = useUI()
+    ui.toast('Saved')
+    await vi.advanceTimersByTimeAsync(2000)
+    ui.pauseToasts()
+    await vi.advanceTimersByTimeAsync(10000)
+    expect(ui.toasts).toHaveLength(1)
+    ui.resumeToasts()
+    await vi.advanceTimersByTimeAsync(1100)
+    expect(ui.toasts).toHaveLength(1)
+    await vi.advanceTimersByTimeAsync(200)
+    expect(ui.toasts).toHaveLength(0)
+  })
+
+  it('a pause left over from an emptied stack does not freeze the next toast', async () => {
+    const ui = useUI()
+    ui.toast('Saved')
+    ui.pauseToasts()
+    ui.dismiss(ui.toasts[0].id) // stack empties under the pointer: no mouseleave
+    ui.toast('Saved again')
+    await vi.advanceTimersByTimeAsync(3300)
+    expect(ui.toasts).toHaveLength(0)
+  })
+})

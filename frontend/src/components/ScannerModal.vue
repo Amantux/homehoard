@@ -1,20 +1,5 @@
 <script>
-// Shared across modal instances: the zxing chunk (~125 kB gz) is fetched once,
-// and the 📷 opener can start it on hover/focus before the modal mounts.
-// Reset on failure so a retry issues a fresh request.
-let zxingPromise = null
-export function prefetchZxing() {
-  if (!zxingPromise) {
-    zxingPromise = import('@zxing/browser').catch((e) => {
-      zxingPromise = null
-      throw e
-    })
-    // A hover-prefetch caller ignores the result; don't surface that as an
-    // unhandled rejection. Real callers still see the rejection.
-    zxingPromise.catch(() => {})
-  }
-  return zxingPromise
-}
+import { prefetchZxing, resetZxing } from './zxingPrefetch'
 
 const ZXING_TIMEOUT_MS = 15000
 export const LOAD_ERROR = "Couldn't load the scanner. Check your connection and retry."
@@ -24,7 +9,7 @@ function loadZxing() {
   let timer
   const timeout = new Promise((_, reject) => {
     timer = setTimeout(() => {
-      zxingPromise = null // a hung request shouldn't be reused by Retry
+      resetZxing() // a hung request shouldn't be reused by Retry
       reject(new ScannerLoadError('timeout'))
     }, ZXING_TIMEOUT_MS)
   })
