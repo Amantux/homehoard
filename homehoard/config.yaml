@@ -10,6 +10,15 @@ arch:
   - amd64
 init: false
 startup: services
+# Cold backup: the Supervisor stops the add-on before an HA backup, so the
+# SQLite file in /data is copied while nothing is writing it (a hot copy of a
+# live WAL database can be inconsistent). Costs a few seconds of downtime per
+# backup.
+backup: cold
+# Seconds the Supervisor waits after SIGTERM before SIGKILL (default 10). An
+# upgrade migration on a large inventory can take longer than 10 s; being
+# killed mid-migration is what this prevents.
+timeout: 120
 boot: auto
 ingress: true
 ingress_port: 7745
