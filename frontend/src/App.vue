@@ -7,7 +7,7 @@ import { api, setWriteHook } from './api'
 import Toasts from './components/Toasts.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
 import QuickCreate from './components/QuickCreate.vue'
-import ScannerModal from './components/ScannerModal.vue'
+import ScannerModal, { prefetchZxing } from './components/ScannerModal.vue'
 import SearchModal from './components/SearchModal.vue'
 import ReportBug from './components/ReportBug.vue'
 import ChatAssistant from './components/ChatAssistant.vue'
@@ -107,7 +107,7 @@ const nav = [
           </div>
           <div class="grow"></div>
           <button @click="showCreate = true">＋ Create</button>
-          <button aria-label="Scan QR" class="secondary icon-btn" title="Scan QR" @click="showScanner = true">📷</button>
+          <button aria-label="Scan QR" class="secondary icon-btn" title="Scan QR" @pointerenter="prefetchZxing" @focus="prefetchZxing" @click="showScanner = true">📷</button>
           <button class="secondary icon-btn" title="Report a bug" aria-label="Report a bug"
                   @click="showReport = true">🐞</button>
           <button aria-label="Toggle theme" class="secondary icon-btn" title="Toggle theme" @click="ui.toggleTheme()">🌓</button>
