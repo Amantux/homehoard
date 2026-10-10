@@ -241,10 +241,47 @@ jobs:
           context: .
           load: true
           tags: homehoard:ci
+      - name: Seed a 0018-stamped SQLite volume (upgrade-path fixture)
+        run: |
+          set -euo pipefail
+          # The image builds its own old DB: migrate a fresh volume to 0018 only
+          # and insert a group + item with a fractional quantity, so the normal
+          # boot below has a real pending upgrade (and something to lose).
+          docker volume create hh-data
+          docker run --rm -i -w /app/backend -v hh-data:/data --entrypoint python3 homehoard:ci - <<'PY'
+          import sqlite3
+          from alembic import command
+          from alembic.config import Config
+          cfg = Config("alembic.ini")
+          cfg.set_main_option("script_location", "migrations")
+          cfg.attributes["url"] = "sqlite:////data/homehoard.db"
+          command.upgrade(cfg, "0018_maintenance_recurrence")
+          c = sqlite3.connect("/data/homehoard.db")
+          def insert(table, row):
+              # Fill every other NOT NULL, no-default column with a type-shaped value.
+              for _, col, typ, notnull, dflt, pk in c.execute(f"pragma table_info({table})"):
+                  if col in row or not notnull or dflt is not None or pk:
+                      continue
+                  t = typ.upper()
+                  row[col] = (0 if t.startswith(("INT", "BOOL", "NUMERIC"))
+                              else "2026-01-01 00:00:00" if t.startswith("DATETIME") else "")
+              cols = ", ".join(row)
+              c.execute(f"insert into {table} ({cols}) values ({', '.join('?' * len(row))})",
+                        list(row.values()))
+          insert("groups", {"id": "g-smoke", "name": "Smoke", "currency": "USD"})
+          insert("items", {"id": "i-smoke", "name": "Smoke item", "quantity": 2.5,
+                           "asset_id": 1, "group_id": "g-smoke"})
+          c.commit()
+          print(c.execute("select version_num from alembic_version").fetchone())
+          PY
+          # A pristine copy for the TERM-during-boot step (the main boot upgrades hh-data).
+          docker volume create hh-data-term
+          docker run --rm -v hh-data:/src -v hh-data-term:/dst --entrypoint sh homehoard:ci \
+            -c 'cp -a /src/. /dst/'
       - name: Start stack and wait for READINESS (not just process start)
         run: |
           set -euo pipefail
-          docker run -d --name hh-ci -p 7745:7745 \
+          docker run -d --name hh-ci -p 7745:7745 -v hh-data:/data \
             -e HBOX_SECRET_KEY="$(openssl rand -base64 48)" homehoard:ci
           ok=""
           for i in $(seq 1 45); do
@@ -281,6 +318,47 @@ jobs:
           test "$servers" = "1000"     # sort -u collapses to exactly one value
           # MCP server must be listening on 7766 inside the container.
           docker exec hh-ci python3 -c "import socket;s=socket.socket();s.settimeout(3);s.connect(('127.0.0.1',7766));print('mcp listening')"
+      - name: Upgrade path (pre-upgrade snapshot, alembic at head, data intact)
+        run: |
+          set -euo pipefail
+          docker exec hh-ci sh -c 'ls -l /data/backups/pre-upgrade-0018_maintenance_recurrence-*'
+          docker exec -w /app/backend hh-ci python3 -c "
+          import sqlite3
+          from alembic.config import Config
+          from alembic.script import ScriptDirectory
+          cfg = Config('alembic.ini'); cfg.set_main_option('script_location', 'migrations')
+          head = ScriptDirectory.from_config(cfg).get_current_head()
+          c = sqlite3.connect('/data/homehoard.db')
+          (cur,) = c.execute('select version_num from alembic_version').fetchone()
+          (qty,) = c.execute(\"select quantity from items where id = 'i-smoke'\").fetchone()
+          print('alembic current', cur, 'head', head, 'quantity', qty)
+          assert cur == head, (cur, head)
+          assert float(qty) == 2.5, qty
+          "
+      - name: MCP crash is restarted and /ready recovers
+        run: |
+          set -euo pipefail
+          pid=$(docker exec hh-ci sh -c 'for d in /proc/[0-9]*; do
+              [ "$(cat $d/comm 2>/dev/null)" = python3 ] || continue
+              tr "\0" " " < $d/cmdline 2>/dev/null | grep -q mcp_server && echo ${d#/proc/}
+            done' | head -n1)
+          test -n "$pid"
+          echo "killing MCP pid $pid"
+          docker exec hh-ci sh -c "kill -KILL $pid"   # kill is a shell builtin here
+          seen=""
+          for i in $(seq 1 50); do
+            if docker logs hh-ci 2>&1 | grep -q 'MCP server exited .*restart 1/5'; then seen=1; break; fi
+            sleep 0.2
+          done
+          test -n "$seen" || { echo "no 'restart 1/5' log line"; exit 1; }
+          ok=""
+          for i in $(seq 1 30); do
+            mcp=$(curl -sS http://127.0.0.1:7745/api/v1/ready \
+              | python3 -c "import json,sys;print(json.load(sys.stdin)['checks']['mcp'])" || true)
+            if [ "$mcp" = ok ]; then echo "checks.mcp ok after ${i}s"; ok=1; break; fi
+            sleep 1
+          done
+          test -n "$ok" || { echo "checks.mcp never returned to ok (last: $mcp)"; exit 1; }
       - name: Clean shutdown within grace period
         run: |
           set -euo pipefail
@@ -290,9 +368,35 @@ jobs:
           # gunicorn exits 0 on a graceful SIGTERM; 137 = SIGKILL after the grace
           # period (ignored SIGTERM). Fail the gate on a non-graceful shutdown.
           test "$rc" = "0"
+      - name: TERM during boot exits 0 (no SIGKILL mid-migration)
+        run: |
+          set -euo pipefail
+          # Boot on the pristine 0018 copy (a real pending migration) and stop it
+          # as soon as schema init begins — after the early trap is installed, so
+          # the timing is deterministic rather than a race against `docker run`.
+          docker run -d --name hh-term -v hh-data-term:/data \
+            -e HBOX_SECRET_KEY="$(openssl rand -base64 48)" homehoard:ci
+          for i in $(seq 1 300); do
+            docker logs hh-term 2>&1 | grep -q 'Initializing database schema' && break
+            sleep 0.1
+          done
+          docker stop -t 30 hh-term
+          rc=$(docker inspect -f '{{.State.ExitCode}}' hh-term)
+          echo "exit code: $rc"
+          # 137 = the TERM was dropped and docker SIGKILLed us after 30 s.
+          test "$rc" = "0"
+          if docker logs hh-term 2>&1 | grep 'stop requested during startup'; then
+            :
+          elif docker logs hh-term 2>&1 | grep -q 'MCP server started'; then
+            echo "boot completed before the stop landed; clean exit 0 still verified"
+          else
+            echo "exit 0 but neither a 'stop requested' line nor a completed boot"; exit 1
+          fi
       - name: Container logs (on failure)
         if: failure()
-        run: docker logs hh-ci || true
+        run: |
+          docker logs hh-ci || true
+          docker logs hh-term || true
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
