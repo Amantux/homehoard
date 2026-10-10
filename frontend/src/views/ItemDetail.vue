@@ -61,6 +61,8 @@ const { loading, error, reload } = useLoader(async () => {
   notFound.value = false
   try {
     await loadCurrency()
+    // A live refresh mid-edit would overwrite the form; the save reloads.
+    if (editing.value) return
     await loadAll()
     ;[locations.value, bins.value, allLabels.value] = await Promise.all([
       api.get('/locations'), api.get('/bins'), api.get('/labels'),
