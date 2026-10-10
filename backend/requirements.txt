@@ -18,7 +18,7 @@ python-dotenv==1.2.2
 qrcode[pil]==7.4.2
 # Photo thumbnails (services/thumbnails.py). Already present transitively via
 # qrcode[pil]; pinned explicitly because the app now imports PIL directly.
-Pillow==12.1.1
+Pillow==12.3.0
 # >=23.0.0 for CVE-2024-6827 (Transfer-Encoding request smuggling).
 gunicorn==26.2.0
 # MCP server exposed to Home Assistant (runs alongside the app in the same container)
