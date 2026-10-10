@@ -1,8 +1,9 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '../api'
 import { useUI } from '../stores/ui'
+import Combobox from '../components/Combobox.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -12,7 +13,31 @@ const state = ref('resolving') // resolving | unknown | action
 const code = ref('')
 const kind = ref('item')
 const targetId = ref('')
-const targets = ref({ item: [], bin: [], location: [] })
+const targets = ref({ bin: [], location: [] })
+// Items are searched server-side (no full preload): the list can exceed any page size.
+const itemMatches = ref([])
+let searchTimer = null
+let searchSeq = 0
+// Picked option is kept in the list so the combobox can still show it after a new search.
+const itemOptions = computed(() => itemMatches.value
+  .map((i) => ({ id: i.id, label: i.name, sublabel: i.bin?.name || i.location?.name || '' })))
+function searchItems(term) {
+  clearTimeout(searchTimer)
+  searchTimer = setTimeout(async () => {
+    const seq = ++searchSeq
+    const params = new URLSearchParams({ pageSize: '20' })
+    if (term) params.set('q', term)
+    try {
+      const res = await api.get(`/items?${params}`)
+      if (seq !== searchSeq) return // a newer search already answered
+      const picked = kind.value === 'item' && itemMatches.value.find((i) => i.id === targetId.value)
+      const next = res.items
+      itemMatches.value = picked && !next.some((i) => i.id === picked.id) ? [picked, ...next] : next
+    } catch (e) {
+      if (seq === searchSeq) ui.error(e.message || 'Item search failed')
+    }
+  }, 200)
+}
 const newName = ref('')
 const newItemName = ref('')
 const busy = ref(false)
@@ -50,10 +75,8 @@ async function resolve() {
     return
   }
   state.value = 'unknown'
-  const [items, bins, locs] = await Promise.all([
-    api.get('/items?pageSize=500'), api.get('/bins'), api.get('/locations'),
-  ])
-  targets.value = { item: items.items, bin: bins, location: locs }
+  const [bins, locs] = await Promise.all([api.get('/bins'), api.get('/locations')])
+  targets.value = { bin: bins, location: locs }
 }
 
 async function checkOut() {
@@ -209,7 +232,12 @@ onMounted(resolve)
             <option value="bin">Bin</option>
             <option value="location">Location</option>
           </select>
-          <select aria-label="Record" v-model="targetId">
+          <div v-if="kind === 'item'" style="flex:1;min-width:0">
+            <Combobox v-model="targetId" :options="itemOptions" remote
+                      placeholder="Search items…" aria-label="Record"
+                      @search="searchItems" />
+          </div>
+          <select v-else aria-label="Record" v-model="targetId">
             <option value="">Select…</option>
             <option v-for="t in targets[kind]" :key="t.id" :value="t.id">{{ t.name }}</option>
           </select>
