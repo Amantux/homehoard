@@ -9,13 +9,21 @@ OpenAI, and Claude — the same tool schema and executor drive all three.
 from __future__ import annotations
 
 import json
+import logging
+import uuid
 from datetime import datetime
+
+from werkzeug.exceptions import HTTPException
 
 from ...extensions import db
 from ...models import CheckoutEntry, Item, Label, Location
 from .base import AIProvider
 from .. import vault
 from ...timeutil import as_utc, iso_utc, utcnow
+from ...logging_setup import request_id_var
+from ..jobs import JobError
+
+_LOGGER = logging.getLogger("homehoard.ai.agent")
 
 SYSTEM = (
     "You are the HomeHoard assistant, a practical home-inventory helper. Help the "
@@ -442,6 +450,28 @@ def actions_from_trace(trace: list[dict]) -> list[dict]:
             and isinstance(t.get("result"), dict) and t["result"].get("ok")]
 
 
+def _tool_error(name: str, exc: Exception) -> dict:
+    """The ``{"error": ...}`` a failed tool feeds back to the model (and, via the
+    trace, to the client and the stored chat). Only typed domain errors carry
+    their message through — those are curated for the user. Anything else may
+    embed internals (psycopg echoes the DSN, password included), so it is logged
+    here and the model sees only a ref to correlate with that log line.
+    """
+    if isinstance(exc, HTTPException):  # incl. FieldValidationError (abort_fields)
+        out = {"error": f"{name} failed: {exc.description}"}
+        fields = getattr(exc, "fields", None)
+        if fields:
+            out["fields"] = fields
+        return out
+    if isinstance(exc, JobError):
+        return {"error": f"{name} failed: {exc}"}
+    rid = request_id_var.get()
+    if rid == "-":  # outside a request (no before_request id): mint one
+        rid = uuid.uuid4().hex[:12]
+    _LOGGER.exception("tool %s failed (ref %s)", name, rid)
+    return {"error": f"{name} failed (internal error, ref {rid})"}
+
+
 def run_chat(gid: str, provider: AIProvider, history: list[dict],
              user_message: str, max_iters: int = 6) -> dict:
     """Drive one assistant turn (with tool use) and return the reply + trace.
@@ -467,7 +497,7 @@ def run_chat(gid: str, provider: AIProvider, history: list[dict],
                 sp.commit()
             except Exception as exc:  # noqa: BLE001 - feed errors back, never 500
                 sp.rollback()
-                output = {"error": f"{call.name} failed: {exc}"}
+                output = _tool_error(call.name, exc)
             trace.append({"tool": call.name, "args": call.arguments, "result": output})
             messages.append({"role": "user", "content": (
                 f"Result of {call.name}({json.dumps(call.arguments)}): "
@@ -524,7 +554,7 @@ def run_chat_stream(gid: str, provider: AIProvider, history: list[dict],
                 sp.commit()
             except Exception as exc:  # noqa: BLE001 - feed errors back, never 500
                 sp.rollback()
-                output = {"error": f"{call.name} failed: {exc}"}
+                output = _tool_error(call.name, exc)
             trace.append({"tool": call.name, "args": call.arguments, "result": output})
             messages.append({"role": "user", "content": (
                 f"Result of {call.name}({json.dumps(call.arguments)}): "

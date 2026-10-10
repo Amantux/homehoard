@@ -146,4 +146,7 @@ def test_chat_tool_exception_is_fed_back_not_500(auth_client, monkeypatch, gid):
     assert r.status_code == 200  # tool error fed back to the model, not a 500
     convo = auth_client.get(f"/api/v1/chat/sessions/{r.get_json()['sessionId']}").get_json()
     assert len(convo["messages"]) == 2
-    assert "kaboom" in str(convo["messages"][1]["toolTrace"])
+    trace = str(convo["messages"][1]["toolTrace"])
+    # The failure is fed back as a reference, never as the raw exception text.
+    assert "failed (internal error, ref " in trace
+    assert "kaboom" not in trace
