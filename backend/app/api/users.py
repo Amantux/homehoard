@@ -139,7 +139,6 @@ def login():
         {
             "token": f"Bearer {token}",
             "expiresAt": None,
-            "attachmentToken": token,
         }
     )
 
