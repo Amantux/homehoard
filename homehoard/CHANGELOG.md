@@ -1,8 +1,67 @@
 # Changelog
 
+## Unreleased
+
+- **Your lists stay current.** A list refreshes right after you save, loads no
+  longer overlap and overwrite each other, and background sync stops when you
+  sign out.
+- Background refreshes no longer clear a bulk selection or an edit you're in the
+  middle of, the list stays on screen while you filter it, and the delete
+  confirmation names the items it will delete.
+- The barcode scanner turns the camera off if you close it before it finishes
+  starting, offers Retry when it can't start, loads its reader in advance so it
+  opens faster, and says plainly when linking a code is unavailable.
+- The assistant panel announces new replies to screen readers and puts focus
+  where you expect when it opens and closes.
+- Reports: purchase dates display correctly, the currency symbol recovers if it
+  failed to load at start-up, and picker fields no longer act after you've moved
+  on from them.
+- **When your session expires you get a banner, not a broken page.** Signing in
+  again returns you to the page you were on.
+- Typing the wrong vault passphrase no longer signs you out.
+- MCP tool calls now act as the household that owns the API key, and a
+  read-only key stays read-only there too.
+- Home Assistant discovery waits until HomeHoard is ready, and rediscovery
+  updates the existing entry instead of adding a duplicate.
+- Behind the scenes: the secret scanner's test allowlist is anchored to exact
+  values, CI tests the integration on Home Assistant 2024.11.0 and the latest
+  release, and backend dependencies are pinned.
+
 ## 1.1.51
 
-- Maintenance release.
+- **Read this before updating: quantities are now exact decimals.** On first
+  start after the update HomeHoard rebuilds its quantity tables and rounds every
+  stored quantity to 3 decimal places, so a large inventory can take a little
+  longer to come up once. Afterwards 0.1 + 0.2 really is 0.3, and a quantity
+  with more than 3 decimals (or a yes/no value) is rejected with a clear error
+  instead of being stored as-is.
+- **Timestamps from the API now carry an explicit UTC offset** (`+00:00`).
+  If you wrote an automation or script that parses HomeHoard dates, check it
+  still does. Dates in the app no longer show a day early west of UTC.
+- **The MCP (assistant/voice) server restarts itself if it crashes**, instead of
+  staying down until you restart the add-on, and `/ready` reports whether it is
+  up.
+- New option `mcp_require_key`: turn it on to require an API key for every MCP
+  request, even from inside Home Assistant. Off by default, so nothing changes
+  unless you set it.
+- **Security fixes.** Read-only API keys are now enforced on every route, not
+  just most of them. Printing QR labels no longer runs script hidden in an item
+  name. The barcode lookup URL is validated before it is used. Error messages
+  no longer echo internal details such as AI provider responses.
+- If login is disabled and HomeHoard is reached outside Home Assistant, the app
+  and the log now warn you that anyone who can reach that port has full access.
+- **Easier to use with a keyboard, touch screen or screen reader:** larger tap
+  targets, labelled icon buttons, dialogs that keep focus and close with Esc,
+  list rows you can tab to, and error messages that are announced.
+- Detail pages show loading, error and not-found states instead of a blank
+  screen, a mistyped address shows a proper not-found page, and buttons say what
+  they are doing while they work ("Saving…").
+- Faster: location and bin lists load in fewer queries, pages load on demand,
+  and the bin item picker searches as you type.
+- Home Assistant discovery retries in the background if Home Assistant isn't up
+  yet when the add-on starts.
+- The companion integration now needs **Home Assistant 2024.11.0 or newer**.
+- You stay signed in across this update.
 
 ## 1.1.50
 

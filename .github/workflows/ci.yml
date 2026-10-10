@@ -180,6 +180,54 @@ jobs:
           npm ci
           npm run lint
 
+  changelog:
+    # A PR that changes what users run must say so under "## Unreleased" in
+    # homehoard/CHANGELOG.md; bump-version promotes that heading to the release.
+    # Dependency-manifest-only changes (Dependabot) are exempt; refactor/test
+    # PRs that touch shipped paths opt out with the `skip-changelog` label
+    # (added after the PR opened? re-run this job to pick it up).
+    name: Changelog entry
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: List changed files
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: git diff --name-only "origin/${BASE_REF}...HEAD" > "$RUNNER_TEMP/changed.txt"
+      - name: Require an Unreleased entry
+        env:
+          CHANGED_LIST: ${{ runner.temp }}/changed.txt
+          CHANGELOG: homehoard/CHANGELOG.md
+          SKIP_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'skip-changelog') }}
+        run: |
+          set -eu
+          if [ "$SKIP_LABEL" = "true" ]; then
+            echo "skip-changelog label set; not checking."; exit 0
+          fi
+          # Shipped paths, minus dependency manifests (one bot PR per bump).
+          shipped=$(grep -E '^(backend/|frontend/|custom_components/|docker-entrypoint\.sh$|Dockerfile$)' "$CHANGED_LIST" \
+            | grep -vE '(^|/)(requirements[^/]*\.txt|package\.json|package-lock\.json)$' || true)
+          if [ -z "$shipped" ]; then
+            echo "No shipped paths changed; no changelog entry needed."; exit 0
+          fi
+          echo "Shipped paths changed:"; echo "$shipped" | sed 's/^/  /'
+          if ! grep -qxF "$CHANGELOG" "$CHANGED_LIST"; then
+            echo "::error file=$CHANGELOG::This PR changes shipped code but not $CHANGELOG. Add a user-facing bullet under '## Unreleased' (or label the PR skip-changelog)."
+            exit 1
+          fi
+          # Non-blank lines between "## Unreleased" and the next "## " heading.
+          body=$(awk '/^## Unreleased[ \t]*$/ {f=1; next} f && /^## / {exit} f && NF' "$CHANGELOG")
+          if [ -z "$body" ]; then
+            echo "::error file=$CHANGELOG::$CHANGELOG has no non-empty '## Unreleased' section. Put this PR's notes under that exact heading above the latest release."
+            exit 1
+          fi
+          echo "Changelog entry found."
+
   smoke:
     name: Container smoke (build → readiness → shutdown)
     runs-on: ubuntu-latest
