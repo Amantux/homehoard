@@ -55,6 +55,15 @@ export function errorFromResponse(status, data) {
   return new ApiError({ status, message: curatedMessage(status, requestId), requestId })
 }
 
+// Called after every successful local write (non-GET request, or a chat stream
+// that ended normally) so views refresh at once instead of waiting for the
+// live-sync poll. App.vue wires it to ui.dataChanged(); kept as a hook so this
+// module stays free of pinia.
+let writeHook = null
+export function setWriteHook(fn) {
+  writeHook = fn
+}
+
 async function request(method, path, body, isForm = false) {
   const headers = {}
   const token = getToken()
@@ -79,6 +88,7 @@ async function request(method, path, body, isForm = false) {
   const ct = res.headers.get('content-type') || ''
   const data = ct.includes('application/json') ? await res.json() : await res.text()
   if (!res.ok) throw errorFromResponse(res.status, data)
+  if (method !== 'GET' && writeHook) writeHook()
   return data
 }
 
@@ -130,4 +140,5 @@ export async function streamPost(path, body, onEvent) {
     flush(decoder.decode(value, { stream: true }), false)
   }
   flush(decoder.decode(), true)
+  if (writeHook) writeHook()
 }

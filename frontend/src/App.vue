@@ -3,7 +3,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuth } from './stores/auth'
 import { useUI } from './stores/ui'
-import { api } from './api'
+import { api, setWriteHook } from './api'
 import Toasts from './components/Toasts.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
 import QuickCreate from './components/QuickCreate.vue'
@@ -28,8 +28,10 @@ const showReport = ref(false)
 // dashboard was reachable on a phone.
 const menuOpen = ref(false)
 // Start the live-sync poller the moment a login lands (startLiveSync is
-// idempotent, so a hot-reload or double-fire is harmless).
-watch(() => auth.isAuthed, (ok) => { if (ok) ui.startLiveSync(api) })
+// idempotent, so a hot-reload or double-fire is harmless); stop it on logout.
+watch(() => auth.isAuthed, (ok) => { if (ok) ui.startLiveSync(api); else ui.stopLiveSync() })
+// Any successful local write refreshes the open views immediately.
+setWriteHook(() => ui.dataChanged())
 
 // Close the drawer whenever the route changes (i.e. a nav link was tapped).
 watch(() => route.fullPath, () => { menuOpen.value = false })

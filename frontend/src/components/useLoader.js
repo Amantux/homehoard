@@ -16,30 +16,62 @@ export function useLoader(loadFn, { immediate = true, live = true } = {}) {
   const error = ref(null)
   const ui = useUI()
 
-  async function reload() {
-    loading.value = true
-    error.value = null
-    try {
-      await loadFn()
-    } catch (e) {
-      error.value = e?.message || 'Something went wrong loading this page.'
-    } finally {
-      loading.value = false
+  // One loadFn call in flight per instance. loadFns assign the view's refs
+  // themselves, so a stale response can't be discarded from out here — overlapping
+  // calls must be serialized instead. A call arriving mid-load is remembered
+  // (`pending`; a visible reload outranks a quiet refresh) and run once after
+  // the current one, so the view always ends on the latest data.
+  let inFlight = null
+  let pending = null
+
+  async function once(visible) {
+    if (visible) {
+      loading.value = true
+      error.value = null
+      try {
+        await loadFn()
+      } catch (e) {
+        error.value = e?.message || 'Something went wrong loading this page.'
+      } finally {
+        loading.value = false
+      }
+    } else {
+      // Quiet background refresh for live updates: no skeleton flash, and a
+      // transient error is swallowed (keep showing the last-good data).
+      try {
+        await loadFn()
+        error.value = null
+      } catch {
+        // Keep stale data; leave any existing error untouched.
+      }
     }
   }
 
-  // Quiet background refresh for live updates: no skeleton flash, and a transient
-  // error is swallowed (keep showing the last-good data). reload() stays the
-  // explicit, visible path (initial load + user-triggered "Try again").
-  async function refresh() {
-    if (loading.value) return // don't race an in-flight full load
-    try {
-      await loadFn()
-      error.value = null
-    } catch {
-      // Keep stale data; leave any existing error untouched.
+  function run(visible) {
+    if (inFlight) {
+      pending = pending === 'reload' || visible ? 'reload' : 'refresh'
+      return inFlight
     }
+    inFlight = (async () => {
+      try {
+        let kind = visible
+        for (;;) {
+          await once(kind)
+          if (!pending) break
+          kind = pending === 'reload'
+          pending = null
+        }
+      } finally {
+        inFlight = null
+      }
+    })()
+    return inFlight
   }
+
+  // reload() is the explicit, visible path (initial load + user-triggered
+  // "Try again"); refresh() is the quiet live-update path.
+  const reload = () => run(true)
+  const refresh = () => run(false)
 
   if (immediate) onMounted(reload)
 

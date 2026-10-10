@@ -3,6 +3,12 @@ import { THEME } from '../storageKeys'
 
 let toastId = 0
 
+// Live-sync handles, kept off the reactive state so stopLiveSync() can remove
+// exactly the listeners startLiveSync() added.
+let liveTimer = null
+let liveTick = null
+let onVisible = null
+
 export const useUI = defineStore('ui', {
   state: () => ({
     theme: localStorage.getItem(THEME) || 'auto',
@@ -75,20 +81,34 @@ export const useUI = defineStore('ui', {
     // browser knowing. Same cursor -> do nothing; new cursor -> bump
     // dataVersion. Skips when the tab is hidden; also checks on focus/visible.
     startLiveSync(api) {
-      if (this._liveTimer) return
+      if (liveTimer) return
       let last = null
+      let busy = false
       const tick = async () => {
-        if (document.hidden) return
+        if (document.hidden || busy) return // skip while a /changes call is outstanding
+        busy = true
         try {
           const { cursor } = await api.get('/changes')
           if (last !== null && cursor !== last) this.dataChanged()
           last = cursor
-        } catch (e) { /* transient — next tick retries; never surface a toast */ }
+        } catch (e) { /* transient — next tick retries; never surface a toast */ } finally {
+          busy = false
+        }
       }
-      this._liveTimer = setInterval(tick, 12000)
-      document.addEventListener('visibilitychange', () => { if (!document.hidden) tick() })
+      liveTick = tick
+      onVisible = () => { if (!document.hidden) tick() }
+      liveTimer = setInterval(tick, 12000)
+      document.addEventListener('visibilitychange', onVisible)
       window.addEventListener('focus', tick)
       tick()
+    },
+    // Logout / 401: stop polling (it would only 401) so a later login starts fresh.
+    stopLiveSync() {
+      if (!liveTimer) return
+      clearInterval(liveTimer)
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('focus', liveTick)
+      liveTimer = liveTick = onVisible = null
     },
     // Optional { action: { label, run } } renders a button on the toast
     // (e.g. "Undo" after a merge). Action toasts linger longer — 3.2s is not

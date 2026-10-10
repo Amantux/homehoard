@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { api, ApiError, NETWORK_ERROR_MESSAGE } from './api.js'
+import { api, ApiError, NETWORK_ERROR_MESSAGE, setWriteHook } from './api.js'
 
 const res = (status, body, ct) => ({
   ok: status < 400, status, statusText: 'x',
@@ -42,5 +42,27 @@ describe('api errors', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(res(404, { error: 'item not found' }, 'application/json')))
     const e = await api.get('/items/9').catch((x) => x)
     expect(e).toMatchObject({ status: 404, message: 'item not found', fields: {} })
+  })
+})
+
+describe('write hook', () => {
+  beforeEach(() => {
+    vi.stubGlobal('window', { location: { pathname: '/' } })
+    vi.stubGlobal('location', { hash: '#/' })
+    vi.stubGlobal('localStorage', { getItem: () => null, setItem() {}, removeItem() {} })
+  })
+  afterEach(() => { setWriteHook(null); vi.unstubAllGlobals() })
+
+  it('fires on a successful write, not on GET or a failed write', async () => {
+    const hook = vi.fn()
+    setWriteHook(hook)
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(res(200, { ok: 1 }, 'application/json')))
+    await api.get('/items')
+    expect(hook).not.toHaveBeenCalled()
+    await api.post('/items', {})
+    expect(hook).toHaveBeenCalledTimes(1)
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(res(422, { error: 'bad' }, 'application/json')))
+    await api.post('/items', {}).catch(() => {})
+    expect(hook).toHaveBeenCalledTimes(1)
   })
 })
