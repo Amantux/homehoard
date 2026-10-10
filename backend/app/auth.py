@@ -25,7 +25,12 @@ from .logging_setup import request_id_var
 from .logsafe import scrub
 from .models import User, Group, ApiToken, hash_token
 from .models.api_token import TOKEN_PREFIX
+from .integration_token import TOKEN_NAME as _INTEGRATION_TOKEN_NAME, _raw_path
 from .timeutil import as_utc, utcnow
+
+# The MCP sidecar calls REST with the integration token and names the MCP
+# caller's own key here, so the call acts as THAT key's user and access class.
+ACTING_KEY_HEADER = "X-HBOX-Acting-Key"
 
 _LOGGER = logging.getLogger("homehoard.auth")
 
@@ -303,6 +308,10 @@ def _resolve_current_user():
     # open-mode fallback are explicitly write.
     g.token_access = "write"
     header = request.headers.get("Authorization", "")
+    # An acting key is honoured ONLY alongside the integration token (checked in
+    # _user_from_api_token). With no Bearer, or a JWT, it is a 401 — never
+    # silently ignored, or the call would run as ingress/open-mode instead.
+    acting = request.headers.get(ACTING_KEY_HEADER) is not None
     if header.strip():
         token = _bearer_token(header)
         # Any credential that isn't a Bearer token (wrong scheme, empty token)
@@ -313,8 +322,13 @@ def _resolve_current_user():
         # Long-lived API keys are prefixed so we can route them without a JWT decode.
         if token.startswith(TOKEN_PREFIX):
             return _user_from_api_token(token)
+        if acting:
+            return None
         user_id = decode_token(token)
         return db.session.get(User, user_id) if user_id else None
+
+    if acting:
+        return None
 
     ingress = _ingress_user()
     if ingress is not None:
@@ -352,6 +366,12 @@ def _user_from_api_token(raw: str):
     # scope is checked for REST, so a new scope is denied here or nowhere.
     if (record.scope or "full") in ("mcp", "debug"):
         return None
+    if request.headers.get(ACTING_KEY_HEADER) is not None:
+        # Fail closed: any problem with the acting key is a 401, never a
+        # fallback to the integration token's own (shared-household) identity.
+        if not _is_integration_record(record):
+            return None
+        return _user_from_acting_key(request.headers.get(ACTING_KEY_HEADER, ""))
     # Access class: a read-only key may authenticate but is limited to safe methods
     # (enforced in login_required/owner_required). Stash it for that check.
     g.token_access = record.access or "write"
@@ -360,6 +380,41 @@ def _user_from_api_token(raw: str):
     if record.last_used_at is None or (now - as_utc(record.last_used_at)).total_seconds() > 60:
         record.last_used_at = now
         db.session.commit()
+    return db.session.get(User, record.user_id)
+
+
+def _is_integration_record(record) -> bool:
+    """True only for THE integration token: right name and scope, AND its hash
+    matches the raw token persisted in the data dir. A name is user-chosen (any
+    user can mint a key called "Home Assistant integration"), so the file match
+    is what makes this unforgeable. Fail-closed if the file can't be read."""
+    if record.name != _INTEGRATION_TOKEN_NAME or (record.scope or "full") != "full":
+        return False
+    try:
+        with open(_raw_path(), encoding="utf-8") as fh:
+            raw = fh.read().strip()
+    except OSError:
+        return False
+    return bool(raw) and secrets.compare_digest(hash_token(raw), record.token_hash)
+
+
+def _user_from_acting_key(raw: str):
+    """The user of an MCP caller's key relayed by the sidecar, or None (→ 401).
+
+    Re-verified here rather than trusted: it must be a live key whose scope
+    reaches MCP (`mcp` or `full`), and its access class replaces the integration
+    token's, so a read-only MCP key stays read-only through the proxy."""
+    raw = raw.strip()
+    if not raw.startswith(TOKEN_PREFIX):
+        return None
+    record = (
+        db.session.query(ApiToken)
+        .filter_by(token_hash=hash_token(raw))
+        .first()
+    )
+    if record is None or (record.scope or "full") not in ("mcp", "full"):
+        return None
+    g.token_access = record.access or "write"
     return db.session.get(User, record.user_id)
 
 
