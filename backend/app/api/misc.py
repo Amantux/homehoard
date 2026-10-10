@@ -13,6 +13,7 @@ from ..auth import current_group, login_required, owner_required
 from ..extensions import db, limiter
 from ..models import Group, Item
 from ..services.csv_io import export_items, import_items
+from ._validation import json_body
 
 bp = Blueprint("misc", __name__)
 
@@ -190,7 +191,7 @@ def get_chat_settings():
 @owner_required
 def put_chat_settings():
     from ..services.settings_store import set_values
-    data = request.get_json(force=True) or {}
+    data = json_body()
     stream = bool(data.get("stream"))
     set_values({"chat_streaming": "true" if stream else "false"})
     return jsonify({"stream": stream})
@@ -232,7 +233,7 @@ def put_ai_job_settings():
     from ..services.ai.url_guard import llm_url_ok
     from ..services.settings_store import get_overrides, set_values
 
-    data = request.get_json(force=True) or {}
+    data = json_body()
     pairs: dict[str, str] = {}
     for area in ("enrich", "organize"):
         blk = data.get(area)
@@ -318,7 +319,7 @@ def put_ai_settings():
     from ..services.ai import provider_config
     from ..services.ai.url_guard import llm_url_ok
 
-    data = request.get_json(force=True) or {}
+    data = json_body()
     provider = data.get("provider")
     if provider is not None and str(provider) not in provider_config.VALID_PROVIDERS:
         return jsonify({"error": f"unknown provider '{provider}'"}), 422

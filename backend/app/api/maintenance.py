@@ -7,6 +7,7 @@ from ..extensions import db
 from ..models import Item, MaintenanceEntry
 from ..auth import login_required, current_group
 from ._scoping import get_owned_or_404
+from ._validation import json_body
 from ..schemas.serializers import maintenance_out
 from ..timeutil import as_utc, utcnow
 from ..services import money
@@ -126,7 +127,7 @@ def list_entries(item_id):
 @login_required
 def create_entry(item_id):
     item = _get_item(item_id)
-    data = request.get_json(force=True) or {}
+    data = json_body()
     entry = MaintenanceEntry(
         name=data.get("name", ""),
         description=data.get("description", ""),
@@ -153,7 +154,7 @@ def update_entry(item_id, entry_id):
     if (not entry or entry.item_id != item_id
             or entry.item.group_id != current_group().id):  # no group_id column; scope via item
         abort(404)
-    data = request.get_json(force=True) or {}
+    data = json_body()
     if "name" in data:
         entry.name = data["name"]
     if "description" in data:

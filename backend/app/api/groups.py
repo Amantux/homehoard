@@ -1,7 +1,7 @@
 import secrets
 from datetime import datetime, timezone, timedelta
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, jsonify
 
 from ..extensions import db
 from ..models import GroupInvitation, Item, Label, Location, User
@@ -9,6 +9,7 @@ from ..auth import login_required, owner_required, current_group
 from ..schemas.serializers import group_out
 from ..services import money
 from ..services import vault
+from ._validation import json_body
 
 bp = Blueprint("groups", __name__)
 
@@ -22,7 +23,7 @@ def get_group():
 @bp.put("/groups")
 @owner_required
 def update_group():
-    data = request.get_json(force=True) or {}
+    data = json_body()
     group = current_group()
     if "name" in data:
         group.name = data["name"]
@@ -35,7 +36,7 @@ def update_group():
 @bp.post("/groups/invitations")
 @owner_required
 def create_invitation():
-    data = request.get_json(force=True) or {}
+    data = json_body()
     group = current_group()
     try:
         uses = int(data.get("uses", 1) or 1)

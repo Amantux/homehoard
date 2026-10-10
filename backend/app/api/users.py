@@ -119,7 +119,7 @@ def register():
 @bp.post("/users/login")
 @limiter.limit("10 per minute")
 def login():
-    data = request.get_json(force=True) or {}
+    data = json_body()
     # homebox accepts form or json; support both
     email = (data.get("username") or data.get("email") or
              request.form.get("username") or "").strip().lower()
@@ -218,7 +218,7 @@ def delete_self():
 @bp.put("/users/change-password")
 @login_required
 def change_password():
-    data = request.get_json(force=True) or {}
+    data = json_body()
     user = current_user()
     if not verify_password(data.get("current", ""), user.password_hash):
         return jsonify({"error": "current password incorrect"}), 400

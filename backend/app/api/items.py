@@ -10,6 +10,7 @@ from ..models import (Item, ItemField, ItemHolding, Label, Location, Bin,
                       Attachment, MaintenanceEntry, CheckoutEntry)
 from ..auth import login_required, current_group
 from ._scoping import get_owned_or_404
+from ._validation import json_body
 from ..schemas.serializers import item_out, item_summary
 from ..services.holdings import ensure_holding, resync_item, primary_holding
 from .lookup import location_path_str
@@ -343,7 +344,7 @@ def merge_items(item_id):
     caller bug, not a no-op.
     """
     keep = _get(item_id)                       # group + vault guarded
-    data = request.get_json(force=True) or {}
+    data = json_body()
     source = db.session.get(Item, str(data.get("sourceId") or ""))
     if (source is None or source.group_id != current_group().id
             or not vault.readable(source)):
@@ -432,7 +433,7 @@ def undo_merge():
     is refused with a 409 before anything is touched. A payload naming another
     household's keeper is a 404 like any other foreign item.
     """
-    data = request.get_json(force=True) or {}
+    data = json_body()
     src = data.get("source") or {}
     moved = data.get("moved") or {}
     if not data.get("keepId") or not isinstance(src, dict) or not src.get("name"):
@@ -503,7 +504,7 @@ def restock():
 @bp.post("/items")
 @login_required
 def create_item():
-    data = request.get_json(force=True) or {}
+    data = json_body()
     _validate_quantity(data)
     gid = current_group().id
     bin_id = _require_owned(Bin, data.get("binId"), gid)
@@ -544,7 +545,7 @@ def get_item(item_id):
 @login_required
 def update_item(item_id):
     item = _get(item_id)
-    data = request.get_json(force=True) or {}
+    data = json_body()
     _apply(item, data)
     _sync_holdings_from_item_form(item, data)
     db.session.commit()
@@ -555,7 +556,7 @@ def update_item(item_id):
 @login_required
 def patch_item(item_id):
     item = _get(item_id)
-    data = request.get_json(force=True) or {}
+    data = json_body()
     _apply(item, data)
     _sync_holdings_from_item_form(item, data)
     db.session.commit()

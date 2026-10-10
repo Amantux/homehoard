@@ -15,6 +15,7 @@ from ..extensions import db
 from ..models import QrTag, Item, Bin, Location, KINDS, gen_token
 from ..auth import login_required, current_group
 from ._scoping import get_owned_or_404
+from ._validation import json_body
 from ..schemas.serializers import qrtag_out
 
 bp = Blueprint("qrtags", __name__)
@@ -66,7 +67,7 @@ def list_tags():
 @bp.post("/qr-tags")
 @login_required
 def create_tag():
-    data = request.get_json(force=True) or {}
+    data = json_body()
     kind = data.get("kind")
     target_id = data.get("targetId")
     if kind not in KINDS or not target_id:
