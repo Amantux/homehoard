@@ -13,11 +13,25 @@ updates:
       # mcp 2.x REMOVED mcp.server.fastmcp, which the MCP server imports, so a
       # major bump breaks it outright — verified by installing 2.0.0 in a clean
       # venv: `from mcp.server.fastmcp import FastMCP` raises ModuleNotFoundError.
-      # requirements.txt pins 1.27.0 and says so, but Dependabot reopened the
+      # requirements.txt pins 1.29.0 and says so, but Dependabot reopened the
       # same breaking PR anyway (keeping the warning comment above the new pin).
       # Remove this once the server is ported to the 2.x API.
       - dependency-name: "mcp"
         update-types: ["version-update:semver-major"]
+
+  # HA integration test harness (the `latest` leg of CI's integration-tests).
+  # Each harness release pins one exact homeassistant, so a bump here is how a
+  # new HA reaches CI — one reviewable PR per HA release.
+  - package-ecosystem: "pip"
+    directory: "/custom_components/homehoard/tests"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 2
+    # requirements_test_min.txt pins the harness for the OLDEST HA we support
+    # (hacs.json); bumping it would silently stop testing that floor. CI also
+    # asserts its HA == hacs.json, in case this exclusion ever stops matching.
+    exclude-paths:
+      - "**/requirements_test_min.txt"
 
   # Vue frontend
   - package-ecosystem: "npm"

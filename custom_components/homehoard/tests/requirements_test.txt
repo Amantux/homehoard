@@ -1,7 +1,11 @@
-# Test-only deps for the HomeHoard integration (needs Home Assistant / Python 3.13+).
-# Pinned loosely; the harness pulls a matching Home Assistant. Run in its own CI job.
+# Test-only deps for the HomeHoard integration: the `latest` leg of the
+# integration-tests CI matrix (Python 3.14; harness 0.13.371 pins
+# homeassistant==2026.10.0 and requires >=3.14). Pinned exactly so a new HA
+# arrives as a Dependabot PR rather than silently on the next CI run. The
+# `minimum` leg (oldest supported HA) uses requirements_test_min.txt.
 #
 # NEVER install this into the system Python you run the backend suite with: it
-# pins an older dependency set (pydantic 1.x), which breaks the `mcp` package
-# and stops backend test modules collecting. Use a venv, or let CI run it.
-pytest-homeassistant-custom-component
+# pins its own dependency set (historically pydantic 1.x), which can break the
+# `mcp` package and stop backend test modules collecting. Use a venv, or let CI
+# run it.
+pytest-homeassistant-custom-component==0.13.371

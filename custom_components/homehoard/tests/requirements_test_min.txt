@@ -1,0 +1,19 @@
+# Test-only deps for the `minimum` leg of the integration-tests CI matrix: the
+# oldest Home Assistant we declare support for (hacs.json "homeassistant").
+# Harness 0.13.181 is the release whose wheel METADATA has
+# `Requires-Dist: homeassistant==2024.11.0` and `Requires-Python: >=3.12`, so
+# this leg runs on Python 3.12. CI asserts the installed HA equals hacs.json.
+#
+# Excluded from Dependabot (exclude-paths in .github/dependabot.yml): bump this
+# only when hacs.json's minimum moves, to the harness release for that HA.
+#
+# Same rule as requirements_test.txt: venv only, never the backend interpreter.
+pytest-homeassistant-custom-component==0.13.181
+# HA 2024.11's own deps float, and two of them have since shipped breaking
+# releases that HA 2024.11 never ran against:
+# - josepy 2.x removed ComparableX509, which acme (via hass_nabucasa) uses, so
+#   `import homeassistant.helpers.network` fails at collection.
+# - pycares >=4.9 starts a `_run_safe_shutdown_loop` thread that the harness's
+#   lingering-thread check reports as a test error.
+josepy<2
+pycares<4.9
