@@ -239,7 +239,10 @@ async function lockVault() {
 }
 
 async function loadVault() {
-  try { vault.value = await api.get('/vault/status') } catch { /* non-fatal */ }
+  // Non-fatal for the list, but say so: a stale vault state hides the lock/unlock controls.
+  try { vault.value = await api.get('/vault/status') } catch (e) {
+    ui.error('Couldn’t load the vault status. ' + (e.message || 'Reload the page to try again.'))
+  }
 }
 
 async function deleteSelected() {

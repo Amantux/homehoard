@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { api, getToken, apiUrl } from '../api'
 import { useUI } from '../stores/ui'
 import { useConfirm } from '../composables/useConfirm'
+import ErrorState from '../components/ErrorState.vue'
 
 const ui = useUI()
 const confirm = useConfirm()
@@ -19,8 +20,16 @@ const dbTarget = ref(null)
 const envVars = ['HBOX_DATABASE_URL (HomeHoard)', 'EDIBL_DATABASE_URL (Edibl)', 'MYMEAL_DATABASE_URL (myMeal)']
 onMounted(async () => {
   try { dbBackend.value = (await api.get('/status')).dbBackend || 'sqlite' } catch (e) { /* leave default */ }
-  try { dbTarget.value = await api.get('/db/target') } catch (e) { /* owner-only; hide the card */ }
+  await loadDbTarget()
 })
+const dbTargetError = ref('')
+async function loadDbTarget() {
+  dbTargetError.value = ''
+  try { dbTarget.value = await api.get('/db/target') } catch (e) {
+    // 403 = owner-only: hide the card. Anything else is a real failure — say so.
+    if (e.status !== 403) dbTargetError.value = 'Couldn’t load the database sharing details. ' + (e.message || 'Check your connection and try again.')
+  }
+}
 function copyDbCoords() {
   const t = dbTarget.value
   if (!t || t.backend !== 'postgresql') return
@@ -142,7 +151,11 @@ async function doExport() {
     <p class="muted" style="margin:0">HomeHoard is running on an external PostgreSQL database.</p>
   </div>
 
-  <div class="card" v-if="dbTarget">
+  <div class="card" v-if="dbTargetError">
+    <h2>Share this database with your other apps</h2>
+    <ErrorState :message="dbTargetError" @retry="loadDbTarget" />
+  </div>
+  <div class="card" v-else-if="dbTarget">
     <h2>Share this database with your other apps</h2>
     <template v-if="dbTarget.backend === 'postgresql'">
       <p class="muted" style="max-width:560px">Edibl, HomeHoard, and myMeal can share one PostgreSQL
