@@ -106,3 +106,64 @@ describe('401 handling', () => {
     expect(removed.length).toBe(0)
   })
 })
+
+describe('streamPost errors and malformed lines', () => {
+  beforeEach(() => {
+    vi.stubGlobal('window', { location: { pathname: '/' } })
+    vi.stubGlobal('location', { hash: '#/' })
+    vi.stubGlobal('localStorage', { getItem: () => null, setItem() {}, removeItem() {} })
+  })
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
+
+  const streamRes = (...chunks) => {
+    const enc = new TextEncoder()
+    const queue = chunks.map((c) => enc.encode(c))
+    return {
+      ok: true, status: 200, headers: { get: () => 'application/x-ndjson' },
+      body: { getReader: () => ({ read: async () => (queue.length ? { done: false, value: queue.shift() } : { done: true }) }) },
+    }
+  }
+
+  it('network failure -> ApiError status 0 with a curated message', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')))
+    const e = await streamPost('/chat', {}, () => {}).catch((x) => x)
+    expect(e).toBeInstanceOf(ApiError)
+    expect(e.status).toBe(0)
+    expect(e.message).toBe(NETWORK_ERROR_MESSAGE)
+  })
+
+  it('500 with a non-JSON body -> ApiError 500 with the curated message', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false, status: 500, statusText: 'Internal Server Error', body: null,
+      headers: { get: () => 'text/html' },
+      json: async () => { throw new SyntaxError('Unexpected token <') },
+    }))
+    const e = await streamPost('/chat', {}, () => {}).catch((x) => x)
+    expect(e).toBeInstanceOf(ApiError)
+    expect(e.status).toBe(500)
+    expect(e.message).toMatch(/^HomeHoard hit an error/)
+  })
+
+  it("503 JSON keeps the server's error text (ChatAssistant keys on 'provider')", async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ...res(503, { error: 'No AI provider configured' }, 'application/json'), body: null }))
+    const e = await streamPost('/chat', {}, () => {}).catch((x) => x)
+    expect(e).toBeInstanceOf(ApiError)
+    expect(e.status).toBe(503)
+    expect(e.message).toBe('No AI provider configured')
+  })
+
+  it('skips a malformed line with one warning and keeps streaming', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(streamRes('{"a":1}\nnot-json\n{"b', '":2}\nalso bad\n{"c":3}')))
+    const events = []
+    await streamPost('/chat', {}, (e) => events.push(e))
+    expect(events).toEqual([{ a: 1 }, { b: 2 }, { c: 3 }])
+    expect(warn).toHaveBeenCalledTimes(1)
+  })
+
+  it("does not swallow onEvent's own errors", async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(streamRes('{"a":1}\n')))
+    const boom = new Error('handler broke')
+    await expect(streamPost('/chat', {}, () => { throw boom })).rejects.toBe(boom)
+  })
+})
