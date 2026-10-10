@@ -38,6 +38,56 @@
 - If you run the MCP server outside the add-on with your own API key as its
   token, keyed tool calls are now rejected; the server says so at start-up.
   Leave the token unset to use the integration token.
+- **Keyboard and screen-reader users can now get around.** Item, bin and
+  location cards are real links with a visible focus ring; every page has a
+  heading and its own browser-tab title, focus moves to it when you change
+  page, Back restores your scroll position; the account menu closes with Esc
+  or a click outside; notifications are announced, pause while you hover
+  them, and old errors clear when you change page; photos have descriptions;
+  maintenance status reads "Overdue"/"Done"/"Scheduled" rather than relying
+  on colour; the sign-in form works with password managers and Enter.
+- Confirmation dialogs close when you navigate away instead of lingering over
+  the next page. If the server fails or the network drops mid-chat you get a
+  clear message, and one garbled line from the AI no longer cuts off the reply.
+- Settings that fail to load now say so and can be retried, with Save disabled
+  until they do, so a network hiccup can't overwrite your real AI or chat
+  settings with defaults. Vault status failures are shown instead of hidden.
+- The "move an existing item" and scan-to-link pickers search all your items
+  instead of stopping silently at 500, and Duplicates says when it only
+  checked part of a large inventory.
+- Sign-up, profile and location forms reject malformed input with a clear
+  message instead of a server error, and the built-in Home Assistant and
+  local account addresses can no longer be claimed. The login response no
+  longer includes the unused `attachmentToken` field.
+- Faster page loads in open/ingress mode: the legacy-password safety check
+  runs once per user instead of on every request, and a busy database no
+  longer turns a valid API-key request into an error.
+- Locations and the Home Assistant summary load faster for large households
+  (counts come from the database instead of loading every item), hidden items
+  no longer show up in the summary's per-location counts while the vault is
+  locked, a corrupted location hierarchy can't crash the location tree, and
+  the HA calendar accepts start/end times with any UTC offset.
+- The assistant no longer passes internal error details (which could include
+  connection strings) to the AI model or into chat history when a tool fails;
+  you see "internal error, ref <id>" and the same id appears in the add-on
+  log. Validation messages still come through so the assistant can correct
+  itself.
+- A notifier that fails to send now logs a warning with the error type and
+  provider, never the URL or its token. Login and registration rate limits
+  are covered by tests (the limit applies per server worker, so the effective
+  limit is twice the configured value).
+- The app's initial download is about 19% smaller: the scanner, search,
+  create and bug-report dialogs load on demand.
+- Behind the scenes: CI now boots the container on an older database to prove
+  an upgrade takes a backup first and keeps your data, checks that stopping
+  during start-up exits cleanly and that the voice/MCP server comes back after
+  a crash; the container healthcheck follows `HBOX_PORT`; the Documentation
+  tab gains "Backup and restore" and "Time zone" sections and the voice-sentence
+  install steps, and corrects where data is stored (`/data`) and what
+  `log_level` hides; chat sessions, background jobs, AI suggestions and
+  notifiers all use the shared household check and the cross-household test
+  now covers them, foreign ids in request bodies, and another member's
+  notifiers.
 
 ## 1.1.51
 
