@@ -23,7 +23,7 @@ regexes = [
   # docker-compose env-var reference, not a literal secret
   '''\$\{HBOX_SECRET_KEY[^}]*\}''',
   # dummy values used only to make timing constant / illustrate config
-  '''this-is-not-a-real-password''',
-  '''change-me-in-production''',
-  '''please-change-me-to-a-long-random-string''',
+  '''^this-is-not-a-real-password$''',
+  '''^change-me-in-production$''',
+  '''^please-change-me-to-a-long-random-string$''',
 ]
