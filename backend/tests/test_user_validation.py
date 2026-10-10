@@ -43,7 +43,7 @@ def test_register_requires_name(client, name):
     assert r.get_json()["fields"] == {"name": "Name is required"}
 
 
-@pytest.mark.parametrize("raw", ["[]", "[1, 2]", '"str"', "3", "null", "{not json"])
+@pytest.mark.parametrize("raw", ["[]", "[1, 2]", '"str"', "3", "null"])
 def test_register_rejects_non_object_body(client, raw):
     r = client.post(f"{H}/users/register", data=raw, content_type="application/json")
     assert r.status_code == 422
@@ -106,3 +106,19 @@ def test_body_without_json_content_type_still_parses(auth_client):
     r = auth_client.post(f"{H}/locations", data='{"name": "Shed"}',
                          content_type="text/plain")
     assert r.status_code == 201
+
+
+@pytest.mark.parametrize("email", ["\u200bha:1@example.com", "local@easyinventory\u200b",
+                                   "\u200dlocal@easyinventory", "ha\ufeff:1@example.com"])
+def test_register_rejects_reserved_email_hidden_by_format_characters(client, email):
+    """Zero-width / BOM characters are Cf, not whitespace: strip() leaves them and
+    the reserved check must still fire (a lookalike of a synthetic account)."""
+    r = _register(client, email=email)
+    assert r.status_code == 422
+    assert "reserved" in r.get_json()["fields"]["email"]
+
+
+def test_malformed_json_is_reported_as_malformed(client):
+    r = client.post(f"{H}/users/register", data="{bad", content_type="application/json")
+    assert r.status_code == 422
+    assert r.get_json()["fields"] == {"body": "is not valid JSON"}

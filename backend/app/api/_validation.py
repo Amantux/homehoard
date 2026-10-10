@@ -5,10 +5,11 @@
 handler in ``app/__init__.py`` adds ``fields``), so the SPA can render each
 message under its input instead of a single toast.
 """
+import unicodedata
 from typing import NoReturn
 
 from flask import request
-from werkzeug.exceptions import UnprocessableEntity
+from werkzeug.exceptions import BadRequest, UnprocessableEntity
 
 
 class FieldValidationError(UnprocessableEntity):
@@ -28,9 +29,14 @@ def json_body() -> dict:
     hands back whatever parsed — a list, a string, a number — and the handler's
     ``data.get(...)`` then 500s; a non-object body is a client error."""
     # force=True as before: clients that omit the JSON content type keep working.
-    data = request.get_json(force=True, silent=True)
-    if data is None and not request.get_data():
+    if not request.get_data():
         return {}  # empty body: same as the old ``... or {}``
+    try:
+        data = request.get_json(force=True)
+    except BadRequest:
+        # Did not parse: say so, rather than claiming the shape was wrong.
+        # (silent=True would return None here, indistinguishable from ``null``.)
+        abort_fields({"body": "is not valid JSON"}, "Request body is not valid JSON")
     if not isinstance(data, dict):
         abort_fields({"body": "must be a JSON object"}, "Request body must be a JSON object")
     return data
@@ -47,7 +53,11 @@ def clean_email(value: object, field: str = "email") -> str:
     """Normalised (stripped, lower-cased) email, or a 422 on ``field``."""
     if not isinstance(value, str) or not value.strip():
         abort_fields({field: "Email is required"}, "Email is required")
-    email = value.strip().lower()
+    # NFKC first and drop format characters (zero-width joiners and friends,
+    # category Cf): "\u200bha:1@x" would otherwise render as a reserved address
+    # in the members list while slipping past the prefix/suffix checks.
+    email = unicodedata.normalize("NFKC", value)
+    email = "".join(c for c in email if unicodedata.category(c) != "Cf").strip().lower()
     if email.startswith(_RESERVED_EMAIL_PREFIX) or email.endswith(_RESERVED_EMAIL_DOMAIN):
         abort_fields({field: "This email address is reserved"}, "This email address is reserved")
     local, at, domain = email.partition("@")
