@@ -9,5 +9,6 @@ const router = useRouter()
 </script>
 
 <template>
+  <h1 class="visually-hidden">Scan</h1>
   <ScannerModal :initial-mode="String(route.query.action || '')" @close="router.push('/')" />
 </template>

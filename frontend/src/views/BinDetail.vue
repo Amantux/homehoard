@@ -327,7 +327,7 @@ async function remove() {
       <div v-if="bin.attachments.length" class="card-grid">
         <div v-for="a in bin.attachments" :key="a.id" class="item-card" style="cursor:default">
           <div class="thumb">
-            <img v-if="a.type==='photo'" :src="apiUrl('/documents/'+a.document.id)" />
+            <img v-if="a.type==='photo'" :src="apiUrl('/documents/'+a.document.id)" :alt="a.document.title || 'Attachment photo'" />
             <span v-else>📄</span>
           </div>
           <div class="body">

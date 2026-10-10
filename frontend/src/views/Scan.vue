@@ -154,6 +154,7 @@ onMounted(resolve)
 <template>
   <div class="center-screen">
     <div class="card" style="width:460px;max-width:100%">
+      <h1 class="visually-hidden">Scan result</h1>
       <template v-if="state === 'resolving'">
         <p class="muted" style="text-align:center">Checking inventory…</p>
       </template>
