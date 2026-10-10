@@ -15,6 +15,7 @@ from ..extensions import db, limiter
 from ..logsafe import mask_email, scrub
 from ..models import Group, GroupInvitation, User
 from ..schemas.serializers import user_out
+from ._validation import clean_email, clean_name, json_body
 
 bp = Blueprint("users", __name__)
 
@@ -39,7 +40,7 @@ def _valid_invitation(token: str):
     inv = db.session.query(GroupInvitation).filter_by(token=token).first()
     if not inv:
         return None
-    if inv.uses is not None and inv.uses <= 0:
+    if inv.uses <= 0:
         return None
     if inv.expires_at:
         try:
@@ -69,12 +70,10 @@ def register():
     if not current_app.config["ALLOW_REGISTRATION"]:
         return jsonify({"error": "registration disabled"}), 403
 
-    data = request.get_json(force=True) or {}
-    email = (data.get("email") or "").strip().lower()
-    name = data.get("name") or ""
+    data = json_body()
+    email = clean_email(data.get("email"))
+    name = clean_name(data.get("name"))
     password = data.get("password") or ""
-    if not email:
-        return jsonify({"error": "email required"}), 422
     ok, err = _password_ok(password)
     if not ok:
         return err
@@ -172,12 +171,16 @@ def get_self():
 @bp.put("/users/self")
 @login_required
 def update_self():
-    data = request.get_json(force=True) or {}
+    data = json_body()
     user = current_user()
     if "name" in data:
-        user.name = data["name"]
-    if "email" in data:
-        new_email = data["email"].strip().lower()
+        user.name = clean_name(data["name"])
+    raw_email = data.get("email")
+    # Echoing back the current email is a no-op, even for the synthetic
+    # (``ha:<id>`` / local) users whose address clean_email would refuse.
+    if "email" in data and not (isinstance(raw_email, str)
+                                and raw_email.strip().lower() == user.email):
+        new_email = clean_email(raw_email)
         if new_email != user.email:
             taken = (
                 db.session.query(User)

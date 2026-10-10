@@ -5,7 +5,7 @@ from ..extensions import db
 from ..models import Location, Bin
 from ..auth import login_required, current_group
 from ._scoping import get_owned_or_404
-from ._validation import list_limit
+from ._validation import clean_name, json_body, list_limit
 from ..schemas.serializers import location_out, location_tree
 
 bp = Blueprint("locations", __name__)
@@ -78,12 +78,12 @@ def tree():
 @bp.post("/locations")
 @login_required
 def create_location():
-    data = request.get_json(force=True) or {}
+    data = json_body()
     parent_id, error = _validate_parent(data.get("parentId"))
     if error:
         return jsonify({"error": error}), 422
     loc = Location(
-        name=data.get("name", ""),
+        name=clean_name(data.get("name")),
         description=data.get("description", ""),
         parent_id=parent_id,
         group_id=current_group().id,
@@ -103,9 +103,9 @@ def get_location(location_id):
 @login_required
 def update_location(location_id):
     loc = _get(location_id)
-    data = request.get_json(force=True) or {}
+    data = json_body()
     if "name" in data:
-        loc.name = data["name"]
+        loc.name = clean_name(data["name"])
     if "description" in data:
         loc.description = data["description"]
     if "parentId" in data:
