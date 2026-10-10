@@ -361,6 +361,53 @@ jobs:
         # is fixed in the tests' conftest so `custom_components.homehoard` imports.
         run: .venv-ha/bin/python -m pytest custom_components/homehoard/tests -q -o asyncio_mode=auto
 
+  postgres-schema:
+    # Boot-migrate against a REAL Postgres. The backend suite runs on SQLite,
+    # which accepts schema Postgres rejects (a Boolean default of integer 0
+    # broke every fresh Postgres install), so only this job catches that class.
+    name: Postgres schema
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea # 16-alpine
+        env:
+          POSTGRES_USER: homehoard
+          POSTGRES_PASSWORD: homehoard  # throwaway CI-only database
+          POSTGRES_DB: homehoard
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U homehoard -d homehoard"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Each test needs its own EMPTY database: both seed rows and run migrations.
+      HBOX_TEST_PG_URL: postgresql://homehoard:homehoard@localhost:5432/homehoard
+      HH_TEST_PG_URL: postgresql://homehoard:homehoard@localhost:5432/hh_roundtrip
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"  # match the runtime image (Dockerfile: python:3.14-slim)
+      - name: Install dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest
+      - name: Create second database
+        run: python -c "import psycopg; psycopg.connect('postgresql://homehoard:homehoard@localhost:5432/homehoard', autocommit=True).execute('CREATE DATABASE hh_roundtrip')"
+      - name: Run Postgres boot-migrate tests
+        working-directory: backend
+        run: |
+          set -o pipefail
+          pytest -q tests/test_postgres_schema.py tests/test_migrations.py -k postgres -rs | tee pg.log
+          # A skip here means the env var vanished and nothing was tested: fail, don't go green.
+          ! grep -q " skipped" pg.log
+
   # Auto-bump the patch version on every push to main (skips its own commit).
   bump-version:
     name: Auto-bump patch version
@@ -370,7 +417,7 @@ jobs:
     if: >
       github.event_name == 'push' &&
       !startsWith(github.event.head_commit.message, 'chore: bump version')
-    needs: [backend-tests, frontend-build, validate-addon, lint, smoke, integration-tests]
+    needs: [backend-tests, frontend-build, validate-addon, lint, smoke, integration-tests, postgres-schema]
     outputs:
       new_version: ${{ steps.bump.outputs.new_version }}
       bump_sha: ${{ steps.commit.outputs.sha }}
