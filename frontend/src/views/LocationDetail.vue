@@ -196,8 +196,8 @@ async function remove() {
     </div>
     <div v-show="tab==='bins'">
       <div v-if="loc.bins?.length" class="card-grid">
-        <div v-for="b in loc.bins" :key="b.id" class="item-card" @click="router.push('/bins/'+b.id)">
-          <div class="body"><div class="title">🗃️ {{ b.name }}</div>
+        <div v-for="b in loc.bins" :key="b.id" class="item-card">
+          <div class="body"><router-link class="title stretched-link" :to="'/bins/'+b.id">🗃️ {{ b.name }}</router-link>
             <div class="labels"><span class="badge">{{ b.itemCount }} items</span></div></div>
         </div>
       </div>
@@ -205,8 +205,8 @@ async function remove() {
     </div>
     <div v-show="tab==='sub'">
       <div v-if="loc.children?.length" class="card-grid">
-        <div v-for="c in loc.children" :key="c.id" class="item-card" @click="router.push('/locations/'+c.id)">
-          <div class="body"><div class="title">📍 {{ c.name }}</div></div>
+        <div v-for="c in loc.children" :key="c.id" class="item-card">
+          <div class="body"><router-link class="title stretched-link" :to="'/locations/'+c.id">📍 {{ c.name }}</router-link></div>
         </div>
       </div>
       <div v-else class="card muted">No sub-locations.</div>

@@ -1,9 +1,7 @@
 <script setup>
-import { useRouter } from 'vue-router'
 import { apiUrl } from '../api'
 
 const props = defineProps({ item: { type: Object, required: true } })
-const router = useRouter()
 
 function thumb() {
   if (!props.item.imageId) return null
@@ -14,7 +12,7 @@ function thumb() {
 </script>
 
 <template>
-  <div class="item-card" @click="router.push('/items/' + item.id)">
+  <div class="item-card">
     <div class="thumb" style="position:relative">
       <img v-if="item.imageId" :src="thumb()" alt="" @error="$event.target.style.display='none'" />
       <span v-else>📦</span>
@@ -22,11 +20,10 @@ function thumb() {
             style="position:absolute;top:6px;right:6px;background:var(--surface)">📤 Out</span>
     </div>
     <div class="body">
-      <!-- A real link (middle-click / open-in-new-tab); the card stays clickable too. -->
-      <router-link class="title" :to="'/items/' + item.id" @click.stop>{{ item.name }}</router-link>
-      <!-- The whole card navigates to the item, so the place needs @click.stop
-           or clicking it would open the item instead of the place. -->
-      <div class="sub" v-if="item.location || item.bin" @click.stop>
+      <!-- A real link (keyboard, middle-click / open-in-new-tab); .stretched-link
+           makes the whole card its click target. The place link sits above it. -->
+      <router-link class="title stretched-link" :to="'/items/' + item.id">{{ item.name }}</router-link>
+      <div class="sub" v-if="item.location || item.bin">
         <router-link v-if="item.bin" :to="'/bins/' + item.bin.id">🗃️ {{ item.bin.name }}</router-link>
         <router-link v-else :to="'/locations/' + item.location.id">📍 {{ item.location.name }}</router-link>
       </div>

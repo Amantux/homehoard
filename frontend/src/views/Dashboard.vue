@@ -87,12 +87,12 @@ const tiles = () => [
     </div>
 
     <div class="stat-grid">
-      <div v-for="t in tiles()" :key="t.label" class="stat"
-           :style="t.to ? 'cursor:pointer' : ''" @click="t.to && router.push(t.to)">
+      <component :is="t.to ? 'router-link' : 'div'" v-for="t in tiles()" :key="t.label"
+                 class="stat" :to="t.to || undefined">
         <div class="stat-ico">{{ t.icon }}</div>
         <div class="value">{{ t.value }}</div>
         <div class="label">{{ t.label }}</div>
-      </div>
+      </component>
     </div>
 
     <div class="page-head" style="margin:30px 0 16px">
@@ -116,10 +116,9 @@ const tiles = () => [
       <router-link to="/locations">Manage →</router-link>
     </div>
     <div v-if="locations.length" class="card-grid">
-      <div v-for="l in locations.slice(0, 8)" :key="l.id" class="item-card"
-           @click="router.push('/locations/' + l.id)">
+      <div v-for="l in locations.slice(0, 8)" :key="l.id" class="item-card">
         <div class="body">
-          <div class="title">📍 {{ l.name }}</div>
+          <router-link class="title stretched-link" :to="'/locations/' + l.id">📍 {{ l.name }}</router-link>
           <div class="sub">{{ (l.bins?.length || 0) }} bins</div>
         </div>
       </div>
