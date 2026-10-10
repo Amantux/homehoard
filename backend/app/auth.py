@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 import jwt
 from flask import current_app, g, request, jsonify
 from passlib.hash import bcrypt
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from .extensions import db
 from .logging_setup import request_id_var
@@ -74,10 +74,20 @@ def decode_token(token: str):
 _KNOWN_BACKDOOR_PASSWORD = "unused"
 
 
+# (user.id, password_hash) pairs already proven NOT to be the backdoor. A bcrypt
+# verify costs ~250 ms and this runs on every open-mode/ingress request, so check
+# each pair once per worker. Keyed on the hash, so any rotation or password
+# change produces a new key and is re-checked once; bounded by users x changes.
+_ROTATION_CHECKED: set[tuple[int, str]] = set()
+
+
 def _rotate_known_backdoor_password(user: User) -> None:
+    if (user.id, user.password_hash) in _ROTATION_CHECKED:
+        return
     if verify_password(_KNOWN_BACKDOOR_PASSWORD, user.password_hash):
         user.password_hash = hash_password(secrets.token_urlsafe(32))
         db.session.commit()
+    _ROTATION_CHECKED.add((user.id, user.password_hash))
 
 
 @contextlib.contextmanager
@@ -379,7 +389,13 @@ def _user_from_api_token(raw: str):
     now = utcnow()
     if record.last_used_at is None or (now - as_utc(record.last_used_at)).total_seconds() > 60:
         record.last_used_at = now
-        db.session.commit()
+        # Usage bookkeeping only: a failed write (locked SQLite, DB blip) must
+        # not turn an otherwise valid token into a 500. Roll back and carry on.
+        try:
+            db.session.commit()
+        except SQLAlchemyError as exc:
+            db.session.rollback()
+            _LOGGER.warning("api token last_used_at update failed: %s", type(exc).__name__)
     return db.session.get(User, record.user_id)
 
 
