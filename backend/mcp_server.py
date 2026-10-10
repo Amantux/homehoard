@@ -9,6 +9,7 @@ Run:  python mcp_server.py    (serves SSE on HBOX_MCP_HOST:HBOX_MCP_PORT/sse)
 """
 import hmac
 import json
+import os
 import sys
 
 import anyio
@@ -76,7 +77,32 @@ def _caller_headers() -> dict:
     raw = header[len("Bearer "):].strip() if header.startswith("Bearer ") else ""
     if not raw.startswith(TOKEN_PREFIX):
         return {}
+    if hmac.compare_digest(raw, _BARE_TOKEN):  # the server's own token is not a caller
+        return {}
     return {"X-HBOX-Acting-Key": raw}
+
+
+def _warn_if_rest_token_is_not_integration_token() -> None:
+    """Keyed tool calls are proxied to REST as the caller (X-HBOX-Acting-Key),
+    which REST honours only when our own Bearer is the integration token
+    minted at startup. The add-on always uses that token, but a standalone
+    operator may have pasted a user-minted key into HBOX_MCP_API_TOKEN; every
+    keyed call would then get a REST 401, so say so loudly at boot."""
+    if not _BARE_TOKEN:
+        return
+    path = os.path.join(_SETTINGS.DATA_DIR, ".integration_token")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            expected = fh.read().strip()
+    except OSError:
+        return  # not provisioned here (e.g. REST on another host): can't tell
+    if not hmac.compare_digest(_BARE_TOKEN, expected):
+        print("WARNING: homehoard-mcp: HBOX_MCP_API_TOKEN is not the integration "
+              "token in DATA_DIR/.integration_token. Tool calls made with an MCP "
+              "API key act as that key's owner and REST accepts that only from "
+              "the integration token, so keyed calls will be rejected (401). "
+              "Unset HBOX_MCP_API_TOKEN to use the integration token.",
+              file=sys.stderr)
 
 
 def _get(path: str, params: dict | None = None):
@@ -456,7 +482,7 @@ def unhide_items(phrase: str = "") -> str:
     try:
         state = _post("/vault/unlock", {"phrase": phrase})
     except httpx.HTTPStatusError as exc:
-        if exc.response.status_code == 401:
+        if exc.response.status_code == 403:
             return "That passphrase isn't right — nothing was unhidden."
         if exc.response.status_code == 409:
             return ("No vault passphrase has been set yet — set one in "
@@ -1052,6 +1078,8 @@ if __name__ == "__main__":
               "works without setup. If you publish port %s in the add-on's Network tab "
               "it becomes reachable from your LAN too — set mcp_expose_external (and "
               "mint an MCP key) before doing that." % port, file=sys.stderr)
+
+    _warn_if_rest_token_is_not_integration_token()
 
     # ALWAYS wrapped. What the guard requires depends on the tool: debug tools
     # always need a debug key; domain tools keep the open-internally behaviour.

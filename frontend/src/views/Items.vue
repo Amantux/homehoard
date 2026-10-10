@@ -199,7 +199,7 @@ async function unlockVault() {
     await api.post('/vault/unlock', { phrase })
     await loadVault(); await load()
   } catch (e) {
-    ui.error(e.status === 401 ? 'That passphrase isn’t right.'
+    ui.error(e.status === 403 ? 'That passphrase isn’t right.'
       : e.status === 429 ? 'Too many attempts — wait a moment.'
       : (e.message || 'Could not unlock.'))
   }
@@ -225,7 +225,9 @@ async function setVaultPassphrase() {
     await loadVault()
     ui.success(changing ? 'Vault passphrase changed.' : 'Vault passphrase set.')
   } catch (e) {
-    ui.error(e.status === 401 ? 'That current passphrase isn’t right.'
+    // Both are 403 (a 401 would read as "signed out"); the server body tells
+    // a wrong current passphrase apart from a non-owner.
+    ui.error(e.status === 403 && /passphrase/.test(e.message || '') ? 'That current passphrase isn’t right.'
       : e.status === 403 ? 'Only the household owner can set the vault passphrase.'
       : (e.message || 'Could not set the passphrase.'))
   }
