@@ -370,7 +370,9 @@ def _migrate(app):
         with db.engine.begin() as conn:
             for name, ddl in columns.items():
                 if name not in existing:
-                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
+                    quote = conn.dialect.identifier_preparer.quote
+                    conn.execute(text(
+                        f"ALTER TABLE {quote(table)} ADD COLUMN {quote(name)} {ddl}"))
     # Backfill roles: promote the earliest user of any household with no owner, so
     # an existing admin isn't locked out of the now-owner-gated surfaces. Idempotent.
     if inspector.has_table("users"):

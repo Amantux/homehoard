@@ -31,7 +31,7 @@ def upgrade() -> None:
     if "awaiting_vault_phrase" not in _columns("chat_sessions"):
         op.add_column("chat_sessions", sa.Column(
             "awaiting_vault_phrase", sa.Boolean(), nullable=False,
-            server_default=sa.text("0")))
+            server_default=sa.false()))
 
 
 def downgrade() -> None:
