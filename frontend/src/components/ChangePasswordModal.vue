@@ -5,11 +5,13 @@
 import { ref } from 'vue'
 import { api, setToken, ApiError } from '../api'
 import { useUI } from '../stores/ui'
+import { useAuth } from '../stores/auth'
 import BaseModal from './BaseModal.vue'
 import Field from './Field.vue'
 
 const emit = defineEmits(['close'])
 const ui = useUI()
+const auth = useAuth()
 
 const current = ref('')
 const next = ref('')
@@ -48,6 +50,8 @@ async function submit() {
       <button aria-label="Close" class="ghost icon-btn" @click="emit('close')">✕</button>
     </div>
     <form @submit.prevent="submit">
+      <input type="text" name="username" class="visually-hidden" autocomplete="username"
+             :value="auth.user?.email" readonly tabindex="-1" aria-hidden="true" />
       <Field label="Current password" :error="fieldErrors.current">
         <input v-model="current" type="password" autocomplete="current-password" autofocus required
                :aria-invalid="fieldErrors.current ? 'true' : undefined" /></Field>

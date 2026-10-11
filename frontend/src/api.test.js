@@ -167,3 +167,53 @@ describe('streamPost errors and malformed lines', () => {
     await expect(streamPost('/chat', {}, () => { throw boom })).rejects.toBe(boom)
   })
 })
+
+describe('stale-token 401 (token replaced while request in flight)', () => {
+  let store
+  beforeEach(() => {
+    store = { token: 'A' }
+    vi.stubGlobal('window', { location: { pathname: '/' } })
+    vi.stubGlobal('location', { hash: '#/' })
+    vi.stubGlobal('localStorage', {
+      getItem: () => store.token,
+      setItem: (_k, v) => { store.token = v },
+      removeItem: () => { store.token = null },
+    })
+  })
+  afterEach(() => { vi.unstubAllGlobals(); setUnauthorizedHook(null) })
+
+  it('401 for a replaced token is rejected but does not sign out', async () => {
+    const hook = vi.fn()
+    setUnauthorizedHook(hook)
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      store.token = 'B' // password change stored a fresh token mid-flight
+      return res(401, { error: 'Unauthorized' }, 'application/json')
+    }))
+    const e = await api.get('/items').catch((x) => x)
+    expect(e).toBeInstanceOf(ApiError)
+    expect(e.status).toBe(401)
+    expect(store.token).toBe('B')
+    expect(hook).not.toHaveBeenCalled()
+  })
+
+  it('stream: 401 for a replaced token does not sign out', async () => {
+    const hook = vi.fn()
+    setUnauthorizedHook(hook)
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      store.token = 'B'
+      return { ...res(401, { error: 'Unauthorized' }, 'application/json'), body: null }
+    }))
+    await streamPost('/chat', {}, () => {}).catch(() => {})
+    expect(store.token).toBe('B')
+    expect(hook).not.toHaveBeenCalled()
+  })
+
+  it('401 with the token unchanged clears it and fires the hook', async () => {
+    const hook = vi.fn()
+    setUnauthorizedHook(hook)
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(res(401, { error: 'Unauthorized' }, 'application/json')))
+    await api.get('/items').catch(() => {})
+    expect(store.token).toBeNull()
+    expect(hook).toHaveBeenCalledTimes(1)
+  })
+})
