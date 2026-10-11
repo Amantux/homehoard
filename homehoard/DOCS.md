@@ -295,6 +295,13 @@ Deliberate trade-offs, so you can decide whether they fit your setup:
 - **MCP on the Home Assistant network.** With `enable_mcp` on, the MCP server
   accepts requests from the HA network without a key unless `mcp_require_key`
   is on. Anything that can reach port `7766` inside that network can use it.
+- **MCP browser origins.** A request carrying an `Origin` header (that is, from
+  a web page) is accepted only when both the Origin and the `Host` header are
+  loopback, `homeassistant.local`, `*.local.hass.io`, or the host of your
+  configured public URL; anything else gets 403. Clients without an `Origin`
+  (Home Assistant, scripts) are unaffected. Behind Ingress, every household
+  member shares one unlock-attempt bucket, so repeated wrong vault passphrases
+  from one person can rate-limit the others.
 - **Hardened install.** Set `disable_auth: false` if you are not using Ingress
   only, `allow_registration: false`, `mcp_require_key: true` (give other MCP
   clients a key), leave `mcp_expose_external` and `mcp_debug_tools` off, use a

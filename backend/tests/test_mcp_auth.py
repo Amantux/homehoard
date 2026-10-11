@@ -489,8 +489,27 @@ def test_cross_origin_request_is_403(app, auth_client):
     assert _status(_drive(h, external=False)) == 403
 
 
-def test_same_origin_and_no_origin_pass_to_auth(app, auth_client):
-    same = [(b"host", b"hh:7766"), (b"origin", b"http://hh:7766")]
+def test_rebinding_origin_equal_to_host_is_403(app, auth_client):
+    h = [(b"host", b"evil.example:8099"), (b"origin", b"http://evil.example:8099")]
+    assert _status(_drive(h, external=False)) == 403
+
+
+def test_allowlisted_origins_pass(app, auth_client, monkeypatch):
+    import dataclasses
+    monkeypatch.setattr(mcp_server, "_SETTINGS", dataclasses.replace(
+        mcp_server._SETTINGS,
+        values={**mcp_server._SETTINGS.values, "PUBLIC_URL": "https://hoard.example.org"}))
+    for host, origin in [(b"hoard.example.org", b"https://hoard.example.org"),
+                         (b"127.0.0.1:7766", b"http://127.0.0.1:7766"),
+                         (b"abc-homehoard.local.hass.io", b"http://abc.local.hass.io")]:
+        assert _status(_drive([(b"host", host), (b"origin", origin)], external=False)) == 200
+    # allowed Origin but a foreign Host header is still refused
+    h = [(b"host", b"evil.example"), (b"origin", b"https://hoard.example.org")]
+    assert _status(_drive(h, external=False)) == 403
+
+
+def test_no_origin_passes_to_auth(app, auth_client):
+    same = [(b"host", b"localhost:7766"), (b"origin", b"http://localhost:7766")]
     assert _status(_drive(same, external=False)) == 200
     assert _status(_drive([(b"host", b"hh:7766")], external=False)) == 200
     # external on, no key: the origin check passes, auth then refuses (401)

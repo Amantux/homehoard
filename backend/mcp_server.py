@@ -903,29 +903,55 @@ async def _deny(send, status: int, message: bytes) -> None:
     await send({"type": "http.response.body", "body": message})
 
 
-_LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
+def _host_allowed(host: str) -> bool:
+    """Loopback, HA-internal names, or the host of the configured PUBLIC_URL."""
+    import ipaddress
+    from urllib.parse import urlsplit
+    host = host.strip().lower().rstrip(".")
+    if not host:
+        return False
+    if host == "localhost" or host == "homeassistant.local" or host.endswith(".local.hass.io"):
+        return True
+    try:
+        if ipaddress.ip_address(host).is_loopback:
+            return True
+    except ValueError:
+        pass
+    public = (getattr(_SETTINGS, "PUBLIC_URL", "") or "").strip()
+    if public:
+        try:
+            return host == (urlsplit(public).hostname or "").lower()
+        except ValueError:
+            return False
+    return False
+
+
+def _hostname_of(netloc: str) -> str:
+    from urllib.parse import urlsplit
+    try:
+        return urlsplit("//" + netloc).hostname or ""
+    except ValueError:
+        return ""
 
 
 def _origin_ok(headers: dict) -> bool:
-    """False for a browser request from another site (CSRF / DNS rebinding).
+    """False for a browser request from a non-allowlisted site (CSRF / DNS rebinding).
 
-    No Origin header (HA's client, curl, server-to-server) passes. When present
-    its host must equal the Host header's, or be loopback / HA-internal.
+    No Origin header (HA's client, curl, server-to-server) passes. When present,
+    both the Origin's host and the Host header must be on the allowlist: an
+    Origin that merely equals Host proves nothing, since a rebound page has both
+    set to its own hostname.
     """
     origin = headers.get(b"origin", b"").decode("latin-1").strip()
     if not origin:
         return True
     from urllib.parse import urlsplit
     try:
-        parts = urlsplit(origin)
-        origin_host, origin_netloc = (parts.hostname or ""), parts.netloc.lower()
+        origin_host = urlsplit(origin).hostname or ""
     except ValueError:
         return False
-    if not origin_host:  # "null" and other opaque origins
-        return False
-    host = headers.get(b"host", b"").decode("latin-1").strip().lower()
-    return (origin_netloc == host or origin_host in _LOOPBACK_HOSTS
-            or origin_host.endswith(".local.hass.io"))
+    host = _hostname_of(headers.get(b"host", b"").decode("latin-1"))
+    return _host_allowed(origin_host) and _host_allowed(host)
 
 
 def _guard(asgi_app, server_token: str):
