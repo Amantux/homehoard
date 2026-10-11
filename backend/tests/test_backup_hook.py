@@ -44,6 +44,9 @@ def test_pre_copies_committed_rows_consistently_while_a_writer_is_open(tmp_path)
     out = tmp_path / "backups" / backup_hook.BACKUP_NAME
     assert out.exists()
     assert oct(out.stat().st_mode & 0o777) == "0o600"
+    flag = tmp_path / "backups" / backup_hook.FLAG  # app refuses writes from here
+    assert flag.exists()
+    assert oct(flag.stat().st_mode & 0o777) == "0o600"
     # The copy is a self-contained database: no WAL needed beside it.
     assert not (tmp_path / "backups" / (backup_hook.BACKUP_NAME + "-wal")).exists()
     copy = sqlite3.connect(out)
@@ -55,13 +58,14 @@ def test_pre_copies_committed_rows_consistently_while_a_writer_is_open(tmp_path)
         copy.close()
 
 
-def test_post_removes_the_copy_and_is_idempotent(tmp_path):
+def test_post_removes_the_flag_and_the_copy_and_is_idempotent(tmp_path):
     db_path, writer = _live_db(tmp_path)
     writer.execute("ROLLBACK")
     writer.close()
     assert backup_hook.run("pre", _url(db_path), str(tmp_path)) == 0
     assert backup_hook.run("post", _url(db_path), str(tmp_path)) == 0
     assert not (tmp_path / "backups" / backup_hook.BACKUP_NAME).exists()
+    assert not (tmp_path / "backups" / backup_hook.FLAG).exists()
     assert backup_hook.run("post", _url(db_path), str(tmp_path)) == 0
 
 
@@ -136,42 +140,15 @@ def _copy_vs_live_tree(tmp_path, live_minus_copy):
     return db_path, copy
 
 
-def test_restore_if_needed_discards_a_leftover_copy_older_than_the_live_db(tmp_path, capsys):
+def test_restore_if_needed_promotes_the_copy_over_a_healthy_live_db(tmp_path, capsys):
+    # Writes are refused after `pre`, so the copy is current in both the
+    # restore and the leftover case, however much newer the live files look.
     db_path, copy = _copy_vs_live_tree(tmp_path, live_minus_copy=3600)
-    before = db_path.read_bytes()
+    flag = tmp_path / "backups" / backup_hook.FLAG
+    assert flag.exists()
     assert backup_hook.run("restore-if-needed", _url(db_path), str(tmp_path)) == 0
     assert not copy.exists()
-    assert db_path.read_bytes() == before
-    assert (tmp_path / "homehoard.db-wal").read_bytes() == b"stale"
-    conn = sqlite3.connect(db_path)
-    try:
-        assert conn.execute("SELECT count(*) FROM t").fetchone()[0] == 2001
-    finally:
-        conn.close()
-    assert "leftover" in capsys.readouterr().out
-
-
-def test_restore_if_needed_prefers_the_copy_when_live_is_newer_within_the_window(tmp_path, capsys):
-    # A write landed between `pre` and the tar reading the WAL.
-    db_path, copy = _copy_vs_live_tree(tmp_path, live_minus_copy=120)
-    assert backup_hook.run("restore-if-needed", _url(db_path), str(tmp_path)) == 0
-    assert not copy.exists()
-    assert not (tmp_path / "homehoard.db-wal").exists()
-    assert not (tmp_path / "homehoard.db-shm").exists()
-    conn = sqlite3.connect(db_path)
-    try:
-        assert conn.execute("SELECT count(*) FROM t").fetchone()[0] == 2000
-    finally:
-        conn.close()
-    out = capsys.readouterr().out
-    assert "restored consistent copy from HA backup" in out
-    assert "2033-05-18" in out  # the copy's mtime (2_000_000_000), in UTC
-
-
-def test_restore_if_needed_prefers_a_copy_newer_than_the_live_db(tmp_path, capsys):
-    db_path, copy = _copy_vs_live_tree(tmp_path, live_minus_copy=-100_000_000)
-    assert backup_hook.run("restore-if-needed", _url(db_path), str(tmp_path)) == 0
-    assert not copy.exists()
+    assert not flag.exists()
     assert not (tmp_path / "homehoard.db-wal").exists()
     assert not (tmp_path / "homehoard.db-shm").exists()
     conn = sqlite3.connect(db_path)

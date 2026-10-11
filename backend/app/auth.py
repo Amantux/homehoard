@@ -20,6 +20,7 @@ from flask import current_app, g, request, jsonify
 from passlib.hash import bcrypt
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
+from .backup_guard import BackupInProgress
 from .extensions import db
 from .logging_setup import request_id_var
 from .logsafe import scrub
@@ -422,7 +423,7 @@ def _user_from_api_token(raw: str):
         # not turn an otherwise valid token into a 500. Roll back and carry on.
         try:
             db.session.commit()
-        except SQLAlchemyError as exc:
+        except (SQLAlchemyError, BackupInProgress) as exc:
             db.session.rollback()
             _LOGGER.warning("api token last_used_at update failed: %s", type(exc).__name__)
     return db.session.get(User, record.user_id)

@@ -17,9 +17,11 @@ startup: services
 # be torn), and backup_post deletes it; if backup_pre fails, the Supervisor
 # fails this add-on's backup. If the add-on is STOPPED, the Supervisor runs no
 # hooks: the backup holds the live files only, consistent because nothing is
-# writing. On restore the entrypoint prefers the copy unless the live files are
-# over 15 min newer (backup_hook.py restore-if-needed). Databases kept
-# aside as corrupt are excluded so they don't ride along in every backup.
+# writing. backup_pre also sets /data/backups/.backup-in-progress, which makes
+# the app refuse writes (503) until backup_post clears it, so nothing changes
+# between the copy and the archive; on restore the entrypoint therefore always
+# prefers the copy (backup_hook.py restore-if-needed). Databases kept aside as
+# corrupt are excluded so they don't ride along in every backup.
 # Postgres: nothing is copied; back it up with pg_dump.
 backup: hot
 backup_pre: python3 /app/backend/backup_hook.py pre

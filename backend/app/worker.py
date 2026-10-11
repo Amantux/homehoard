@@ -43,16 +43,20 @@ def start_worker(app) -> None:
 
 
 def _loop(app) -> None:
+    from .backup_guard import backup_in_progress
     from .services.jobs import claim_one, reap_stale, run_job
     while True:
         worked = False
         try:
             with app.app_context():
-                reap_stale()
-                job = claim_one()
-                if job is not None:
-                    run_job(job)
-                    worked = True
+                # No claiming while an HA backup runs: the job would be
+                # refused at its first write (backup_guard).
+                if not backup_in_progress(app.config["DATA_DIR"]):
+                    reap_stale()
+                    job = claim_one()
+                    if job is not None:
+                        run_job(job)
+                        worked = True
         except Exception:  # noqa: BLE001 - the poller must never die on one bad job
             _LOGGER.exception("worker loop error")
         if not worked:
