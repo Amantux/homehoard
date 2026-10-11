@@ -5,7 +5,7 @@ hint, and usage timestamp are visible. Tokens are group-scoped like the rest of
 the API. Primarily used to connect the Home Assistant integration when app auth
 is enabled (the add-on runs auth-disabled and needs none).
 """
-from datetime import datetime
+from datetime import date, datetime, time
 
 from flask import Blueprint, jsonify
 
@@ -15,7 +15,7 @@ from ..auth import owner_required, current_user, current_group
 from ._scoping import get_owned_or_404
 from ._validation import abort_fields, json_body
 from ..schemas.serializers import iso
-from ..timeutil import as_utc, utcnow
+from ..timeutil import as_utc, local_zone, utcnow
 
 bp = Blueprint("tokens", __name__)
 
@@ -35,14 +35,24 @@ def _out(t: ApiToken) -> dict:
 
 def _expires_at(value):
     """Optional ``expiresAt`` (ISO-8601; naive = UTC) as aware UTC, or None for
-    "never". Unparseable or not in the future is a 422 — an already-expired key
-    would be dead on arrival."""
+    "never". A bare date (``2026-01-01``) means the END of that day in the
+    household zone, so the key lives through the whole calendar day.
+    Unparseable or not in the future is a 422 — an already-expired key would be
+    dead on arrival."""
     if value is None or value == "":
         return None
     if not isinstance(value, str):
         abort_fields({"expiresAt": "must be an ISO-8601 date-time"})
     try:
-        parsed = as_utc(datetime.fromisoformat(value.strip().replace("Z", "+00:00")))
+        text = value.strip()
+        try:
+            day = date.fromisoformat(text) if len(text) == 10 else None
+        except ValueError:
+            day = None
+        if day is not None:
+            parsed = as_utc(datetime.combine(day, time(23, 59, 59), tzinfo=local_zone()))
+        else:
+            parsed = as_utc(datetime.fromisoformat(text.replace("Z", "+00:00")))
     except ValueError:
         abort_fields({"expiresAt": "must be an ISO-8601 date-time"})
     assert parsed is not None

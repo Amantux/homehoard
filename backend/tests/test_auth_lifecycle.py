@@ -129,3 +129,54 @@ def test_migration_0020_round_trips_with_data(app, auth_client):
         assert "expires_at" in {c["name"] for c in insp.get_columns("api_tokens")}
         assert db.session.query(User).filter_by(email="t@t.com").count() == 1
         assert db.session.query(ApiToken).count() == 1
+
+
+def _stored_expiry(auth_client, value):
+    r = _key(auth_client, expiresAt=value)
+    assert r.status_code == 201, r.get_json()
+    return r.get_json()["expiresAt"]
+
+
+def _set_tz(app, monkeypatch, tz):
+    # Settings is frozen: wrap it, overriding only TZ.
+    real = app.config["SETTINGS"]
+
+    class _Settings:
+        TZ = tz
+
+        def __getattr__(self, name):
+            return getattr(real, name)
+
+    monkeypatch.setitem(app.config, "SETTINGS", _Settings())
+
+
+def test_date_only_expiry_is_end_of_day_in_household_zone(app, auth_client, monkeypatch):
+    # "expires Jan 1" must survive all of Jan 1 locally, not die at 00:00 UTC.
+    _set_tz(app, monkeypatch, "America/Los_Angeles")
+    got = _stored_expiry(auth_client, "2099-01-01")
+    assert datetime.fromisoformat(got.replace("Z", "+00:00")) == datetime(
+        2099, 1, 2, 7, 59, 59, tzinfo=timezone.utc
+    )
+
+
+def test_date_only_expiry_in_utc_zone(app, auth_client, monkeypatch):
+    _set_tz(app, monkeypatch, "UTC")
+    got = _stored_expiry(auth_client, "2099-01-01")
+    assert datetime.fromisoformat(got.replace("Z", "+00:00")) == datetime(
+        2099, 1, 1, 23, 59, 59, tzinfo=timezone.utc
+    )
+
+
+def test_full_datetime_expiry_is_unchanged_by_zone(app, auth_client, monkeypatch):
+    _set_tz(app, monkeypatch, "America/Los_Angeles")
+    for value in ("2099-01-01T00:00:00Z", "2099-01-01T00:00:00"):
+        got = _stored_expiry(auth_client, value)
+        assert datetime.fromisoformat(got.replace("Z", "+00:00")) == datetime(
+            2099, 1, 1, tzinfo=timezone.utc
+        )
+
+
+def test_date_only_expiry_for_yesterday_is_422(app, auth_client, monkeypatch):
+    _set_tz(app, monkeypatch, "UTC")
+    yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).date().isoformat()
+    assert _key(auth_client, expiresAt=yesterday).status_code == 422
