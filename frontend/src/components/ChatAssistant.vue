@@ -2,7 +2,7 @@
 // Ambient inventory assistant — a floating button on every page, matching the
 // Edibl / myMeal chat experience. Reuses HomeHoard's /chat backend (streaming
 // optional) and shows suggestion chips + a proactive setup state.
-import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { api, streamPost } from '../api'
 import { useUI } from '../stores/ui'
 import { hideMarker, finalizeReply } from '../utils/bugMarker'
@@ -15,6 +15,9 @@ const input = ref('')
 const busy = ref(false)
 const sessionId = ref(null)
 const body = ref(null)
+const fab = ref(null)
+const panel = ref(null)
+const inputEl = ref(null)
 
 // Provider status → badge + proactive setup state (via the login-gated
 // /diagnostics, which reports the effective provider name — never a secret).
@@ -57,6 +60,18 @@ function toggle() {
   open.value = !open.value
   if (open.value) { loadStatus(); scrollDown() }
 }
+// Focus the input on open; on close, hand focus back to the FAB, but only if it
+// was inside the panel (a page-level Esc must not yank focus off a form).
+// Pre-flush watch: the panel is still in the DOM when this runs on close.
+watch(open, async (isOpen) => {
+  if (isOpen) {
+    await nextTick()
+    const el = inputEl.value && !inputEl.value.disabled ? inputEl.value : panel.value
+    el?.focus()
+  } else if (panel.value?.contains(document.activeElement)) {
+    fab.value?.focus()
+  }
+})
 function reset() { msgs.value = []; sessionId.value = null }
 
 async function scrollDown() {
@@ -128,13 +143,13 @@ async function send(text) {
 
 <template>
   <div class="asst">
-    <button class="fab" :class="{ open }" @click="toggle"
+    <button ref="fab" class="fab" :class="{ open }" @click="toggle"
             :aria-label="open ? 'Close assistant' : 'Open assistant'">
       <span v-if="!open">💬</span><span v-else>✕</span>
     </button>
 
     <transition name="asst-panel">
-      <section v-if="open" class="panel" role="dialog" aria-label="HomeHoard assistant">
+      <section v-if="open" ref="panel" class="panel" role="dialog" aria-label="HomeHoard assistant" tabindex="-1">
         <header class="phead">
           <div style="display:flex;gap:8px;align-items:center">
             <strong>🔎 Assistant</strong>
@@ -147,7 +162,7 @@ async function send(text) {
           </div>
         </header>
 
-        <div ref="body" class="pbody">
+        <div ref="body" class="pbody" role="log" aria-live="polite" aria-label="Conversation">
           <div v-if="!msgs.length" class="empty">
             <template v-if="notConfigured">
               <p class="muted">🔌 No AI provider is set up yet. An instance admin can wire one up in
@@ -161,7 +176,9 @@ async function send(text) {
           </div>
 
           <div v-for="(m, i) in msgs" :key="i" class="turn" :class="m.role">
-            <div class="bubble" :class="{ err: m.error }">
+            <!-- Busy while streaming: screen readers hold the deltas and read the final reply. -->
+            <div class="bubble" :class="{ err: m.error }"
+                 :aria-busy="busy && streaming && m.role === 'assistant' && i === msgs.length - 1 ? 'true' : null">
               <template v-if="m.content">{{ m.content }}</template>
               <span v-else-if="!m.error" class="muted">…</span>
             </div>
@@ -179,7 +196,7 @@ async function send(text) {
         </div>
 
         <div class="pfoot">
-          <input v-model="input" class="pinput"
+          <input ref="inputEl" v-model="input" class="pinput"
                  :placeholder="notConfigured ? 'Set up an AI provider to chat' : 'Ask the assistant…'"
                  :disabled="busy || notConfigured" @keyup.enter="send()"
                  aria-label="Message the assistant" />

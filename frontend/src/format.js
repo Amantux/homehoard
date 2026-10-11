@@ -3,18 +3,27 @@ import { api } from './api'
 
 export const currencySymbol = ref('$')
 
+// `loaded` flips only after a successful fetch, so a failure (offline, expired
+// session) retries on the next call; concurrent callers share one request.
 let loaded = false
-export async function loadCurrency() {
-  if (loaded) return
-  loaded = true
-  try {
-    const group = await api.get('/groups')
-    const currencies = await api.get('/currency')
-    const c = currencies.find((x) => x.code === group.currency)
-    if (c) currencySymbol.value = c.symbol
-  } catch (e) {
-    /* ignore */
-  }
+let inflight = null
+export function loadCurrency() {
+  if (loaded) return Promise.resolve()
+  if (inflight) return inflight
+  inflight = (async () => {
+    try {
+      const group = await api.get('/groups')
+      const currencies = await api.get('/currency')
+      const c = currencies.find((x) => x.code === group.currency)
+      if (c) currencySymbol.value = c.symbol
+      loaded = true
+    } catch (e) {
+      /* ignore — keep the default symbol and retry next time */
+    } finally {
+      inflight = null
+    }
+  })()
+  return inflight
 }
 
 export function money(v) {

@@ -7,6 +7,8 @@ from ..schemas.serializers import notifier_out
 # The SSRF guard lives in the service so the API and the dispatcher share one
 # definition and both validate at the point of use.
 from ..services.notify import url_is_safe as _url_is_safe
+from ._scoping import get_owned_or_404
+from ._validation import json_body
 
 bp = Blueprint("notifiers", __name__)
 
@@ -14,8 +16,8 @@ bp = Blueprint("notifiers", __name__)
 def _get(notifier_id):
     # Notifiers are per-user; scope by both user and group so a group peer can't
     # read/modify another member's notifier (which may hold a webhook secret).
-    n = db.session.get(Notifier, notifier_id)
-    if not n or n.group_id != current_group().id or n.user_id != current_user().id:
+    n = get_owned_or_404(Notifier, notifier_id)
+    if n.user_id != current_user().id:
         abort(404)
     return n
 
@@ -32,7 +34,7 @@ def list_notifiers():
 @bp.post("/notifiers")
 @login_required
 def create_notifier():
-    data = request.get_json(force=True) or {}
+    data = json_body()
     url = data.get("url", "")
     if url and not _url_is_safe(url):
         return jsonify({"error": "notifier URL is not allowed"}), 422
@@ -52,7 +54,7 @@ def create_notifier():
 @login_required
 def update_notifier(notifier_id):
     n = _get(notifier_id)
-    data = request.get_json(force=True) or {}
+    data = json_body()
     if "name" in data:
         n.name = data["name"]
     if "url" in data:
@@ -112,7 +114,7 @@ def dispatch_alerts():
 @login_required
 def test_notifier():
     """Best-effort test using Apprise if available, else validate the URL."""
-    data = request.get_json(force=True) or {}
+    data = json_body()
     url = data.get("url", "")
     if not url:
         return jsonify({"error": "url required"}), 422

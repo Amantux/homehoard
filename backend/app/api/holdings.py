@@ -3,12 +3,13 @@ Holdings are the source of truth; item.quantity (total) + item.location/bin
 (primary) are resynced after every change (services/holdings.py). All handlers are
 group-scoped (IDOR-safe)."""
 
-from flask import Blueprint, request, jsonify, abort
+from flask import Blueprint, jsonify, abort
 
 from ..extensions import db
 from ..models import Item, ItemHolding, Bin, Location
 from ..auth import login_required, current_group
 from ._scoping import get_owned_or_404
+from ._validation import json_body
 from ..schemas.serializers import holding_out, item_out
 from ..services.holdings import resync_item
 from ..services import vault
@@ -74,7 +75,7 @@ def list_holdings(item_id):
 @login_required
 def add_holding(item_id):
     it = _item(item_id)
-    data = request.get_json(force=True) or {}
+    data = json_body()
     location_id, bin_id = _placement(data)
     qty, err = _positive_qty(data.get("quantity", 1))
     if err:
@@ -98,7 +99,7 @@ def add_holding(item_id):
 @login_required
 def update_holding(holding_id):
     h = _holding(holding_id)
-    data = request.get_json(force=True) or {}
+    data = json_body()
     if "binId" in data or "locationId" in data:
         h.location_id, h.bin_id = _placement(data)
     if "quantity" in data:
@@ -134,7 +135,7 @@ def move_holding(holding_id):
     move relocates the holding; a partial move splits it, merging into an existing
     holding at the destination if one is there. Total quantity is conserved."""
     h = _holding(holding_id)
-    data = request.get_json(force=True) or {}
+    data = json_body()
     dest_loc, dest_bin = _placement({"binId": data.get("toBinId"),
                                      "locationId": data.get("toLocationId")})
     item = h.item

@@ -3,22 +3,20 @@
 Jobs are group-scoped. Enqueuing bulk AI tooling is owner-only (external, paid
 calls); reading progress is any group member. The worker (worker.py) runs them.
 """
-from flask import Blueprint, jsonify, request, abort
+from flask import Blueprint, jsonify, request
 
 from ..extensions import db
 from ..models import Job
 from ..auth import login_required, owner_required, current_group
 from ..schemas.serializers import job_out
 from ..services.jobs import enqueue, known_kinds, JobError
+from ._scoping import get_owned_or_404
 
 bp = Blueprint("jobs", __name__)
 
 
 def _get_job(job_id) -> Job:
-    j = db.session.get(Job, job_id)
-    if not j or j.group_id != current_group().id:
-        abort(404)
-    return j
+    return get_owned_or_404(Job, job_id)
 
 
 @bp.post("/jobs/<kind>")

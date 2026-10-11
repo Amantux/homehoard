@@ -3,7 +3,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import (String, Text, Boolean, Integer, Numeric, DateTime, ForeignKey,
-                        Index, text)
+                        Index, false, text)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..extensions import db
@@ -39,7 +39,7 @@ class Item(IDMixin, TimestampMixin, db.Model):
     # Distinct from `archived`, which means "disposed / long-term storage" and is
     # merely filtered out of the default list.
     hidden: Mapped[bool] = mapped_column(
-        Boolean, default=False, server_default=text("0"), nullable=False, index=True)
+        Boolean, default=False, server_default=false(), nullable=False, index=True)
     # Consumables policy (both optional): an item with a min_quantity is a
     # tracked consumable — at/below it, the restock list suggests topping up to
     # target_quantity (or back to the threshold when no target is set). Same

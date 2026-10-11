@@ -10,10 +10,13 @@ import { useLoader } from '../components/useLoader'
 const ui = useUI()
 const confirm = useConfirm()
 const items = ref([])
+const total = ref(0)               // server-side item count; only the first page is checked
 const merging = ref('')
 
 const { loading, error, reload: load } = useLoader(async () => {
-  items.value = (await api.get('/items?pageSize=1000')).items
+  const res = await api.get('/items?pageSize=1000')
+  items.value = res.items
+  total.value = res.total ?? res.items.length
 })
 
 // Group by normalised name; only groups with 2+ members are duplicates.
@@ -77,6 +80,9 @@ async function undoMerge(undo, name) {
     <div class="grow"></div>
   </div>
 
+  <p v-if="!loading && !error && total > items.length" class="muted txt-sm" role="status">
+    Checked the first {{ items.length }} of {{ total }} items — duplicates among the rest aren't shown.
+  </p>
   <div v-if="loading" class="card"><div class="skeleton" style="height:200px"></div></div>
   <ErrorState v-else-if="error" :message="error" @retry="load" />
   <EmptyState v-else-if="!groups.length" icon="✨" title="No duplicate names"

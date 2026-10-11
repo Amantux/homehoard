@@ -317,7 +317,10 @@ def _run_migrations(app):
     from alembic import command
     from alembic.config import Config as AlembicConfig
     from alembic.runtime.migration import MigrationContext
+    from alembic.script import ScriptDirectory
     from sqlalchemy import inspect
+
+    from .db_snapshot import snapshot_sqlite
 
     backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     cfg = AlembicConfig(os.path.join(backend_dir, "alembic.ini"))
@@ -328,7 +331,20 @@ def _run_migrations(app):
 
     with db.engine.connect() as conn:
         current = MigrationContext.configure(conn).get_current_revision()
-    if current is None and inspect(db.engine).has_table("users"):
+    legacy = current is None and inspect(db.engine).has_table("users")
+    # Snapshot an EXISTING SQLite database before changing its schema, so a
+    # failed or SIGKILLed migration can't cost the user their data. Fresh DBs
+    # (nothing to lose) and DBs already at head (nothing to apply) skip it. If
+    # the snapshot fails we refuse to migrate: SnapshotError propagates.
+    head = ScriptDirectory.from_config(cfg).get_current_head()
+    if legacy or current not in (None, head):
+        db_path = db.engine.url.database
+        if db.engine.url.get_backend_name() != "sqlite":
+            _LOGGER.info("pending migrations on postgres: back up with pg_dump "
+                         "before upgrading — no automatic snapshot is taken")
+        elif db_path and db_path != ":memory:":
+            snapshot_sqlite(db_path, app.config["DATA_DIR"], current or "pre-alembic")
+    if legacy:
         db.create_all()      # any missing tables
         _migrate(app)        # legacy SQLite column adds / rebuilds / backfills
         command.stamp(cfg, "0001_baseline")
@@ -370,7 +386,9 @@ def _migrate(app):
         with db.engine.begin() as conn:
             for name, ddl in columns.items():
                 if name not in existing:
-                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
+                    quote = conn.dialect.identifier_preparer.quote
+                    conn.execute(text(
+                        f"ALTER TABLE {quote(table)} ADD COLUMN {quote(name)} {ddl}"))
     # Backfill roles: promote the earliest user of any household with no owner, so
     # an existing admin isn't locked out of the now-owner-gated surfaces. Idempotent.
     if inspector.has_table("users"):

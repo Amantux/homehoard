@@ -314,7 +314,7 @@ async function remove() {
       <div v-if="bin.items.length" class="card-grid">
         <div v-for="i in bin.items" :key="i.id" class="item-card">
           <div class="body">
-            <div class="title" @click.stop="router.push('/items/'+i.id)" style="cursor:pointer">{{ i.name }}</div>
+            <router-link class="title" :to="'/items/'+i.id">{{ i.name }}</router-link>
             <div class="sub">Qty: {{ i.quantity }}</div>
             <div class="labels"><button class="secondary sm" @click.stop="removeItem(i)">Remove</button></div>
           </div>
@@ -327,7 +327,7 @@ async function remove() {
       <div v-if="bin.attachments.length" class="card-grid">
         <div v-for="a in bin.attachments" :key="a.id" class="item-card" style="cursor:default">
           <div class="thumb">
-            <img v-if="a.type==='photo'" :src="apiUrl('/documents/'+a.document.id)" />
+            <img v-if="a.type==='photo'" :src="apiUrl('/documents/'+a.document.id)" :alt="a.document.title || 'Attachment photo'" />
             <span v-else>📄</span>
           </div>
           <div class="body">

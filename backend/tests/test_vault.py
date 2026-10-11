@@ -82,7 +82,7 @@ def test_wrong_phrase_changes_nothing(auth_client, app):
 
     r = auth_client.post("/api/v1/vault/unlock", json={"phrase": "guess"})
 
-    assert r.status_code == 401
+    assert r.status_code == 403  # never 401: the SPA would treat that as signed out
     assert "Secret Telescope" not in auth_client.get("/api/v1/items").get_data(as_text=True)
 
 
@@ -415,7 +415,7 @@ def test_changing_it_requires_the_current_one(auth_client):
     right = auth_client.post("/api/v1/vault/passphrase",
                              json={"phrase": "second", "currentPhrase": "first"})
 
-    assert bare.status_code == 401 and wrong.status_code == 401
+    assert bare.status_code == 403 and wrong.status_code == 403
     assert right.status_code == 200
     assert auth_client.post("/api/v1/vault/unlock",
                             json={"phrase": "second"}).status_code == 200

@@ -9,11 +9,14 @@ Run:  python mcp_server.py    (serves SSE on HBOX_MCP_HOST:HBOX_MCP_PORT/sse)
 """
 import hmac
 import json
+import os
 import sys
 
+import anyio
 import httpx
 from mcp.server.fastmcp import FastMCP
 
+from app.models.api_token import TOKEN_PREFIX
 from app.settings import load_settings
 
 # Resolved through the one registry, not raw os.environ: this is a separate
@@ -50,20 +53,72 @@ except ImportError:  # older SDK without the host check — nothing to relax
 mcp = FastMCP("HomeHoard", **_fastmcp_kwargs)
 
 
+def _caller_headers() -> dict:
+    """``X-HBOX-Acting-Key`` carrying the MCP caller's own API key, so REST acts as
+    that key's user (and access class) instead of the integration token's shared
+    household. Empty outside a request, in open mode (no key presented), for the
+    static server token (not an API key), or when this sidecar holds no token of
+    its own — REST honours the header only alongside the integration token.
+
+    The guard runs in the POST /messages task but tools run in the GET /sse
+    session's task group, so a contextvar set there never reaches us; the SDK
+    does carry the POST ``Request`` on the request context, and sync tools run
+    inline in that handler, so we read the caller's Authorization from it.
+    """
+    if not _BARE_TOKEN:
+        return {}
+    try:
+        req = mcp.get_context().request_context.request
+    except ValueError:  # outside a request
+        return {}
+    if req is None:
+        return {}
+    header = req.headers.get("authorization", "")
+    raw = header[len("Bearer "):].strip() if header.startswith("Bearer ") else ""
+    if not raw.startswith(TOKEN_PREFIX):
+        return {}
+    if hmac.compare_digest(raw, _BARE_TOKEN):  # the server's own token is not a caller
+        return {}
+    return {"X-HBOX-Acting-Key": raw}
+
+
+def _warn_if_rest_token_is_not_integration_token() -> None:
+    """Keyed tool calls are proxied to REST as the caller (X-HBOX-Acting-Key),
+    which REST honours only when our own Bearer is the integration token
+    minted at startup. The add-on always uses that token, but a standalone
+    operator may have pasted a user-minted key into HBOX_MCP_API_TOKEN; every
+    keyed call would then get a REST 401, so say so loudly at boot."""
+    if not _BARE_TOKEN:
+        return
+    path = os.path.join(_SETTINGS.DATA_DIR, ".integration_token")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            expected = fh.read().strip()
+    except OSError:
+        return  # not provisioned here (e.g. REST on another host): can't tell
+    if not hmac.compare_digest(_BARE_TOKEN, expected):
+        print("WARNING: homehoard-mcp: HBOX_MCP_API_TOKEN is not the integration "
+              "token in DATA_DIR/.integration_token. Tool calls made with an MCP "
+              "API key act as that key's owner and REST accepts that only from "
+              "the integration token, so keyed calls will be rejected (401). "
+              "Unset HBOX_MCP_API_TOKEN to use the integration token.",
+              file=sys.stderr)
+
+
 def _get(path: str, params: dict | None = None):
-    r = _HTTP.get(path, params=params)
+    r = _HTTP.get(path, params=params, headers=_caller_headers())
     r.raise_for_status()
     return r.json()
 
 
 def _post(path: str, json: dict | None = None):
-    r = _HTTP.post(path, json=json or {})
+    r = _HTTP.post(path, json=json or {}, headers=_caller_headers())
     r.raise_for_status()
     return r.json()
 
 
 def _patch(path: str, json: dict | None = None):
-    r = _HTTP.patch(path, json=json or {})
+    r = _HTTP.patch(path, json=json or {}, headers=_caller_headers())
     r.raise_for_status()
     return r.json()
 
@@ -427,7 +482,7 @@ def unhide_items(phrase: str = "") -> str:
     try:
         state = _post("/vault/unlock", {"phrase": phrase})
     except httpx.HTTPStatusError as exc:
-        if exc.response.status_code == 401:
+        if exc.response.status_code == 403:
             return "That passphrase isn't right — nothing was unhidden."
         if exc.response.status_code == 409:
             return ("No vault passphrase has been set yet — set one in "
@@ -585,22 +640,38 @@ def _get_app():
     return _app
 
 
-def _key_ok(raw: str) -> bool:
-    """True if `raw` is a live ApiToken whose scope allows MCP (`mcp` or `full`)."""
+def _key_record(raw: str):
+    """``(scope, access)`` of a live ApiToken, or None if there is no such key.
+
+    The one DB lookup behind _key_ok/_key_access/_key_scope; the guard calls it
+    once per request off the event loop. Fail-closed (None) on any DB error.
+    """
     if not raw:
-        return False
+        return None
     try:
         app = _get_app()
         from app.extensions import db
         from app.models import ApiToken, hash_token
         with app.app_context():
             rec = db.session.query(ApiToken).filter_by(token_hash=hash_token(raw)).first()
-            ok = rec is not None and (rec.scope or "full") in ("mcp", "full")
+            out = ((rec.scope or "full"), (rec.access or "write")) if rec is not None else None
             db.session.remove()
-            return ok
+            return out
     except Exception as exc:  # noqa: BLE001 — fail closed on any lookup error
         print(f"homehoard-mcp: key check failed: {exc}", file=sys.stderr)
-        return False
+        return None
+
+
+# Default for the `record` parameters below: "not fetched yet, look it up".
+# Distinct from None, which means "fetched, and there is no such key".
+_UNSET = object()
+
+
+def _key_ok(raw: str, record=_UNSET) -> bool:
+    """True if `raw` is a live ApiToken whose scope allows MCP (`mcp` or `full`).
+    Pass an already-fetched `_key_record(raw)` as `record` to skip the lookup."""
+    rec = _key_record(raw) if record is _UNSET else record
+    return rec is not None and rec[0] in ("mcp", "full")
 
 
 # Tools a read-only key may call. Everything else (mutating tools AND any unknown/new
@@ -613,24 +684,11 @@ READ_TOOLS = frozenset({
 })
 
 
-def _key_access(raw: str):
+def _key_access(raw: str, record=_UNSET):
     """Access class ('write'|'read') of a live mcp/full ApiToken, or None if the key
     is invalid / not MCP-capable. Fail-closed (None) on any DB error."""
-    if not raw:
-        return None
-    try:
-        app = _get_app()
-        from app.extensions import db
-        from app.models import ApiToken, hash_token
-        with app.app_context():
-            rec = db.session.query(ApiToken).filter_by(token_hash=hash_token(raw)).first()
-            ok = rec is not None and (rec.scope or "full") in ("mcp", "full")
-            access = (rec.access or "write") if rec is not None else None
-            db.session.remove()
-            return access if ok else None
-    except Exception as exc:  # noqa: BLE001 — fail closed
-        print(f"homehoard-mcp: access check failed: {exc}", file=sys.stderr)
-        return None
+    rec = _key_record(raw) if record is _UNSET else record
+    return rec[1] if rec is not None and rec[0] in ("mcp", "full") else None
 
 
 def _key_scope(raw: str):
@@ -639,20 +697,8 @@ def _key_scope(raw: str):
     Separate from _key_access because the debug tools gate on scope, not on the
     read/write class. Fail-closed (None) on any DB error.
     """
-    if not raw:
-        return None
-    try:
-        app = _get_app()
-        from app.extensions import db
-        from app.models import ApiToken, hash_token
-        with app.app_context():
-            rec = db.session.query(ApiToken).filter_by(token_hash=hash_token(raw)).first()
-            scope = (rec.scope or "full") if rec is not None else None
-            db.session.remove()
-            return scope
-    except Exception as exc:  # noqa: BLE001 — fail closed
-        print(f"homehoard-mcp: scope check failed: {exc}", file=sys.stderr)
-        return None
+    rec = _key_record(raw)
+    return rec[0] if rec is not None else None
 
 
 def _debug_key_exists() -> bool:
@@ -667,13 +713,13 @@ def _debug_key_exists() -> bool:
         return exists
 
 
-def _request_access(header_value: str, server_token: str):
+def _request_access(header_value: str, server_token: str, record=_UNSET):
     """The access class for an authenticated request ('write'|'read'), or None if
     unauthenticated. The static server token grants full ('write')."""
     if server_token and hmac.compare_digest(header_value, f"Bearer {server_token}"):
         return "write"
     if header_value.startswith("Bearer "):
-        return _key_access(header_value[len("Bearer "):].strip())
+        return _key_access(header_value[len("Bearer "):].strip(), record)
     return None
 
 
@@ -787,11 +833,11 @@ def _mcp_key_exists() -> bool:
         return exists
 
 
-def _authorized(header_value: str, server_token: str) -> bool:
+def _authorized(header_value: str, server_token: str, record=_UNSET) -> bool:
     if server_token and hmac.compare_digest(header_value, f"Bearer {server_token}"):
         return True
     if header_value.startswith("Bearer "):
-        return _key_ok(header_value[len("Bearer "):].strip())
+        return _key_ok(header_value[len("Bearer "):].strip(), record)
     return False
 
 
@@ -863,6 +909,10 @@ def _guard(asgi_app, server_token: str):
 
         header = dict(scope.get("headers") or []).get(b"authorization", b"").decode()
         raw = header[len("Bearer "):].strip() if header.startswith("Bearer ") else ""
+        # ONE key lookup per request, off the event loop: the DB call is sync
+        # and would otherwise stall every other SSE session while it runs.
+        record = await anyio.to_thread.run_sync(_key_record, raw) if raw else None
+        key_scope = record[0] if record is not None else None
 
         # Buffer once; every branch below needs to know which tools were asked
         # for, and the body has to be replayed downstream either way.
@@ -877,7 +927,7 @@ def _guard(asgi_app, server_token: str):
             # authenticate first (same rule as the domain-tool branch), so an
             # unauthenticated client cannot fill the audit ring with garbage.
             if ((external or require_key or server_token)
-                    and not _authorized(header, server_token)):
+                    and not _authorized(header, server_token, record)):
                 return await _deny(send, 401, b"unauthorized")
             _audit([], raw, "denied")
             return await _deny(send, 400, b"malformed JSON-RPC body")
@@ -885,7 +935,6 @@ def _guard(asgi_app, server_token: str):
         wants_domain = any(n and n not in DEBUG_TOOLS for n in names)
 
         if wants_debug:
-            key_scope = _key_scope(raw)
             if key_scope != "debug":
                 _audit(names, raw, "denied")
                 return await _deny(
@@ -898,16 +947,16 @@ def _guard(asgi_app, server_token: str):
                 return await _deny(
                     send, 403, b"a debug key may not call the domain tools")
         else:
-            if _key_scope(raw) == "debug" and names:
+            if key_scope == "debug" and names:
                 _audit(names, raw, "denied")
                 return await _deny(
                     send, 403, b"a debug key may only call the debug tools")
             # AUTHENTICATION depends on how the port is exposed — or on the
             # operator opting in to keys on the HA network too (mcp_require_key).
             if external or require_key:
-                if not _authorized(header, server_token):
+                if not _authorized(header, server_token, record):
                     return await _deny(send, 401, b"unauthorized")
-            elif server_token and not _authorized(header, server_token):
+            elif server_token and not _authorized(header, server_token, record):
                 return await _deny(send, 401, b"unauthorized")
 
             # AUTHORIZATION depends only on the KEY, never on the exposure. A
@@ -917,7 +966,7 @@ def _guard(asgi_app, server_token: str):
             # _request_access returns "write" for the server token and None for
             # no key (the open path), so only a genuinely read-scoped key hits
             # this.
-            if (_request_access(header, server_token) == "read"
+            if (_request_access(header, server_token, record) == "read"
                     and any(n not in READ_TOOLS for n in names)):
                 _audit(names, raw, "denied")
                 return await _deny(
@@ -1029,6 +1078,8 @@ if __name__ == "__main__":
               "works without setup. If you publish port %s in the add-on's Network tab "
               "it becomes reachable from your LAN too — set mcp_expose_external (and "
               "mint an MCP key) before doing that." % port, file=sys.stderr)
+
+    _warn_if_rest_token_is_not_integration_token()
 
     # ALWAYS wrapped. What the guard requires depends on the tool: debug tools
     # always need a debug key; domain tools keep the open-internally behaviour.

@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, text
+from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..extensions import db
@@ -19,7 +19,7 @@ class ChatSession(IDMixin, TimestampMixin, db.Model):
     # for this session is the vault passphrase and is short-circuited server-side
     # (api/chat.py) — it must never reach the LLM provider or the stored history.
     awaiting_vault_phrase: Mapped[bool] = mapped_column(
-        Boolean, default=False, server_default=text("0"), nullable=False)
+        Boolean, default=False, server_default=false(), nullable=False)
     group = relationship("Group", back_populates="chat_sessions")
 
     messages = relationship(

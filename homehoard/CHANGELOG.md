@@ -1,8 +1,129 @@
 # Changelog
 
+## Unreleased
+
+- **Your lists stay current.** A list refreshes right after you save, loads no
+  longer overlap and overwrite each other, and background sync stops when you
+  sign out.
+- Background refreshes no longer clear a bulk selection or an edit you're in the
+  middle of, the list stays on screen while you filter it, and the delete
+  confirmation names the items it will delete.
+- The barcode scanner turns the camera off if you close it before it finishes
+  starting, offers Retry when it can't start, loads its reader in advance so it
+  opens faster, and says plainly when linking a code is unavailable.
+- The assistant panel announces new replies to screen readers and puts focus
+  where you expect when it opens and closes.
+- Reports: purchase dates display correctly, the currency symbol recovers if it
+  failed to load at start-up, and picker fields no longer act after you've moved
+  on from them.
+- **When your session expires you get a banner, not a broken page.** Signing in
+  again returns you to the page you were on.
+- Typing the wrong vault passphrase no longer signs you out.
+- MCP tool calls now act as the household that owns the API key, and a
+  read-only key stays read-only there too.
+- Home Assistant discovery waits until HomeHoard is ready, and rediscovery
+  updates the existing entry instead of adding a duplicate.
+- Behind the scenes: the secret scanner's test allowlist is anchored to exact
+  values, CI tests the integration on Home Assistant 2024.11.0 and the latest
+  release, and backend dependencies are pinned.
+- **Upgrades are safer.** Before migrating an existing database HomeHoard saves
+  a copy to `/data/backups/pre-upgrade-*.db` (the last two are kept) and refuses
+  to upgrade if that copy can't be written. Stopping the add-on during start-up
+  no longer kills it mid-migration. Home Assistant backups now stop HomeHoard
+  for a few seconds so the backup holds a consistent copy of your database —
+  expect a brief restart during nightly backups.
+- Fixed: installing on PostgreSQL no longer fails during database setup with
+  "default expression is of type integer". CI now boots a fresh install against
+  a real PostgreSQL on every change.
+- If you run the MCP server outside the add-on with your own API key as its
+  token, keyed tool calls are now rejected; the server says so at start-up.
+  Leave the token unset to use the integration token.
+- **Keyboard and screen-reader users can now get around.** Item, bin and
+  location cards are real links with a visible focus ring; every page has a
+  heading and its own browser-tab title, focus moves to it when you change
+  page, Back restores your scroll position; the account menu closes with Esc
+  or a click outside; notifications are announced, pause while you hover
+  them, and old errors clear when you change page; photos have descriptions;
+  maintenance status reads "Overdue"/"Done"/"Scheduled" rather than relying
+  on colour; the sign-in form works with password managers and Enter.
+- Confirmation dialogs close when you navigate away instead of lingering over
+  the next page. If the server fails or the network drops mid-chat you get a
+  clear message, and one garbled line from the AI no longer cuts off the reply.
+- Settings that fail to load now say so and can be retried, with Save disabled
+  until they do, so a network hiccup can't overwrite your real AI or chat
+  settings with defaults. Vault status failures are shown instead of hidden.
+- The "move an existing item" and scan-to-link pickers search all your items
+  instead of stopping silently at 500, and Duplicates says when it only
+  checked part of a large inventory.
+- Sign-up, profile and location forms reject malformed input with a clear
+  message instead of a server error, and the built-in Home Assistant and
+  local account addresses can no longer be claimed. The login response no
+  longer includes the unused `attachmentToken` field.
+- Faster page loads in open/ingress mode: the legacy-password safety check
+  runs once per user instead of on every request, and a busy database no
+  longer turns a valid API-key request into an error.
+- Locations and the Home Assistant summary load faster for large households
+  (counts come from the database instead of loading every item), hidden items
+  no longer show up in the summary's per-location counts while the vault is
+  locked, a corrupted location hierarchy can't crash the location tree, and
+  the HA calendar accepts start/end times with any UTC offset.
+- The assistant no longer passes internal error details (which could include
+  connection strings) to the AI model or into chat history when a tool fails;
+  you see "internal error, ref <id>" and the same id appears in the add-on
+  log. Validation messages still come through so the assistant can correct
+  itself.
+- A notifier that fails to send now logs a warning with the error type and
+  provider, never the URL or its token. Login and registration rate limits
+  are covered by tests (the limit applies per server worker, so the effective
+  limit is twice the configured value).
+- The app's initial download is about 19% smaller: the scanner, search,
+  create and bug-report dialogs load on demand.
+- Behind the scenes: CI now boots the container on an older database to prove
+  an upgrade takes a backup first and keeps your data, checks that stopping
+  during start-up exits cleanly and that the voice/MCP server comes back after
+  a crash; the container healthcheck follows `HBOX_PORT`; the Documentation
+  tab gains "Backup and restore" and "Time zone" sections and the voice-sentence
+  install steps, and corrects where data is stored (`/data`) and what
+  `log_level` hides; chat sessions, background jobs, AI suggestions and
+  notifiers all use the shared household check and the cross-household test
+  now covers them, foreign ids in request bodies, and another member's
+  notifiers.
+
 ## 1.1.51
 
-- Maintenance release.
+- **Read this before updating: quantities are now exact decimals.** On first
+  start after the update HomeHoard rebuilds its quantity tables and rounds every
+  stored quantity to 3 decimal places, so a large inventory can take a little
+  longer to come up once. Afterwards 0.1 + 0.2 really is 0.3, and a quantity
+  with more than 3 decimals (or a yes/no value) is rejected with a clear error
+  instead of being stored as-is.
+- **Timestamps from the API now carry an explicit UTC offset** (`+00:00`).
+  If you wrote an automation or script that parses HomeHoard dates, check it
+  still does. Dates in the app no longer show a day early west of UTC.
+- **The MCP (assistant/voice) server restarts itself if it crashes**, instead of
+  staying down until you restart the add-on, and `/ready` reports whether it is
+  up.
+- New option `mcp_require_key`: turn it on to require an API key for every MCP
+  request, even from inside Home Assistant. Off by default, so nothing changes
+  unless you set it.
+- **Security fixes.** Read-only API keys are now enforced on every route, not
+  just most of them. Printing QR labels no longer runs script hidden in an item
+  name. The barcode lookup URL is validated before it is used. Error messages
+  no longer echo internal details such as AI provider responses.
+- If login is disabled and HomeHoard is reached outside Home Assistant, the app
+  and the log now warn you that anyone who can reach that port has full access.
+- **Easier to use with a keyboard, touch screen or screen reader:** larger tap
+  targets, labelled icon buttons, dialogs that keep focus and close with Esc,
+  list rows you can tab to, and error messages that are announced.
+- Detail pages show loading, error and not-found states instead of a blank
+  screen, a mistyped address shows a proper not-found page, and buttons say what
+  they are doing while they work ("Saving…").
+- Faster: location and bin lists load in fewer queries, pages load on demand,
+  and the bin item picker searches as you type.
+- Home Assistant discovery retries in the background if Home Assistant isn't up
+  yet when the add-on starts.
+- The companion integration now needs **Home Assistant 2024.11.0 or newer**.
+- You stay signed in across this update.
 
 ## 1.1.50
 

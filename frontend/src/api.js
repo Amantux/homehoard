@@ -55,6 +55,23 @@ export function errorFromResponse(status, data) {
   return new ApiError({ status, message: curatedMessage(status, requestId), requestId })
 }
 
+// Called after every successful local write (non-GET request, or a chat stream
+// that ended normally) so views refresh at once instead of waiting for the
+// live-sync poll. App.vue wires it to ui.dataChanged(); kept as a hook so this
+// module stays free of pinia.
+let writeHook = null
+export function setWriteHook(fn) {
+  writeHook = fn
+}
+
+// Called on any 401 (the token is already cleared). App.vue wires it to end the
+// session in place — clear auth.user, stop the poller, show a sign-in banner —
+// instead of navigating, so the open view and its unsaved inputs survive.
+let unauthorizedHook = null
+export function setUnauthorizedHook(fn) {
+  unauthorizedHook = fn
+}
+
 async function request(method, path, body, isForm = false) {
   const headers = {}
   const token = getToken()
@@ -74,11 +91,12 @@ async function request(method, path, body, isForm = false) {
   }
   if (res.status === 401) {
     setToken(null)
-    if (!location.hash.includes('/login')) location.hash = '#/login'
+    if (unauthorizedHook) unauthorizedHook()
   }
   const ct = res.headers.get('content-type') || ''
   const data = ct.includes('application/json') ? await res.json() : await res.text()
   if (!res.ok) throw errorFromResponse(res.status, data)
+  if (method !== 'GET' && writeHook) writeHook()
   return data
 }
 
@@ -99,30 +117,48 @@ export async function streamPost(path, body, onEvent) {
   const headers = { 'Content-Type': 'application/json' }
   const token = getToken()
   if (token) headers['Authorization'] = token
-  const res = await fetch(apiUrl(path), {
-    method: 'POST', headers, body: JSON.stringify(body),
-  })
+  let res
+  try {
+    res = await fetch(apiUrl(path), {
+      method: 'POST', headers, body: JSON.stringify(body),
+    })
+  } catch (e) {
+    throw new ApiError({ status: 0, message: NETWORK_ERROR_MESSAGE })
+  }
   if (res.status === 401) {
     setToken(null)
-    if (!location.hash.includes('/login')) location.hash = '#/login'
+    if (unauthorizedHook) unauthorizedHook()
   }
   if (!res.ok || !res.body) {
-    let msg = res.statusText
-    try { const j = await res.json(); msg = (j && j.error) || msg } catch (e) { /* non-JSON */ }
-    throw new Error(msg)
+    let data = null
+    try { data = await res.json() } catch (e) { /* non-JSON: curated message */ }
+    throw errorFromResponse(res.status, data)
   }
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
   let buf = ''
+  // A malformed line is skipped (warned once per stream) so one bad line can't
+  // end the reply; only the parse is guarded — onEvent's own errors propagate.
+  let warned = false
+  const emit = (line) => {
+    let evt
+    try {
+      evt = JSON.parse(line)
+    } catch (e) {
+      if (!warned) { console.warn('Skipped malformed stream line'); warned = true }
+      return
+    }
+    onEvent(evt)
+  }
   const flush = (chunk, last) => {
     buf += chunk
     let nl
     while ((nl = buf.indexOf('\n')) >= 0) {
       const line = buf.slice(0, nl).trim()
       buf = buf.slice(nl + 1)
-      if (line) onEvent(JSON.parse(line))
+      if (line) emit(line)
     }
-    if (last && buf.trim()) onEvent(JSON.parse(buf.trim()))
+    if (last && buf.trim()) emit(buf.trim())
   }
   for (;;) {
     const { done, value } = await reader.read()
@@ -130,4 +166,5 @@ export async function streamPost(path, body, onEvent) {
     flush(decoder.decode(value, { stream: true }), false)
   }
   flush(decoder.decode(), true)
+  if (writeHook) writeHook()
 }

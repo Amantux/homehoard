@@ -6,6 +6,7 @@ from werkzeug.utils import secure_filename
 
 from ..auth import current_group, login_required
 from ._scoping import get_owned_or_404
+from ._validation import json_body
 from ..extensions import db
 from ..services import thumbnails, videos
 from ..models import Attachment, Bin, Document, Item, MaintenanceEntry
@@ -70,7 +71,7 @@ def update(item_id, attachment_id):
     att = db.session.get(Attachment, attachment_id)
     if not att or att.item_id != item_id:
         abort(404)
-    data = request.get_json(force=True) or {}
+    data = json_body()
     if "type" in data:
         att.type = data["type"]
     if "title" in data and att.document:
@@ -157,7 +158,7 @@ def bin_update(bin_id, attachment_id):
     att = db.session.get(Attachment, attachment_id)
     if not att or att.bin_id != bin_id:
         abort(404)
-    data = request.get_json(force=True) or {}
+    data = json_body()
     if "type" in data:
         att.type = data["type"]
     if "title" in data and att.document:

@@ -180,6 +180,54 @@ jobs:
           npm ci
           npm run lint
 
+  changelog:
+    # A PR that changes what users run must say so under "## Unreleased" in
+    # homehoard/CHANGELOG.md; bump-version promotes that heading to the release.
+    # Dependency-manifest-only changes (Dependabot) are exempt; refactor/test
+    # PRs that touch shipped paths opt out with the `skip-changelog` label
+    # (added after the PR opened? re-run this job to pick it up).
+    name: Changelog entry
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: List changed files
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: git diff --name-only "origin/${BASE_REF}...HEAD" > "$RUNNER_TEMP/changed.txt"
+      - name: Require an Unreleased entry
+        env:
+          CHANGED_LIST: ${{ runner.temp }}/changed.txt
+          CHANGELOG: homehoard/CHANGELOG.md
+          SKIP_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'skip-changelog') }}
+        run: |
+          set -eu
+          if [ "$SKIP_LABEL" = "true" ]; then
+            echo "skip-changelog label set; not checking."; exit 0
+          fi
+          # Shipped paths, minus dependency manifests (one bot PR per bump).
+          shipped=$(grep -E '^(backend/|frontend/|custom_components/|docker-entrypoint\.sh$|Dockerfile$)' "$CHANGED_LIST" \
+            | grep -vE '(^|/)(requirements[^/]*\.txt|package\.json|package-lock\.json)$' || true)
+          if [ -z "$shipped" ]; then
+            echo "No shipped paths changed; no changelog entry needed."; exit 0
+          fi
+          echo "Shipped paths changed:"; echo "$shipped" | sed 's/^/  /'
+          if ! grep -qxF "$CHANGELOG" "$CHANGED_LIST"; then
+            echo "::error file=$CHANGELOG::This PR changes shipped code but not $CHANGELOG. Add a user-facing bullet under '## Unreleased' (or label the PR skip-changelog)."
+            exit 1
+          fi
+          # Non-blank lines between "## Unreleased" and the next "## " heading.
+          body=$(awk '/^## Unreleased[ \t]*$/ {f=1; next} f && /^## / {exit} f && NF' "$CHANGELOG")
+          if [ -z "$body" ]; then
+            echo "::error file=$CHANGELOG::$CHANGELOG has no non-empty '## Unreleased' section. Put this PR's notes under that exact heading above the latest release."
+            exit 1
+          fi
+          echo "Changelog entry found."
+
   smoke:
     name: Container smoke (build → readiness → shutdown)
     runs-on: ubuntu-latest
@@ -193,10 +241,47 @@ jobs:
           context: .
           load: true
           tags: homehoard:ci
+      - name: Seed a 0018-stamped SQLite volume (upgrade-path fixture)
+        run: |
+          set -euo pipefail
+          # The image builds its own old DB: migrate a fresh volume to 0018 only
+          # and insert a group + item with a fractional quantity, so the normal
+          # boot below has a real pending upgrade (and something to lose).
+          docker volume create hh-data
+          docker run --rm -i -w /app/backend -v hh-data:/data --entrypoint python3 homehoard:ci - <<'PY'
+          import sqlite3
+          from alembic import command
+          from alembic.config import Config
+          cfg = Config("alembic.ini")
+          cfg.set_main_option("script_location", "migrations")
+          cfg.attributes["url"] = "sqlite:////data/homehoard.db"
+          command.upgrade(cfg, "0018_maintenance_recurrence")
+          c = sqlite3.connect("/data/homehoard.db")
+          def insert(table, row):
+              # Fill every other NOT NULL, no-default column with a type-shaped value.
+              for _, col, typ, notnull, dflt, pk in c.execute(f"pragma table_info({table})"):
+                  if col in row or not notnull or dflt is not None or pk:
+                      continue
+                  t = typ.upper()
+                  row[col] = (0 if t.startswith(("INT", "BOOL", "NUMERIC"))
+                              else "2026-01-01 00:00:00" if t.startswith("DATETIME") else "")
+              cols = ", ".join(row)
+              c.execute(f"insert into {table} ({cols}) values ({', '.join('?' * len(row))})",
+                        list(row.values()))
+          insert("groups", {"id": "g-smoke", "name": "Smoke", "currency": "USD"})
+          insert("items", {"id": "i-smoke", "name": "Smoke item", "quantity": 2.5,
+                           "asset_id": 1, "group_id": "g-smoke"})
+          c.commit()
+          print(c.execute("select version_num from alembic_version").fetchone())
+          PY
+          # A pristine copy for the TERM-during-boot step (the main boot upgrades hh-data).
+          docker volume create hh-data-term
+          docker run --rm -v hh-data:/src -v hh-data-term:/dst --entrypoint sh homehoard:ci \
+            -c 'cp -a /src/. /dst/'
       - name: Start stack and wait for READINESS (not just process start)
         run: |
           set -euo pipefail
-          docker run -d --name hh-ci -p 7745:7745 \
+          docker run -d --name hh-ci -p 7745:7745 -v hh-data:/data \
             -e HBOX_SECRET_KEY="$(openssl rand -base64 48)" homehoard:ci
           ok=""
           for i in $(seq 1 45); do
@@ -233,6 +318,47 @@ jobs:
           test "$servers" = "1000"     # sort -u collapses to exactly one value
           # MCP server must be listening on 7766 inside the container.
           docker exec hh-ci python3 -c "import socket;s=socket.socket();s.settimeout(3);s.connect(('127.0.0.1',7766));print('mcp listening')"
+      - name: Upgrade path (pre-upgrade snapshot, alembic at head, data intact)
+        run: |
+          set -euo pipefail
+          docker exec hh-ci sh -c 'ls -l /data/backups/pre-upgrade-0018_maintenance_recurrence-*'
+          docker exec -w /app/backend hh-ci python3 -c "
+          import sqlite3
+          from alembic.config import Config
+          from alembic.script import ScriptDirectory
+          cfg = Config('alembic.ini'); cfg.set_main_option('script_location', 'migrations')
+          head = ScriptDirectory.from_config(cfg).get_current_head()
+          c = sqlite3.connect('/data/homehoard.db')
+          (cur,) = c.execute('select version_num from alembic_version').fetchone()
+          (qty,) = c.execute(\"select quantity from items where id = 'i-smoke'\").fetchone()
+          print('alembic current', cur, 'head', head, 'quantity', qty)
+          assert cur == head, (cur, head)
+          assert float(qty) == 2.5, qty
+          "
+      - name: MCP crash is restarted and /ready recovers
+        run: |
+          set -euo pipefail
+          pid=$(docker exec hh-ci sh -c 'for d in /proc/[0-9]*; do
+              [ "$(cat $d/comm 2>/dev/null)" = python3 ] || continue
+              tr "\0" " " < $d/cmdline 2>/dev/null | grep -q mcp_server && echo ${d#/proc/}
+            done' | head -n1)
+          test -n "$pid"
+          echo "killing MCP pid $pid"
+          docker exec hh-ci sh -c "kill -KILL $pid"   # kill is a shell builtin here
+          seen=""
+          for i in $(seq 1 50); do
+            if docker logs hh-ci 2>&1 | grep -q 'MCP server exited .*restart 1/5'; then seen=1; break; fi
+            sleep 0.2
+          done
+          test -n "$seen" || { echo "no 'restart 1/5' log line"; exit 1; }
+          ok=""
+          for i in $(seq 1 30); do
+            mcp=$(curl -sS http://127.0.0.1:7745/api/v1/ready \
+              | python3 -c "import json,sys;print(json.load(sys.stdin)['checks']['mcp'])" || true)
+            if [ "$mcp" = ok ]; then echo "checks.mcp ok after ${i}s"; ok=1; break; fi
+            sleep 1
+          done
+          test -n "$ok" || { echo "checks.mcp never returned to ok (last: $mcp)"; exit 1; }
       - name: Clean shutdown within grace period
         run: |
           set -euo pipefail
@@ -242,9 +368,35 @@ jobs:
           # gunicorn exits 0 on a graceful SIGTERM; 137 = SIGKILL after the grace
           # period (ignored SIGTERM). Fail the gate on a non-graceful shutdown.
           test "$rc" = "0"
+      - name: TERM during boot exits 0 (no SIGKILL mid-migration)
+        run: |
+          set -euo pipefail
+          # Boot on the pristine 0018 copy (a real pending migration) and stop it
+          # as soon as schema init begins — after the early trap is installed, so
+          # the timing is deterministic rather than a race against `docker run`.
+          docker run -d --name hh-term -v hh-data-term:/data \
+            -e HBOX_SECRET_KEY="$(openssl rand -base64 48)" homehoard:ci
+          for i in $(seq 1 300); do
+            docker logs hh-term 2>&1 | grep -q 'Initializing database schema' && break
+            sleep 0.1
+          done
+          docker stop -t 30 hh-term
+          rc=$(docker inspect -f '{{.State.ExitCode}}' hh-term)
+          echo "exit code: $rc"
+          # 137 = the TERM was dropped and docker SIGKILLed us after 30 s.
+          test "$rc" = "0"
+          if docker logs hh-term 2>&1 | grep 'stop requested during startup'; then
+            :
+          elif docker logs hh-term 2>&1 | grep -q 'MCP server started'; then
+            echo "boot completed before the stop landed; clean exit 0 still verified"
+          else
+            echo "exit 0 but neither a 'stop requested' line nor a completed boot"; exit 1
+          fi
       - name: Container logs (on failure)
         if: failure()
-        run: docker logs hh-ci || true
+        run: |
+          docker logs hh-ci || true
+          docker logs hh-term || true
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
@@ -253,22 +405,39 @@ jobs:
           if-no-files-found: ignore
 
   integration-tests:
-    name: HA integration (services)
+    # The matrix key in the name stops GitHub appending every matrix value, so
+    # the checks read "HA integration (latest)" / "HA integration (minimum)".
+    name: HA integration (${{ matrix.ha }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: read
     # Runs the companion integration's service tests in a real Home Assistant
-    # env (py3.14 — current homeassistant requires >=3.14.2, and the unpinned
-    # harness resolves to the newest HA the interpreter allows). These cover the confidence-tiering guards — an ambiguous
+    # env. These cover the confidence-tiering guards — an ambiguous
     # name must not check the wrong item out, and the spoken clarification must
     # name where each candidate lives — which nothing in the backend suite
     # exercises.
+    # Two HA versions, each from an exactly-pinned harness:
+    # - latest: requirements_test.txt, bumped by Dependabot (py3.14: the current
+    #   harness declares Requires-Python >=3.14).
+    # - minimum: requirements_test_min.txt, the HA that hacs.json declares as our
+    #   floor (2024.11.0; its harness requires py3.12). Without this leg a
+    #   change that only works on new HA ships to users hacs.json still admits.
+    strategy:
+      fail-fast: false   # a minimum-HA break must not hide the latest result
+      matrix:
+        include:
+          - ha: latest
+            python: "3.14"
+            requirements: requirements_test.txt
+          - ha: minimum
+            python: "3.12"
+            requirements: requirements_test_min.txt
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.14"
+          python-version: ${{ matrix.python }}
       - name: Install harness
         # Into a dedicated venv, never the runner's interpreter: the harness pins
         # an older dependency set (pydantic 1.x) that breaks `mcp` and stops the
@@ -278,11 +447,70 @@ jobs:
         run: |
           python -m venv .venv-ha
           .venv-ha/bin/python -m pip install --upgrade pip
-          .venv-ha/bin/python -m pip install -r custom_components/homehoard/tests/requirements_test.txt
+          .venv-ha/bin/python -m pip install -r custom_components/homehoard/tests/${{ matrix.requirements }}
+      - name: Check minimum leg runs the declared minimum HA
+        # requirements_test_min.txt is excluded from Dependabot; this catches it
+        # drifting (a manual bump, or the exclusion not holding) from hacs.json.
+        if: matrix.ha == 'minimum'
+        run: |
+          .venv-ha/bin/python - <<'EOF'
+          import json
+          from homeassistant.const import __version__ as installed
+          declared = json.load(open("hacs.json"))["homeassistant"]
+          assert installed == declared, f"minimum leg runs HA {installed}, hacs.json declares {declared}"
+          print(f"minimum leg: HA {installed} == hacs.json")
+          EOF
       - name: Run integration tests
         # asyncio_mode=auto: the async test fns have no per-test marker. sys.path
         # is fixed in the tests' conftest so `custom_components.homehoard` imports.
         run: .venv-ha/bin/python -m pytest custom_components/homehoard/tests -q -o asyncio_mode=auto
+
+  postgres-schema:
+    # Boot-migrate against a REAL Postgres. The backend suite runs on SQLite,
+    # which accepts schema Postgres rejects (a Boolean default of integer 0
+    # broke every fresh Postgres install), so only this job catches that class.
+    name: Postgres schema
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea # 16-alpine
+        env:
+          POSTGRES_USER: homehoard
+          POSTGRES_PASSWORD: homehoard  # throwaway CI-only database
+          POSTGRES_DB: homehoard
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U homehoard -d homehoard"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Each test needs its own EMPTY database: both seed rows and run migrations.
+      HBOX_TEST_PG_URL: postgresql://homehoard:homehoard@localhost:5432/homehoard
+      HH_TEST_PG_URL: postgresql://homehoard:homehoard@localhost:5432/hh_roundtrip
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"  # match the runtime image (Dockerfile: python:3.14-slim)
+      - name: Install dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest
+      - name: Create second database
+        run: python -c "import psycopg; psycopg.connect('postgresql://homehoard:homehoard@localhost:5432/homehoard', autocommit=True).execute('CREATE DATABASE hh_roundtrip')"
+      - name: Run Postgres boot-migrate tests
+        working-directory: backend
+        run: |
+          set -o pipefail
+          pytest -q tests/test_postgres_schema.py tests/test_migrations.py -k postgres -rs | tee pg.log
+          # A skip here means the env var vanished and nothing was tested: fail, don't go green.
+          ! grep -q " skipped" pg.log
 
   # Auto-bump the patch version on every push to main (skips its own commit).
   bump-version:
@@ -293,7 +521,7 @@ jobs:
     if: >
       github.event_name == 'push' &&
       !startsWith(github.event.head_commit.message, 'chore: bump version')
-    needs: [backend-tests, frontend-build, validate-addon, lint, smoke, integration-tests]
+    needs: [backend-tests, frontend-build, validate-addon, lint, smoke, integration-tests, postgres-schema]
     outputs:
       new_version: ${{ steps.bump.outputs.new_version }}
       bump_sha: ${{ steps.commit.outputs.sha }}

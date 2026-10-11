@@ -16,7 +16,7 @@ def _abort_422(c):
 
 
 @pytest.mark.parametrize("call,status", [
-    (_bad_json, 400), (_wrong_method, 405), (_abort_422, 422)])
+    (_bad_json, 422), (_wrong_method, 405), (_abort_422, 422)])
 def test_api_http_errors_are_json(auth_client, call, status):
     r = call(auth_client)
     assert r.status_code == status

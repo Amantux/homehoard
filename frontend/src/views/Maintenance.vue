@@ -20,6 +20,12 @@ const { loading, error, reload: load } = useLoader(async () => {
 })
 
 const scheduled = computed(() => data.value.entries.filter((e) => e.status === 'scheduled'))
+// Say the status in words; the badge colour alone doesn't convey "overdue".
+function statusLabel(m) {
+  if (m.status === 'completed') return 'Done'
+  if (m.overdue) return 'Overdue'
+  return m.status === 'scheduled' ? 'Scheduled' : m.status
+}
 </script>
 
 <template>
@@ -56,7 +62,7 @@ const scheduled = computed(() => data.value.entries.filter((e) => e.status === '
           <tr v-for="m in data.entries" :key="m.id" class="clickable" @click="router.push('/items/'+m.itemId)">
             <td><router-link :to="'/items/' + m.itemId" @click.stop><strong>{{ m.name }}</strong></router-link> <span v-if="m.recurMonths" class="badge" :title="`Repeats every ${m.recurMonths} months`">↻ {{ m.recurMonths }}mo</span><div class="muted" style="font-size:0.8rem">{{ m.description }}</div></td>
             <td>{{ m.itemName }}</td>
-            <td><span class="badge" :class="m.status==='completed'?'ok':(m.overdue?'danger':'')">{{ m.status }}</span></td>
+            <td><span class="badge" :class="m.status==='completed'?'ok':(m.overdue?'danger':'')">{{ statusLabel(m) }}</span></td>
             <td>{{ shortDate(m.completedDate || m.scheduledDate) }}</td>
             <td>{{ money(m.cost) }}</td>
           </tr>

@@ -38,9 +38,10 @@ const hasFilters = computed(
 )
 
 // --- Bulk selection -------------------------------------------------------
-// Selection is scoped to the items currently loaded (this page). Any change to
-// the filters or page reloads the list and clears the selection, so a bulk
-// action can never touch an item the user can't see.
+// Selection is scoped to the items currently loaded (this page). A filter
+// change clears it (the user changed scope); every reload, including a quiet
+// live refresh, prunes it to ids still in the list, so a bulk action can never
+// touch an item the user can't see and a refresh never wipes a selection.
 const selected = ref(new Set())
 const moveTarget = ref('')
 const labelTarget = ref('')
@@ -94,7 +95,8 @@ async function fetchItems() {
   const res = await api.get('/items?' + params.toString())
   items.value = res.items
   total.value = res.total
-  clearSelection()
+  const ids = new Set(res.items.map((i) => i.id))
+  selected.value = new Set([...selected.value].filter((id) => ids.has(id)))
 }
 
 // Filter options are fetched once; item pages refetch on every filter/page change.
@@ -135,8 +137,9 @@ async function runBulk(label, fn) {
     // reload below; the rest keep their old state.
     ui.error(`${label} failed after ${ok} of ${targets.length}: ${e.message}`)
   } finally {
-    // Reload (which clears the selection) BEFORE re-enabling controls, so the
+    // Clear the selection and reload BEFORE re-enabling controls, so the
     // action bar can't re-fire against an already-applied selection.
+    clearSelection()
     try {
       await load()
     } finally {
@@ -196,7 +199,7 @@ async function unlockVault() {
     await api.post('/vault/unlock', { phrase })
     await loadVault(); await load()
   } catch (e) {
-    ui.error(e.status === 401 ? 'That passphrase isn’t right.'
+    ui.error(e.status === 403 ? 'That passphrase isn’t right.'
       : e.status === 429 ? 'Too many attempts — wait a moment.'
       : (e.message || 'Could not unlock.'))
   }
@@ -222,7 +225,9 @@ async function setVaultPassphrase() {
     await loadVault()
     ui.success(changing ? 'Vault passphrase changed.' : 'Vault passphrase set.')
   } catch (e) {
-    ui.error(e.status === 401 ? 'That current passphrase isn’t right.'
+    // Both are 403 (a 401 would read as "signed out"); the server body tells
+    // a wrong current passphrase apart from a non-owner.
+    ui.error(e.status === 403 && /passphrase/.test(e.message || '') ? 'That current passphrase isn’t right.'
       : e.status === 403 ? 'Only the household owner can set the vault passphrase.'
       : (e.message || 'Could not set the passphrase.'))
   }
@@ -234,17 +239,24 @@ async function lockVault() {
 }
 
 async function loadVault() {
-  try { vault.value = await api.get('/vault/status') } catch { /* non-fatal */ }
+  // Non-fatal for the list, but say so: a stale vault state hides the lock/unlock controls.
+  try { vault.value = await api.get('/vault/status') } catch (e) {
+    ui.error('Couldn’t load the vault status. ' + (e.message || 'Reload the page to try again.'))
+  }
 }
 
 async function deleteSelected() {
   const n = selectedItems.value.length
-  if (!(await confirm({ title: `Delete ${n} item${n === 1 ? '' : 's'}?`, body: 'Their placements, photos, maintenance and checkout history are deleted too. This can’t be undone.', confirmLabel: 'Delete', danger: true }))) return
+  // Name what is about to go: up to 5 items, then a count of the rest.
+  const names = selectedItems.value.slice(0, 5).map((i) => i.name).join(', ')
+  const more = n > 5 ? ` and ${n - 5} more` : ''
+  if (!(await confirm({ title: `Delete ${n} item${n === 1 ? '' : 's'}?`, body: `${names}${more}. Their placements, photos, maintenance and checkout history are deleted too. This can’t be undone.`, confirmLabel: 'Delete', danger: true }))) return
   await runBulk('Deleted', (it) => api.del('/items/' + it.id))
 }
 
 let timer
 watch([q, locationFilter, labelFilter, orderBy, includeArchived], () => {
+  clearSelection()
   page.value = 1
   clearTimeout(timer)
   timer = setTimeout(load, 250)
@@ -330,7 +342,7 @@ watch(() => route.query.q, (v) => { if (v !== q.value) { q.value = v || '' } })
     <button class="danger secondary sm" :disabled="busy" @click="deleteSelected">{{ busy && busyLabel === 'Deleted' ? 'Deleting…' : 'Delete' }}</button>
   </div>
 
-  <div v-if="loading" class="card-grid">
+  <div v-if="loading && !items.length" class="card-grid">
     <div v-for="i in 8" :key="i" class="skeleton" style="height:190px"></div>
   </div>
 

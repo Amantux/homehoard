@@ -6,12 +6,14 @@ persisted so a conversation survives a reload.
 """
 import json
 
-from flask import Blueprint, request, jsonify, abort, Response, stream_with_context
+from flask import Blueprint, jsonify, Response, stream_with_context
 
 from ..extensions import db, limiter
 from ..models import ChatSession, ChatMessage, utcnow
 from ..auth import login_required, current_group, current_user
 from ..services import vault
+from ._scoping import get_owned_or_404
+from ._validation import json_body
 from ..schemas.serializers import (
     chat_session_out, chat_session_summary, chat_message_out,
 )
@@ -23,10 +25,7 @@ bp = Blueprint("chat", __name__)
 
 
 def _get_session(session_id) -> ChatSession:
-    s = db.session.get(ChatSession, session_id)
-    if not s or s.group_id != current_group().id:
-        abort(404)
-    return s
+    return get_owned_or_404(ChatSession, session_id)
 
 
 @bp.get("/chat/sessions")
@@ -104,7 +103,7 @@ def _vault_phrase_turn(session, phrase: str) -> str:
 @limiter.limit("30 per minute")
 def chat():
     """Send a message to the assistant. Creates a session if none is given."""
-    data = request.get_json(force=True) or {}
+    data = json_body()
     message = str(data.get("message") or "").strip()
     if not message:
         return jsonify({"error": "message is required"}), 422
@@ -183,7 +182,7 @@ def chat_stream():
     a terminal ``{"type":"done", sessionId, reply, actions, message}`` — or
     ``{"type":"error","error"}``. Same single-commit / rollback model as ``chat``;
     the persistence + commit run inside the generator once the loop finishes."""
-    data = request.get_json(force=True) or {}
+    data = json_body()
     message = str(data.get("message") or "").strip()
     if not message:
         return jsonify({"error": "message is required"}), 422

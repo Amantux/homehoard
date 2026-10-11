@@ -8,7 +8,7 @@ from ..models import Bin, Item, ItemHolding, Location, QrTag
 from ..models.qrtag import gen_token
 from ..auth import login_required, current_group
 from ._scoping import get_owned_or_404
-from ._validation import list_limit
+from ._validation import list_limit, json_body
 from ..schemas.serializers import bin_out, bin_summary, item_summary
 from ..services.holdings import resync_item, primary_holding, resync_bin_holdings
 from ..services import vault
@@ -58,7 +58,7 @@ def _owned_location(loc_id):
 @bp.post("/bins")
 @login_required
 def create_bin():
-    data = request.get_json(force=True) or {}
+    data = json_body()
     code = (data.get("code") or "").strip()
     if code:
         # Reject a code already in use BEFORE creating the bin, so a taken barcode
@@ -98,7 +98,7 @@ def get_bin(bin_id):
 @login_required
 def update_bin(bin_id):
     b = _get(bin_id)
-    data = request.get_json(force=True) or {}
+    data = json_body()
     if "name" in data:
         b.name = data["name"]
     if "description" in data:

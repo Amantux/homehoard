@@ -29,9 +29,11 @@ describe('useConfirm', () => {
     await expect(p).resolves.toBe(false)
   })
 
-  it('rejects a second request while one is pending, leaving the first intact', async () => {
+  // Contract change (P50): a second request used to reject, which callers never
+  // caught. It now resolves false — "not confirmed" — like a cancel.
+  it('resolves a second request false while one is pending, leaving the first intact', async () => {
     const first = confirm({ title: 'first' })
-    await expect(confirm({ title: 'second' })).rejects.toThrow(/already open/)
+    await expect(confirm({ title: 'second' })).resolves.toBe(false)
     expect(ui.confirmRequest.title).toBe('first')
     ui.resolveConfirm(true)
     await expect(first).resolves.toBe(true)

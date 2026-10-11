@@ -5,10 +5,11 @@
 handler in ``app/__init__.py`` adds ``fields``), so the SPA can render each
 message under its input instead of a single toast.
 """
+import unicodedata
 from typing import NoReturn
 
 from flask import request
-from werkzeug.exceptions import UnprocessableEntity
+from werkzeug.exceptions import BadRequest, UnprocessableEntity
 
 
 class FieldValidationError(UnprocessableEntity):
@@ -21,6 +22,55 @@ class FieldValidationError(UnprocessableEntity):
 
 def abort_fields(fields: dict[str, str], message: str = "validation failed") -> NoReturn:
     raise FieldValidationError(fields, message)
+
+
+def json_body() -> dict:
+    """The request's JSON body as a dict, or a 422. ``get_json(force=True)``
+    hands back whatever parsed — a list, a string, a number — and the handler's
+    ``data.get(...)`` then 500s; a non-object body is a client error."""
+    # force=True as before: clients that omit the JSON content type keep working.
+    if not request.get_data():
+        return {}  # empty body: same as the old ``... or {}``
+    try:
+        data = request.get_json(force=True)
+    except BadRequest:
+        # Did not parse: say so, rather than claiming the shape was wrong.
+        # (silent=True would return None here, indistinguishable from ``null``.)
+        abort_fields({"body": "is not valid JSON"}, "Request body is not valid JSON")
+    if not isinstance(data, dict):
+        abort_fields({"body": "must be a JSON object"}, "Request body must be a JSON object")
+    return data
+
+
+# Emails the server mints for its own synthetic users: the shared local user
+# (auth.DEFAULT_EMAIL) and HA-ingress users (``ha:<id>``). Registering or
+# switching to one would collide with — or impersonate — those accounts.
+_RESERVED_EMAIL_DOMAIN = "@easyinventory"
+_RESERVED_EMAIL_PREFIX = "ha:"
+
+
+def clean_email(value: object, field: str = "email") -> str:
+    """Normalised (stripped, lower-cased) email, or a 422 on ``field``."""
+    if not isinstance(value, str) or not value.strip():
+        abort_fields({field: "Email is required"}, "Email is required")
+    # NFKC first and drop format characters (zero-width joiners and friends,
+    # category Cf): "\u200bha:1@x" would otherwise render as a reserved address
+    # in the members list while slipping past the prefix/suffix checks.
+    email = unicodedata.normalize("NFKC", value)
+    email = "".join(c for c in email if unicodedata.category(c) != "Cf").strip().lower()
+    if email.startswith(_RESERVED_EMAIL_PREFIX) or email.endswith(_RESERVED_EMAIL_DOMAIN):
+        abort_fields({field: "This email address is reserved"}, "This email address is reserved")
+    local, at, domain = email.partition("@")
+    if not at or not local or not domain or "@" in domain or any(c.isspace() for c in email):
+        abort_fields({field: "Enter a valid email address"}, "Enter a valid email address")
+    return email
+
+
+def clean_name(value: object, field: str = "name") -> str:
+    """A non-empty name string (stripped), or a 422 on ``field``."""
+    if not isinstance(value, str) or not value.strip():
+        abort_fields({field: "Name is required"}, "Name is required")
+    return value.strip()
 
 
 LIST_LIMIT_MAX = 1000

@@ -50,8 +50,15 @@ async function loadAi() {
 // override it on the Assistant page; the default is classic POST.
 const chatStreamDefault = ref(false)
 const chatSaving = ref(false)
+// Set when the current value couldn't be read (non-403): saving would overwrite
+// the real setting with the default, so the control stays disabled until a retry works.
+const chatLoadError = ref('')
 async function loadChatDefault() {
-  try { chatStreamDefault.value = !!(await api.get('/settings/chat')).stream } catch (e) { /* keep default */ }
+  chatLoadError.value = ''
+  try { chatStreamDefault.value = !!(await api.get('/settings/chat')).stream } catch (e) {
+    // 403 = not allowed to read it: keep the default (the card is hidden anyway).
+    if (e.status !== 403) chatLoadError.value = 'Couldn’t load the chat default. ' + (e.message || 'Check your connection and try again.')
+  }
 }
 async function saveChatDefault(on) {
   chatSaving.value = true
@@ -67,12 +74,17 @@ onMounted(loadChatDefault)
 const blankJobArea = () => ({ provider: '', model: '', baseUrl: '', apiKey: '', apiKeySet: false })
 const jobAi = ref({ enrich: blankJobArea(), organize: blankJobArea() })
 const jobAiSaving = ref(false)
+const jobAiLoadError = ref('')   // non-403 load failure: Save stays disabled (see chatLoadError)
 const JOB_AREAS = [
   { k: 'enrich', l: 'Enrichment (descriptions)' },
   { k: 'organize', l: 'Background (auto-categorize + groupings)' },
 ]
 async function loadJobAi() {
-  try { jobAi.value = await api.get('/settings/ai/jobs') } catch (e) { /* admin-only / keep defaults */ }
+  jobAiLoadError.value = ''
+  try { jobAi.value = await api.get('/settings/ai/jobs') } catch (e) {
+    // 403 = admin-only: keep the defaults (the card is hidden anyway).
+    if (e.status !== 403) jobAiLoadError.value = 'Couldn’t load the background-task AI settings. ' + (e.message || 'Check your connection and try again.')
+  }
 }
 async function saveJobAi() {
   jobAiSaving.value = true
@@ -227,7 +239,7 @@ async function applyAiSettings() {
     aiForm.value = { provider: ai.value.provider, baseUrl: ai.value.baseUrl,
       model: ai.value.model, apiKey: '', ollamaSearchKey: '' }
     chatStreamDefault.value = !!(await api.get('/settings/chat')).stream
-    try { jobAi.value = await api.get('/settings/ai/jobs') } catch (e) { /* admin-only */ }
+    await loadJobAi()
     syncPasteInput.value = ''
     ui.toast(hasKey ? 'AI settings and API key applied.'
       : 'AI settings applied — add this app’s API key if the provider needs one.')
@@ -290,12 +302,18 @@ async function pollEnrich() {
   }
   enrichTimer = setTimeout(pollEnrich, 1500)
 }
+// Non-403 failure to check for a running job: starting another could double up,
+// so Start stays disabled until a retry works.
+const enrichResumeError = ref('')
 async function resumeEnrich() {
+  enrichResumeError.value = ''
   try {
     const r = await api.get('/jobs?kind=enrich')
     const active = (r.items || []).find(j => ['pending', 'running'].includes(j.status))
     if (active) { enrichJob.value = active; pollEnrich() }
-  } catch (e) { /* optional */ }
+  } catch (e) {
+    if (e.status !== 403) enrichResumeError.value = 'Couldn’t check for a running enrichment job. ' + (e.message || 'Check your connection and try again.')
+  }
 }
 onMounted(resumeEnrich)
 onUnmounted(() => clearTimeout(enrichTimer))
@@ -430,8 +448,9 @@ const actions = [
     <h2>Chat</h2>
     <p class="muted">Household default for how chat replies arrive. <strong>Stream</strong>
       shows the answer as it's written; <strong>classic</strong> shows it all at once.</p>
+    <ErrorState v-if="chatLoadError" :message="chatLoadError" @retry="loadChatDefault" />
     <label style="display:flex;gap:8px;align-items:center;max-width:520px">
-      <input type="checkbox" class="w-auto" :checked="chatStreamDefault" :disabled="chatSaving"
+      <input type="checkbox" class="w-auto" :checked="chatStreamDefault" :disabled="chatSaving || !!chatLoadError"
         @change="saveChatDefault($event.target.checked)" />
       <span>Stream chat responses by default</span>
     </label>
@@ -439,6 +458,7 @@ const actions = [
 
   <div v-if="canEditAi" class="card">
     <h2>AI for background tasks</h2>
+    <ErrorState v-if="jobAiLoadError" :message="jobAiLoadError" @retry="loadJobAi" />
     <p class="muted">Run background jobs on a different model — and a different
       <strong>server</strong> — from chat. The usual setup is a fast hosted model for chat
       and a small local model on your own machine for the slow bulk work, which can take as
@@ -474,7 +494,7 @@ const actions = [
       </div>
     </div>
     <div class="row" style="justify-content:flex-end;max-width:520px">
-      <button :disabled="jobAiSaving" @click="saveJobAi">{{ jobAiSaving ? 'Saving…' : 'Save' }}</button>
+      <button :disabled="jobAiSaving || !!jobAiLoadError" @click="saveJobAi">{{ jobAiSaving ? 'Saving…' : 'Save' }}</button>
     </div>
   </div>
 
@@ -505,7 +525,8 @@ const actions = [
           <input v-model="enrichForm.model" placeholder="override model" class="input-block" />
         </label>
       </div>
-      <button class="secondary" :disabled="enrichStarting" @click="startEnrich">
+      <ErrorState v-if="enrichResumeError" :message="enrichResumeError" @retry="resumeEnrich" />
+      <button class="secondary" :disabled="enrichStarting || !!enrichResumeError" @click="startEnrich">
         {{ enrichStarting ? 'Starting…' : '✨ Describe items missing a description' }}</button>
     </div>
     <div v-else class="w-narrow">

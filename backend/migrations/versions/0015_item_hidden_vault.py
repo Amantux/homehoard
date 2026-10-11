@@ -50,7 +50,7 @@ def upgrade() -> None:
     if "hidden" not in _columns("items"):
         op.add_column("items", sa.Column(
             "hidden", sa.Boolean(), nullable=False,
-            server_default=sa.text("0")))
+            server_default=sa.false()))
     if "ix_items_hidden" not in _indexes("items"):
         op.create_index("ix_items_hidden", "items", ["hidden"])
 

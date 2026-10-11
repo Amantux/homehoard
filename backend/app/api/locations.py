@@ -1,12 +1,14 @@
 from flask import Blueprint, request, jsonify
+from sqlalchemy import func
 from sqlalchemy.orm import selectinload
 
 from ..extensions import db
-from ..models import Location, Bin
+from ..models import Location, Item, ItemHolding
 from ..auth import login_required, current_group
 from ._scoping import get_owned_or_404
-from ._validation import list_limit
+from ._validation import clean_name, json_body, list_limit
 from ..schemas.serializers import location_out, location_tree
+from ..services import vault
 
 bp = Blueprint("locations", __name__)
 
@@ -45,15 +47,15 @@ def list_locations():
     top-level only; ``?limit=`` caps the result (1..1000, default 1000;
     non-integer → 400)."""
     filter_children = request.args.get("filterChildren", "false").lower() == "true"
-    # Eager-load the collections location_out counts/lists so a list of N
-    # locations stays a handful of queries, not ~4N lazy loads.
+    # Eager-load the collections location_out lists so a list of N locations
+    # stays a handful of queries, not ~2N lazy loads. Counts come from
+    # _holding_counts, never from loading every holding row.
     q = (
         db.session.query(Location)
         .filter_by(group_id=current_group().id)
         .options(
-            selectinload(Location.items),
             selectinload(Location.children),
-            selectinload(Location.bins).selectinload(Bin.items),
+            selectinload(Location.bins),
         )
     )
     # Filter in SQL (was a post-query list filter) so ?limit applies to the
@@ -61,29 +63,49 @@ def list_locations():
     if filter_children:
         q = q.filter(Location.parent_id.is_(None))
     locs = q.order_by(Location.name, Location.id).limit(list_limit()).all()
-    return jsonify([location_out(loc, with_items=False) for loc in locs])
+    counts = _holding_counts(locs)
+    return jsonify([location_out(loc, with_items=False, counts=counts) for loc in locs])
+
+
+def _holding_counts(locs):
+    """Readable-holding counts per location and per bin, one grouped COUNT
+    each. Same visibility as ``vault.readable_holdings``: the holding's ITEM
+    must exist and, unless this session is unlocked, not be hidden."""
+    loc_ids = [loc.id for loc in locs]
+    bin_ids = [b.id for loc in locs for b in loc.bins]
+    out = {"location": {}, "bin": {}}
+    for key, col, ids in (("location", ItemHolding.location_id, loc_ids),
+                          ("bin", ItemHolding.bin_id, bin_ids)):
+        if not ids:
+            continue
+        q = (db.session.query(col, func.count(ItemHolding.id))
+             .join(Item, Item.id == ItemHolding.item_id)
+             .filter(col.in_(ids)))
+        out[key] = dict(vault.visible(q).group_by(col).all())
+    return out
 
 
 @bp.get("/locations/tree")
 @login_required
 def tree():
-    roots = (
-        db.session.query(Location)
-        .filter_by(group_id=current_group().id, parent_id=None)
-        .all()
-    )
-    return jsonify([location_tree(r) for r in roots])
+    # One query for the whole household, then a parent → children map, so the
+    # tree costs the same number of queries at 3 locations as at 300.
+    locs = db.session.query(Location).filter_by(group_id=current_group().id).all()
+    children = {}
+    for loc in locs:
+        children.setdefault(loc.parent_id, []).append(loc)
+    return jsonify([location_tree(r, children) for r in children.get(None, [])])
 
 
 @bp.post("/locations")
 @login_required
 def create_location():
-    data = request.get_json(force=True) or {}
+    data = json_body()
     parent_id, error = _validate_parent(data.get("parentId"))
     if error:
         return jsonify({"error": error}), 422
     loc = Location(
-        name=data.get("name", ""),
+        name=clean_name(data.get("name")),
         description=data.get("description", ""),
         parent_id=parent_id,
         group_id=current_group().id,
@@ -103,9 +125,9 @@ def get_location(location_id):
 @login_required
 def update_location(location_id):
     loc = _get(location_id)
-    data = request.get_json(force=True) or {}
+    data = json_body()
     if "name" in data:
-        loc.name = data["name"]
+        loc.name = clean_name(data["name"])
     if "description" in data:
         loc.description = data["description"]
     if "parentId" in data:

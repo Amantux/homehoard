@@ -1,10 +1,14 @@
 <script setup>
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useAuth } from '../stores/auth'
+import { useUI } from '../stores/ui'
+import { safeRedirect } from '../utils/safeRedirect'
 
 const auth = useAuth()
 const router = useRouter()
+const route = useRoute()
+const ui = useUI()
 const mode = ref('login')
 const email = ref('')
 const password = ref('')
@@ -18,7 +22,9 @@ async function submit() {
   try {
     if (mode.value === 'login') await auth.login(email.value, password.value)
     else await auth.register({ email: email.value, password: password.value, name: name.value })
-    router.push('/')
+    ui.sessionExpired = false
+    // ?redirect= comes from the URL, so it is untrusted: in-app paths only.
+    router.replace(safeRedirect(route.query.redirect))
   } catch (e) {
     error.value = e.message
   } finally {
@@ -35,13 +41,15 @@ async function submit() {
         <h1>HomeHoard</h1>
         <p class="muted" style="margin:4px 0 0">{{ mode === 'login' ? 'Sign in to your inventory' : 'Create your account' }}</p>
       </div>
-      <label v-if="mode === 'register'" class="field"><span>Name</span><input v-model="name" /></label>
-      <label class="field"><span>Email</span><input v-model="email" type="email" @keyup.enter="submit" /></label>
-      <label class="field"><span>Password</span><input v-model="password" type="password" @keyup.enter="submit" /></label>
-      <p v-if="error" style="color:var(--danger);font-size:0.9rem">{{ error }}</p>
-      <button style="width:100%;justify-content:center" :disabled="busy" @click="submit">
-        {{ mode === 'login' ? 'Sign in' : 'Create account' }}
-      </button>
+      <form @submit.prevent="submit">
+        <label v-if="mode === 'register'" class="field"><span>Name</span><input v-model="name" autocomplete="name" required /></label>
+        <label class="field"><span>Email</span><input v-model="email" type="email" autocomplete="username" /></label>
+        <label class="field"><span>Password</span><input v-model="password" type="password" :autocomplete="mode === 'login' ? 'current-password' : 'new-password'" /></label>
+        <p v-if="error" role="alert" style="color:var(--danger);font-size:0.9rem">{{ error }}</p>
+        <button type="submit" style="width:100%;justify-content:center" :disabled="busy">
+          {{ mode === 'login' ? 'Sign in' : 'Create account' }}
+        </button>
+      </form>
       <p class="muted" style="text-align:center;margin-top:16px">
         <a href="#" @click.prevent="mode = mode === 'login' ? 'register' : 'login'">
           {{ mode === 'login' ? 'Need an account? Register' : 'Have an account? Sign in' }}</a>

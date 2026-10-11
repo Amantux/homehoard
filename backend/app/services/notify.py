@@ -6,8 +6,11 @@ add-on options / env and bypass the API's create/update check. Both the API and
 the dispatcher import `url_is_safe` so there is a single definition.
 """
 import ipaddress
+import logging
 import socket
 from urllib.parse import urlparse
+
+_LOGGER = logging.getLogger("homehoard.notify")
 
 # Fail-safe design: the authority of these Apprise schemes is an ID/TOKEN, not a
 # network host, so their "hostname" must NOT be DNS-resolved (it isn't a host).
@@ -80,7 +83,12 @@ def _apprise_send(url: str, title: str, body: str) -> bool:
     try:
         ap = apprise.Apprise()
         return bool(ap.add(url) and ap.notify(body=body, title=title))
-    except Exception:
+    except Exception as exc:
+        # Type + scheme only: the URL itself carries the provider token /
+        # password, and str(exc) from Apprise can echo it back.
+        scheme = url.partition(":")[0] if ":" in url else ""
+        _LOGGER.warning("notifier send failed (%s) for a %s:// notifier",
+                        type(exc).__name__, scheme if scheme.isalnum() else "?")
         return False
 
 

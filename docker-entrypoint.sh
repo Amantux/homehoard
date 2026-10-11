@@ -80,6 +80,16 @@ if [ -z "${RESOLVED_PORT:-}" ] || [ -z "${RESOLVED_MCP_PORT:-}" ]; then
   exit 1
 fi
 
+# Early stop handling. PID 1 silently drops a signal it has no handler for, so
+# until `trap shutdown` below is installed a `docker stop` during boot did
+# nothing and ended in SIGKILL — possibly mid-migration. This trap only records
+# the request: sh runs it after the current foreground step (e.g. schema init)
+# finishes, so a migration is never interrupted; we then exit at the next
+# checkpoint instead of starting servers. (config.yaml `timeout:` gives that
+# step time to finish before the Supervisor escalates to SIGKILL.)
+STOP_REQUESTED=0
+trap 'STOP_REQUESTED=1' TERM INT
+
 # Shared PostgreSQL: when enabled, discover the add-on and provision our own
 # database (writes the DSN to /data/.database_url, which the app reads). Runs
 # before schema init so migrations target the right database. Best-effort — it
@@ -89,6 +99,7 @@ fi
 # "skipped", which reads as a normal outcome.
 $RUN_AS python3 -m app.pg_provision \
   || echo "HomeHoard: pg_provision failed unexpectedly; continuing on SQLite." >&2
+[ "$STOP_REQUESTED" = 1 ] && { echo "HomeHoard: stop requested during startup; exiting after pg_provision"; exit 0; }
 
 # Initialize / migrate the database ONCE, before starting workers. Otherwise
 # each of gunicorn's workers races to run create_all()/_migrate() on a fresh DB
@@ -115,6 +126,7 @@ print('HomeHoard: database backend =', 'sqlite' if uri.startswith('sqlite') else
 if os.environ.get('MINT_TOKEN') == 'true':
     from app.integration_token import ensure_integration_token
     ensure_integration_token(app)"
+[ "$STOP_REQUESTED" = 1 ] && { echo "HomeHoard: stop requested during startup; exiting after schema init"; exit 0; }
 
 # Best-effort Home Assistant discovery. Runs AFTER schema init and as the app
 # user, matching the sibling add-ons: anything discovery needs to read (data
@@ -135,6 +147,11 @@ if os.environ.get('MINT_TOKEN') == 'true':
 # surfaces as a Python traceback on stderr in the add-on log.
 $RUN_AS python3 ha_discovery.py &
 DISCOVERY_PID=$!
+if [ "$STOP_REQUESTED" = 1 ]; then
+  echo "HomeHoard: stop requested during startup; exiting after discovery launch"
+  kill -TERM "$DISCOVERY_PID" 2>/dev/null || true
+  exit 0
+fi
 
 # ---------------------------------------------------------------------------
 # MCP server. Previously backgrounded and then orphaned by `exec gunicorn`, so a
@@ -142,7 +159,11 @@ DISCOVERY_PID=$!
 # supervising shell that forwards signals and reports an MCP exit.
 # ---------------------------------------------------------------------------
 MCP_PID=""          # the supervise loop (a background subshell), not the server
-MCP_CHILD_PIDFILE="/tmp/homehoard-mcp.pid"   # the loop writes the CURRENT server pid
+# The loop writes the CURRENT server pid here and shutdown() (root) kills
+# whatever pid it names, so it lives in root-owned /run, not world-writable /tmp
+# where another user could plant a pid. /tmp only when we already run non-root.
+MCP_CHILD_PIDFILE="/run/homehoard-mcp.pid"
+[ -w /run ] || MCP_CHILD_PIDFILE="/tmp/homehoard-mcp.pid"
 
 # Restart a crashed MCP server up to 5 times (backoff 1,2,4,8,16s), then give up
 # without touching the REST API. Runs in the background; TERM (from shutdown())
@@ -207,12 +228,15 @@ shutdown() {
   # TERM the supervise loop first (its trap sets STOPPING=1 and stops the
   # server), then the server directly in case the loop was between steps.
   [ -n "$MCP_PID" ] && kill -TERM "$MCP_PID" 2>/dev/null || true
-  [ -f "$MCP_CHILD_PIDFILE" ] && kill -TERM "$(cat "$MCP_CHILD_PIDFILE")" 2>/dev/null || true
+  [ -n "$MCP_PID" ] && [ -f "$MCP_CHILD_PIDFILE" ] && kill -TERM "$(cat "$MCP_CHILD_PIDFILE")" 2>/dev/null || true
   [ -n "$DISCOVERY_PID" ] && kill -TERM "$DISCOVERY_PID" 2>/dev/null || true
   wait
   exit 0
 }
 trap shutdown TERM INT
+# A stop that arrived while the MCP supervisor was being launched only set the
+# early flag; honour it now that shutdown() can reach the children.
+[ "$STOP_REQUESTED" = 1 ] && shutdown
 
 # --access-logfile/--error-logfile to stdout: without them gunicorn logs no
 # requests at all, so there was zero request-level visibility. --log-level comes
@@ -238,8 +262,10 @@ while true; do
     wait "$GUNICORN_PID" || status=$?
     echo "HomeHoard: gunicorn exited with status $status; shutting down." >&2
     [ -n "$MCP_PID" ] && kill -TERM "$MCP_PID" 2>/dev/null || true
-    [ -f "$MCP_CHILD_PIDFILE" ] && kill -TERM "$(cat "$MCP_CHILD_PIDFILE")" 2>/dev/null || true
+    [ -n "$MCP_PID" ] && [ -f "$MCP_CHILD_PIDFILE" ] && kill -TERM "$(cat "$MCP_CHILD_PIDFILE")" 2>/dev/null || true
     exit "$status"
   fi
-  sleep 5
+  # Backgrounded + wait so a TERM runs shutdown() at once instead of after the
+  # sleep; `|| true` because a trap-interrupted wait returns >128 under set -e.
+  sleep 5 & wait $! || true
 done

@@ -1,14 +1,17 @@
 <script setup>
 // The app's one confirmation dialog, driven by ui.confirmRequest (useConfirm).
 import { onBeforeUnmount } from 'vue'
+import { useRouter } from 'vue-router'
 import { useUI } from '../stores/ui'
 import BaseModal from './BaseModal.vue'
 
 const ui = useUI()
+// A completed navigation cancels any open confirmation: the page that asked is
+// gone, so the dialog must not linger over the next one.
+const off = useRouter().afterEach((_to, _from, failure) => { if (!failure) ui.resolveConfirm(false) })
 // If the dialog unmounts while a request is open (template swap on a 401
-// redirect, a route change) the awaiting caller must still settle, or every
-// later confirm() rejects as "already open".
-onBeforeUnmount(() => ui.resolveConfirm(false))
+// redirect) the awaiting caller must still settle.
+onBeforeUnmount(() => { off(); ui.resolveConfirm(false) })
 </script>
 
 <template>

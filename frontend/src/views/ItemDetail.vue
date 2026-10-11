@@ -61,6 +61,8 @@ const { loading, error, reload } = useLoader(async () => {
   notFound.value = false
   try {
     await loadCurrency()
+    // A live refresh mid-edit would overwrite the form; the save reloads.
+    if (editing.value) return
     await loadAll()
     ;[locations.value, bins.value, allLabels.value] = await Promise.all([
       api.get('/locations'), api.get('/bins'), api.get('/labels'),
@@ -510,7 +512,7 @@ async function addMaint() {
 
         <div v-if="primaryImg || item.attachments.length" class="card" style="width:280px;flex-shrink:0">
           <div class="thumb" style="border-radius:10px;aspect-ratio:1;background:var(--surface-2);display:grid;place-items:center;overflow:hidden">
-            <img v-if="primaryImg" :src="primaryImg" style="width:100%;height:100%;object-fit:cover" />
+            <img v-if="primaryImg" :src="primaryImg" :alt="item.name" style="width:100%;height:100%;object-fit:cover" />
             <span v-else style="font-size:48px">📦</span>
           </div>
         </div>
@@ -522,7 +524,7 @@ async function addMaint() {
       <div v-if="item.attachments.length" class="card-grid">
         <div v-for="a in item.attachments" :key="a.id" class="item-card" style="cursor:default">
           <div class="thumb">
-            <img v-if="a.type==='photo'" :src="apiUrl('/documents/'+a.document.id)" />
+            <img v-if="a.type==='photo'" :src="apiUrl('/documents/'+a.document.id)" :alt="a.document.title || 'Attachment photo'" />
             <span v-else>📄</span>
           </div>
           <div class="body">

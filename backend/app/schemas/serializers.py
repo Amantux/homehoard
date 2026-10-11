@@ -121,14 +121,23 @@ def location_summary(loc):
     }
 
 
-def location_out(loc, with_items=True):
+def location_out(loc, with_items=True, counts=None):
+    """``counts`` — ``{"location": {id: n}, "bin": {id: n}}`` of READABLE
+    holdings, precomputed by the list endpoint in one grouped query so a list
+    of N locations doesn't load every holding row. Only with ``with_items=False``."""
     data = location_summary(loc)
     data["parent"] = location_summary(loc.parent) if loc.parent else None
     data["children"] = [location_summary(c) for c in loc.children]
     data["bins"] = [
         {"id": b.id, "name": b.name,
-         "itemCount": len(vault.readable_holdings(b.holdings))} for b in loc.bins
+         "itemCount": (counts["bin"].get(b.id, 0) if counts is not None
+                       else len(vault.readable_holdings(b.holdings)))}
+        for b in loc.bins
     ]
+    if counts is not None and not with_items:
+        data["itemCount"] = counts["location"].get(loc.id, 0)
+        data["childCount"] = len(loc.children)
+        return data
     # Holding-aware: every placement in this location (directly or in one of its
     # bins), each with the quantity HERE rather than the item's household total.
     holdings = sorted((h for h in loc.holdings if h.item),
@@ -144,12 +153,19 @@ def location_out(loc, with_items=True):
     return data
 
 
-def location_tree(loc):
+def location_tree(loc, children, seen=None):
+    """``children`` maps a location id to its child Locations (built from one
+    query by the caller). ``seen`` mirrors ``location_path``: a node already on
+    the walk is emitted without children, so a parent cycle can't recurse."""
+    seen = set() if seen is None else seen
+    revisited = loc.id in seen
+    seen.add(loc.id)
     return {
         "id": loc.id,
         "name": loc.name,
         "type": "location",
-        "children": [location_tree(c) for c in loc.children],
+        "children": [] if revisited else
+        [location_tree(c, children, seen) for c in children.get(loc.id, [])],
     }
 
 

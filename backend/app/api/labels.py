@@ -1,10 +1,10 @@
-from flask import Blueprint, request, jsonify, abort
+from flask import Blueprint, jsonify, abort
 
 from ..extensions import db
 from ..models import Label
 from ..auth import login_required, current_group
 from ._scoping import get_owned_or_404
-from ._validation import list_limit
+from ._validation import list_limit, json_body
 from ..schemas.serializers import label_out, label_summary
 
 bp = Blueprint("labels", __name__)
@@ -38,7 +38,7 @@ def _owned_parent(parent_id):
 @bp.post("/labels")
 @login_required
 def create_label():
-    data = request.get_json(force=True) or {}
+    data = json_body()
     label = Label(
         name=data.get("name", ""),
         description=data.get("description", ""),
@@ -62,7 +62,7 @@ def get_label(label_id):
 @login_required
 def update_label(label_id):
     label = _get(label_id)
-    data = request.get_json(force=True) or {}
+    data = json_body()
     for field in ("name", "description", "color", "icon"):
         if field in data:
             setattr(label, field, data[field])

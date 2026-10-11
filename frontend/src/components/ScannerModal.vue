@@ -1,3 +1,23 @@
+<script>
+import { prefetchZxing, resetZxing } from './zxingPrefetch'
+
+const ZXING_TIMEOUT_MS = 15000
+export const LOAD_ERROR = "Couldn't load the scanner. Check your connection and retry."
+class ScannerLoadError extends Error {}
+
+function loadZxing() {
+  let timer
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      resetZxing() // a hung request shouldn't be reused by Retry
+      reject(new ScannerLoadError('timeout'))
+    }, ZXING_TIMEOUT_MS)
+  })
+  const load = prefetchZxing().catch(() => { throw new ScannerLoadError('import failed') })
+  return Promise.race([load, timeout]).finally(() => clearTimeout(timer))
+}
+</script>
+
 <script setup>
 import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
 import { useRouter } from 'vue-router'
@@ -39,6 +59,11 @@ let navigating = false
 let lastCode = ''
 let lastAt = 0
 let busy = false
+// Set on unmount. Every await in the camera start path re-checks it, because a
+// getUserMedia/zxing start that resolves after close would otherwise leave the
+// camera running with nothing left to stop it.
+let disposed = false
+const linkError = ref('')
 
 const MODES = [
   { id: 'open', label: 'Look up' },
@@ -230,12 +255,16 @@ const NATIVE_FORMATS = [
 
 async function startNative() {
   const supported = await window.BarcodeDetector.getSupportedFormats()
+  if (disposed) return
   const formats = NATIVE_FORMATS.filter((f) => supported.includes(f))
   if (!formats.length) throw new Error('no formats')
   detector = new window.BarcodeDetector({ formats })
-  stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+  const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+  if (disposed) { s.getTracks().forEach((t) => t.stop()); return }
+  stream = s
   video.value.srcObject = stream
   await video.value.play()
+  if (disposed) { stopCamera(); return }
   engine.value = 'native'
   loopNative()
 }
@@ -249,14 +278,17 @@ async function loopNative() {
 }
 
 async function startZxing() {
-  const { BrowserMultiFormatReader } = await import('@zxing/browser')
+  const { BrowserMultiFormatReader } = await loadZxing()
+  if (disposed) return
   zxingReader = new BrowserMultiFormatReader()
   engine.value = 'zxing'
-  zxingControls = await zxingReader.decodeFromConstraints(
+  const controls = await zxingReader.decodeFromConstraints(
     { video: { facingMode: 'environment' } },
     video.value,
     (result) => { if (result) onCode(result.getText()) },
   )
+  if (disposed) { try { controls.stop() } catch (e) { /* noop */ } return }
+  zxingControls = controls
 }
 
 async function start() {
@@ -264,14 +296,21 @@ async function start() {
   error.value = ''
   try {
     if ('BarcodeDetector' in window) {
-      try { await startNative() } catch (e) { await startZxing() }
+      try { await startNative() } catch (e) {
+        stopCamera() // release a stream the native path got before failing
+        if (disposed) return
+        await startZxing()
+      }
     } else {
       await startZxing()
     }
+    if (disposed) return
     status.value = 'scanning'
   } catch (e) {
+    if (disposed) return
     status.value = 'error'
-    if (e.name === 'NotAllowedError') error.value = 'Camera permission was denied.'
+    if (e instanceof ScannerLoadError) error.value = LOAD_ERROR
+    else if (e.name === 'NotAllowedError') error.value = 'Camera permission was denied.'
     else if (!window.isSecureContext) error.value = 'Camera needs HTTPS. Use manual entry below, or open HomeHoard over HTTPS / Home Assistant.'
     else error.value = 'Could not start the camera: ' + (e.message || e.name)
   }
@@ -283,9 +322,14 @@ onMounted(async () => {
     const [bs, ls] = await Promise.all([api.get('/bins'), api.get('/locations')])
     bins.value = bs
     locations.value = ls
-  } catch (e) { /* ignore */ }
+  } catch (e) {
+    linkError.value = "Couldn't load bins and locations — linking is unavailable."
+  }
 })
-onBeforeUnmount(stopCamera)
+onBeforeUnmount(() => {
+  disposed = true
+  stopCamera()
+})
 </script>
 
 <template>
@@ -302,6 +346,7 @@ onBeforeUnmount(stopCamera)
 
       <!-- Onboard target -->
       <div v-if="mode === 'onboard'" class="card" style="padding:10px;margin-bottom:10px;background:var(--surface-2)">
+        <p v-if="linkError" role="alert" style="color:var(--danger);font-size:0.85rem;margin:0 0 8px">{{ linkError }}</p>
         <label class="field" style="margin:0"><span>Adding into</span>
           <select v-model="targetSel">
             <option value="">Scan or pick a bin / location…</option>
@@ -332,7 +377,7 @@ onBeforeUnmount(stopCamera)
             <p v-if="status === 'starting'">Starting camera…</p>
             <template v-else>
               <p style="margin-bottom:12px">{{ error || 'Camera is off.' }}</p>
-              <button @click="start">Start camera</button>
+              <button @click="start">{{ error === LOAD_ERROR ? 'Retry' : 'Start camera' }}</button>
             </template>
           </div>
         </div>

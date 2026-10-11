@@ -107,10 +107,34 @@ def build_payload(host: str) -> dict:
             "config": {"host": host, "port": PORT, "token": _integration_token()}}
 
 
+def _ready_probe() -> None:
+    """Raise unless the local app answers /api/v1/ready with 2xx.
+
+    PORT is the same resolved setting the entrypoint exports as RESOLVED_PORT
+    and binds gunicorn to. urlopen raises HTTPError on the 503 'not ready'."""
+    with urllib.request.urlopen(f"http://127.0.0.1:{PORT}/api/v1/ready", timeout=5):
+        return None
+
+
+def _wait_until_ready() -> bool:
+    """Wait (~4 min: 10 tries, 2 s doubling, capped at 30 s) for the app to be
+    ready, so HA isn't offered a setup whose first probe hits a dead port.
+    Returns False if it never became ready; the caller posts anyway — a late
+    offer beats none."""
+    try:
+        _retry(_ready_probe, "readiness wait", attempts=10, base=2.0, cap=30.0)
+        return True
+    except Exception:  # noqa: BLE001 - best effort; caller degrades
+        return False
+
+
 def main() -> int:
     if not TOKEN:
         print("SUPERVISOR_TOKEN not set — skipping HA discovery (fine outside HA).")
         return 0
+
+    if not _wait_until_ready():
+        print("HomeHoard: app never reported ready — registering discovery anyway.")
 
     host, source = resolve_host()
     message = build_payload(host)

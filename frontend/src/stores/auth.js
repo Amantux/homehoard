@@ -33,6 +33,18 @@ export const useAuth = defineStore('auth', {
       await api.post('/users/register', payload)
       await this.login(payload.email, payload.password)
     },
+    // The server rejected our token (a 401; api.js has already cleared it).
+    // Unlike logout() this does not navigate: the open view stays mounted and
+    // App.vue shows a sign-in banner. Returns true only when a signed-in
+    // session actually ended, so a 401 on the login form or during bootstrap
+    // (no session yet) raises no banner. With auth disabled there is no token
+    // to expire — a 401 there is an endpoint-level refusal (e.g. a wrong vault
+    // passphrase), not a lost session — so the user is left in place.
+    expire() {
+      if (this.authDisabled || !this.user) return false
+      this.user = null
+      return true
+    },
     logout() {
       setToken(null)
       this.user = null

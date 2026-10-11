@@ -44,14 +44,14 @@ async function create() {
 
   <ErrorState v-else-if="error" :message="error" @retry="load" />
   <div v-else-if="bins.length" class="card-grid">
-    <div v-for="b in bins" :key="b.id" class="item-card" @click="router.push('/bins/' + b.id)">
+    <div v-for="b in bins" :key="b.id" class="item-card">
       <div class="thumb">
         <img v-if="b.imageId" :src="apiUrl('/documents/' + b.imageId + '?thumb=1')" alt=""
              @error="$event.target.style.display='none'" />
         <span v-else>🗃️</span>
       </div>
       <div class="body">
-        <router-link class="title" :to="'/bins/' + b.id" @click.stop>{{ b.name }}</router-link>
+        <router-link class="title stretched-link" :to="'/bins/' + b.id">{{ b.name }}</router-link>
         <div class="sub">📍 {{ locName(b.locationId) }}</div>
         <div class="labels"><span class="chip">{{ b.itemCount }} items</span></div>
       </div>

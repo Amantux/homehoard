@@ -9,6 +9,7 @@ import ItemCard from '../components/ItemCard.vue'
 import QrPanel from '../components/QrPanel.vue'
 import { indexById, pathString } from '../locationTree'
 import ErrorState from '../components/ErrorState.vue'
+import Combobox from '../components/Combobox.vue'
 import { useLoader } from '../components/useLoader'
 
 const route = useRoute()
@@ -19,8 +20,34 @@ const id = route.params.id
 const loc = ref(null)
 const path = ref([])
 const allLocations = ref([])
-const allItems = ref([])
 const addItemId = ref('')
+const itemMatches = ref([])         // server search results for the "move here" picker
+let searchTimer = null
+let searchSeq = 0
+// Picked option is kept in the list so the combobox can still show it after a new search.
+const addItemOptions = computed(() => {
+  const here = new Set((loc.value?.items || []).map((i) => i.id))
+  return itemMatches.value
+    .filter((i) => !here.has(i.id))
+    .map((i) => ({ id: i.id, label: i.name, sublabel: i.bin?.name || i.location?.name || '' }))
+})
+function searchItems(term) {
+  clearTimeout(searchTimer)
+  searchTimer = setTimeout(async () => {
+    const seq = ++searchSeq
+    const params = new URLSearchParams({ pageSize: '20' })
+    if (term) params.set('q', term)
+    try {
+      const res = await api.get(`/items?${params}`)
+      if (seq !== searchSeq) return // a newer search already answered
+      const picked = itemMatches.value.find((i) => i.id === addItemId.value)
+      const next = res.items
+      itemMatches.value = picked && !next.some((i) => i.id === picked.id) ? [picked, ...next] : next
+    } catch (e) {
+      if (seq === searchSeq) ui.error(e.message || 'Item search failed')
+    }
+  }, 200)
+}
 const newItemName = ref('')
 const newItemQty = ref(1)
 const tab = ref('items')
@@ -55,14 +82,13 @@ async function load() {
   loc.value = await api.get('/locations/' + id)
   path.value = await api.get(`/locations/${id}/path`)
 }
-async function refreshItems() { allItems.value = (await api.get('/items?pageSize=500')).items }
 const notFound = ref(false)
 const { loading, error, reload } = useLoader(async () => {
   notFound.value = false
   try {
     await loadCurrency()
     await load()
-    ;[allLocations.value] = await Promise.all([api.get('/locations'), refreshItems()])
+    allLocations.value = await api.get('/locations')
   } catch (e) {
     notFound.value = e.status === 404
     throw e
@@ -78,7 +104,7 @@ async function createItemHere() {
     newItemName.value = ''
     newItemQty.value = 1
     ui.toast('Item created here')
-    await load(); await refreshItems()
+    await load()
   } catch (e) {
     ui.error(e.message)
   }
@@ -90,7 +116,7 @@ async function addItem() {
     await api.patch('/items/' + addItemId.value, { locationId: id, binId: null })
     addItemId.value = ''
     ui.toast('Item moved here')
-    await load(); await refreshItems()
+    await load()
   } catch (e) {
     ui.error(e.message)
   }
@@ -185,10 +211,11 @@ async function remove() {
                title="Quantity" @keyup.enter="createItemHere" />
         <button :disabled="!newItemName.trim()" @click="createItemHere">＋ Create here</button>
         <span class="muted" style="align-self:center">or</span>
-        <select aria-label="Move an existing item here" v-model="addItemId" style="max-width:240px">
-          <option value="">Move an existing item here…</option>
-          <option v-for="i in allItems" :key="i.id" :value="i.id">{{ i.name }}</option>
-        </select>
+        <div style="max-width:240px;flex:1">
+          <Combobox v-model="addItemId" :options="addItemOptions" remote
+                    placeholder="Move an existing item here…" aria-label="Move an existing item here"
+                    @search="searchItems" />
+        </div>
         <button class="secondary" :disabled="!addItemId" @click="addItem">Move here</button>
       </div>
       <div v-if="loc.items?.length" class="card-grid"><ItemCard v-for="i in loc.items" :key="i.id" :item="i" /></div>
@@ -196,8 +223,8 @@ async function remove() {
     </div>
     <div v-show="tab==='bins'">
       <div v-if="loc.bins?.length" class="card-grid">
-        <div v-for="b in loc.bins" :key="b.id" class="item-card" @click="router.push('/bins/'+b.id)">
-          <div class="body"><div class="title">🗃️ {{ b.name }}</div>
+        <div v-for="b in loc.bins" :key="b.id" class="item-card">
+          <div class="body"><router-link class="title stretched-link" :to="'/bins/'+b.id">🗃️ {{ b.name }}</router-link>
             <div class="labels"><span class="badge">{{ b.itemCount }} items</span></div></div>
         </div>
       </div>
@@ -205,8 +232,8 @@ async function remove() {
     </div>
     <div v-show="tab==='sub'">
       <div v-if="loc.children?.length" class="card-grid">
-        <div v-for="c in loc.children" :key="c.id" class="item-card" @click="router.push('/locations/'+c.id)">
-          <div class="body"><div class="title">📍 {{ c.name }}</div></div>
+        <div v-for="c in loc.children" :key="c.id" class="item-card">
+          <div class="body"><router-link class="title stretched-link" :to="'/locations/'+c.id">📍 {{ c.name }}</router-link></div>
         </div>
       </div>
       <div v-else class="card muted">No sub-locations.</div>
