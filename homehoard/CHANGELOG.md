@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.1.52
 
 - **Your lists stay current.** A list refreshes right after you save, loads no
   longer overlap and overwrite each other, and background sync stops when you
