@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.1.54
 
 - **Restoring a Home Assistant backup never has to guess.** While HA archives
   the add-on, saves are briefly refused with a clear message (reads keep
