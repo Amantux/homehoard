@@ -460,3 +460,49 @@ def test_require_key_off_keeps_the_internal_path_open(app, monkeypatch):
 
 def test_require_key_setting_defaults_off():
     assert mcp_server._SETTINGS.MCP_KEY_REQUIRED is False
+
+
+# ---- Body cap, Origin check, audit hint -------------------------------------
+
+def _status(sent):
+    return sent[0]["status"]
+
+
+def test_oversized_body_is_413_before_auth(app, auth_client, monkeypatch):
+    """No key presented and external on: the cap answers first (413, not 401),
+    and the body is never replayed downstream."""
+    big = b"x" * (mcp_server.MAX_BODY_BYTES + 1)
+    sent = _drive([], method="POST", path="/messages/", body=big)
+    assert _status(sent) == 413
+
+
+def test_body_at_the_cap_still_reaches_auth(app, auth_client):
+    ok = b" " * mcp_server.MAX_BODY_BYTES
+    assert _status(_drive([], method="POST", path="/messages/", body=ok)) == 401
+
+
+def test_cross_origin_request_is_403(app, auth_client):
+    h = [(b"host", b"hh:7766"), (b"origin", b"https://evil.example")]
+    assert _status(_drive(h, external=False)) == 403
+    # opaque origin too
+    h = [(b"host", b"hh:7766"), (b"origin", b"null")]
+    assert _status(_drive(h, external=False)) == 403
+
+
+def test_same_origin_and_no_origin_pass_to_auth(app, auth_client):
+    same = [(b"host", b"hh:7766"), (b"origin", b"http://hh:7766")]
+    assert _status(_drive(same, external=False)) == 200
+    assert _status(_drive([(b"host", b"hh:7766")], external=False)) == 200
+    # external on, no key: the origin check passes, auth then refuses (401)
+    assert _status(_drive(same, external=True)) == 401
+
+
+def test_audit_client_hint_has_no_key_bytes(monkeypatch):
+    seen = []
+    import app.services.metrics as metrics
+    monkeypatch.setattr(metrics, "record", lambda *a, **kw: seen.append(kw))
+    raw = "hh_secretsecretsecret"
+    mcp_server._audit(["list_items"], raw, "allowed")
+    client = seen[0]["client"]
+    assert client.startswith("key:") and len(client) == 12
+    assert "hh_" not in client and raw[3:7] not in client
