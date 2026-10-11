@@ -278,6 +278,6 @@ is reported at startup and UTC is used.
 
 Stored timestamps are always UTC, and item dates (purchase, warranty, sold)
 are calendar dates that are never shifted by the time zone. Overdue and
-expiring-soon checks (checkouts, warranties, maintenance) still compare
-against the current UTC time, so for notifications and the HA sensors "today"
-rolls over at 00:00 UTC rather than your local midnight.
+expiring-soon checks (checkouts, warranties, maintenance) use your zone's
+calendar day, so for notifications and the HA sensors "today" rolls over at
+your local midnight.
