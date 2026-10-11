@@ -56,6 +56,60 @@ if [ "$(id -u)" = "0" ]; then
 fi
 [ "$STOP_REQUESTED" = 1 ] && { echo "HomeHoard: stop requested during startup; exiting after data-dir setup"; exit 0; }
 
+# Time zone. Storage is always UTC; TZ only changes how local times render.
+# Precedence: HBOX_TZ, then a plain TZ env var, then Home Assistant's zone from
+# the Supervisor (GET /info, data.timezone). A successful lookup is cached in
+# $HBOX_DATA_DIR/.timezone (0600, app user) so a later boot where the
+# Supervisor is unreachable keeps the zone. This must never block or fail boot:
+# 3 s timeout, every failure falls back to the cache, then to UTC. The zone
+# name is validated with zoneinfo before it reaches the environment.
+if [ -z "${HBOX_TZ:-}" ] && [ -n "${TZ:-}" ]; then
+  HBOX_TZ="$TZ"
+elif [ -z "${HBOX_TZ:-}" ]; then
+  HBOX_TZ=$($RUN_AS python3 -c 'import json, os, sys, urllib.request
+from zoneinfo import ZoneInfo
+path = os.path.join(sys.argv[1], ".timezone")
+def ok(name):
+    try:
+        ZoneInfo(name)
+        return True
+    except Exception:
+        return False
+zone = ""
+token = os.environ.get("SUPERVISOR_TOKEN", "")
+if token:
+    try:
+        req = urllib.request.Request("http://supervisor/info",
+                                     headers={"Authorization": "Bearer " + token})
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            zone = (json.load(resp).get("data") or {}).get("timezone") or ""
+    except Exception:
+        zone = ""
+    if zone and ok(zone):
+        try:
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            os.fchmod(fd, 0o600)
+            with os.fdopen(fd, "w") as fh:
+                fh.write(zone + "\n")
+        except OSError:
+            pass
+    else:
+        print("HomeHoard: time zone: Supervisor lookup failed; using UTC "
+              "(or the zone cached by an earlier boot)", file=sys.stderr)
+        zone = ""
+if not zone:
+    try:
+        with open(path) as fh:
+            zone = fh.read().strip()
+    except OSError:
+        zone = ""
+print(zone if zone and ok(zone) else "")' "$HBOX_DATA_DIR") || HBOX_TZ=""
+fi
+if [ -n "$HBOX_TZ" ]; then
+  export TZ="$HBOX_TZ" HBOX_TZ
+  echo "HomeHoard: time zone $HBOX_TZ (storage stays UTC)"
+fi
+
 cd /app/backend
 
 # Validate the configuration before anything starts, so a bad options.json or

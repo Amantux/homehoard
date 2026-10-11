@@ -258,8 +258,16 @@ integration uses). A normal Home Assistant backup includes all of it.
 
 ## Time zone
 
-HomeHoard runs in UTC. The add-on log is timestamped in UTC. Overdue and
-expiring-soon checks (checkouts, warranties, maintenance) compare against the
-current UTC time, so for notifications and the HA sensors "today" rolls over
-at 00:00 UTC rather than your local midnight. The add-on does not pick up Home
-Assistant's time zone, and there is no option to change this yet.
+At startup the add-on asks the Supervisor for Home Assistant's time zone
+(Settings > System > General) and uses it as the container's local time, so
+the add-on log shows your local time. The zone is remembered in `/data`, so a
+restart while the Supervisor is unreachable keeps it; if it cannot be found at
+all, the add-on uses UTC and says so in the log. Outside Home Assistant, set
+`HBOX_TZ` (or `TZ`) to an IANA name such as `Europe/Brussels`; an unknown name
+is reported at startup and UTC is used.
+
+Stored timestamps are always UTC, and item dates (purchase, warranty, sold)
+are calendar dates that are never shifted by the time zone. Overdue and
+expiring-soon checks (checkouts, warranties, maintenance) still compare
+against the current UTC time, so for notifications and the HA sensors "today"
+rolls over at 00:00 UTC rather than your local midnight.

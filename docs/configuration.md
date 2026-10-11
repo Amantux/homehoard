@@ -98,6 +98,12 @@ docker compose run --rm app python3 -m app.config_check
 | `HBOX_BARCODE_DB_URL` | string | `https://api.upcitemdb.com/prod/trial/lookup` | no | — | Product barcode database endpoint. |
 | `HBOX_BARCODE_DB_KEY` | string | `_(empty)_` | **yes** | `barcode_db_key` | API key for the barcode database. Blank uses the keyless trial tier. Supports `HBOX_BARCODE_DB_KEY_FILE`. |
 
+### Time zone
+
+| Variable | Type | Default | Secret | HA option | Notes |
+|---|---|---|---|---|---|
+| `HBOX_TZ` | string | `UTC` | no | — | IANA time zone for local time (e.g. log timestamps); filled from Home Assistant at boot. Storage stays UTC and item dates are never shifted. |
+
 ### MCP (Home Assistant Assist)
 
 | Variable | Type | Default | Secret | HA option | Notes |

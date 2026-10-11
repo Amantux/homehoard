@@ -7,9 +7,15 @@ write and loads naive values). The API contract is ISO-8601 *with* an explicit
 - produce "now" with :func:`utcnow` (aware UTC);
 - compare a loaded column value against it through :func:`as_utc`
   (aware vs naive comparison raises ``TypeError``);
-- emit timestamps with :func:`iso_utc`.
+- emit timestamps with :func:`iso_utc`;
+- render a calendar date for a human (CSV export, monthly buckets) through
+  :func:`to_local`, which uses the configured ``TZ`` (the add-on picks up Home
+  Assistant's zone at boot). Storage never changes zone.
 """
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, tzinfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from flask import current_app, has_app_context
 
 
 def utcnow() -> datetime:
@@ -37,3 +43,26 @@ def iso_utc(dt: datetime | date | None) -> str | None:
         assert aware is not None
         return aware.isoformat()
     return dt.isoformat()
+
+
+def local_zone() -> tzinfo:
+    """The configured display zone (settings ``TZ``). UTC outside an app
+    context, or when the name is unknown — config validation already warned."""
+    if not has_app_context():
+        return timezone.utc
+    name = (current_app.config["SETTINGS"].TZ or "").strip()
+    if not name or name == "UTC":
+        return timezone.utc
+    try:
+        return ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError):
+        return timezone.utc
+
+
+def to_local(dt: datetime | None) -> datetime | None:
+    """A stored (naive-UTC) or aware value as an aware datetime in :func:`local_zone`."""
+    if dt is None:
+        return None
+    aware = as_utc(dt)
+    assert aware is not None
+    return aware.astimezone(local_zone())
