@@ -31,7 +31,9 @@ RETRY_AFTER_S = 10
 _MUTATING = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 # Login writes nothing we care to block on and must keep working; the health
 # probes are reads.
-_EXEMPT = frozenset({"/api/v1/users/login"})
+# Logout must work too: a user has to be able to sign out, and its only write
+# (closing vault unlocks) is skipped during a backup — see api/users.logout.
+_EXEMPT = frozenset({"/api/v1/users/login", "/api/v1/users/logout"})
 
 
 class BackupInProgress(Exception):
@@ -61,6 +63,17 @@ def backup_in_progress(data_dir) -> bool:
             pass
     _LOGGER.warning("ignored a backup-in-progress flag %.0fs old; writes resumed", age)
     return False
+
+
+def paused() -> bool:
+    """backup_in_progress() for the current app; False outside an app context."""
+    return has_app_context() and backup_in_progress(current_app.config["DATA_DIR"])
+
+
+def refuse_during_backup() -> None:
+    """Explicit check for bulk Query.delete/update, which bypass before_flush."""
+    if paused():
+        raise BackupInProgress()
 
 
 def _response():

@@ -112,7 +112,13 @@ def _rotate_known_backdoor_password(user: User) -> None:
         return
     if verify_password(_KNOWN_BACKDOOR_PASSWORD, user.password_hash):
         user.password_hash = hash_password(secrets.token_urlsafe(32))
-        db.session.commit()
+        try:
+            db.session.commit()
+        except (SQLAlchemyError, BackupInProgress):
+            # A read must not fail on this bookkeeping (e.g. during an HA
+            # backup). Not recorded as checked, so the next request retries.
+            db.session.rollback()
+            return
     _ROTATION_CHECKED.add((user.id, user.password_hash))
 
 
@@ -284,7 +290,12 @@ def _ingress_user():
         _rotate_known_backdoor_password(user)
         if real_name and user.name != real_name:
             user.name = real_name
-            db.session.commit()
+            try:
+                db.session.commit()
+            except (SQLAlchemyError, BackupInProgress):
+                # Cosmetic refresh; skip it rather than fail the request (e.g.
+                # during an HA backup). The next request retries.
+                db.session.rollback()
         return user
 
     with _group_bootstrap_lock():
@@ -311,6 +322,11 @@ def _ingress_user():
     except IntegrityError:
         db.session.rollback()
         return db.session.query(User).filter_by(ha_user_id=ha_id).first()
+    except BackupInProgress:
+        # A brand-new HA user's first load during a backup (seconds long) can't
+        # be provisioned read-only: roll back and let the curated 503 answer.
+        db.session.rollback()
+        raise
 
 
 def load_current_user():

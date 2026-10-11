@@ -156,8 +156,15 @@ def logout():
     # Stateless JWT: client discards the token. The vault is NOT stateless
     # though — close every unlock this user holds, so walking away from a shared
     # machine doesn't leave hidden items on display for the next person.
+    from ..backup_guard import BackupInProgress
     from ..services import vault
-    vault.lock_all_for_user(current_user().id)
+    try:
+        vault.lock_all_for_user(current_user().id)
+    except BackupInProgress:
+        # Logout is exempt from the backup write-pause so a user can always
+        # sign out; the session is ending anyway and the unlock row expires on
+        # its own, so skipping the lock during a backup is safe.
+        pass
     return jsonify({"message": "logged out"})
 
 
