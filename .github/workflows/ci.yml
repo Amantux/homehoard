@@ -350,6 +350,27 @@ jobs:
           assert cur == head, (cur, head)
           assert float(qty) == 2.5, qty
           "
+      - name: Hot backup hooks (consistent copy while running, removed after)
+        run: |
+          set -euo pipefail
+          # Same command strings the Supervisor runs (homehoard/config.yaml).
+          docker exec hh-ci python3 /app/backend/backup_hook.py pre
+          docker exec hh-ci python3 -c "
+          import os, sqlite3
+          p = '/data/backups/ha-backup.db'
+          st = os.stat(p)
+          assert oct(st.st_mode & 0o777) == '0o600', oct(st.st_mode)
+          assert st.st_uid == os.stat('/data').st_uid, (st.st_uid, os.stat('/data').st_uid)
+          c = sqlite3.connect(p)
+          (ok,) = c.execute('pragma integrity_check').fetchone()
+          (n,) = c.execute(\"select count(*) from items where name = 'Smoke item'\").fetchone()
+          print('integrity', ok, 'smoke rows', n)
+          assert ok == 'ok', ok
+          assert n == 1, n
+          "
+          docker exec hh-ci python3 /app/backend/backup_hook.py post
+          docker exec hh-ci sh -c 'test ! -e /data/backups/ha-backup.db'
+          curl -fsS http://localhost:7745/api/v1/ready
       - name: MCP crash is restarted and /ready recovers
         run: |
           set -euo pipefail

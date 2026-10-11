@@ -227,10 +227,13 @@ database, uploaded photos and documents, and the add-on's own key files
 (`.secret_key`, which signs logins, and `.integration_token`, which the HA
 integration uses). A normal Home Assistant backup includes all of it.
 
-- **HA backups are consistent.** The add-on is backed up *cold*: the Supervisor
-  stops HomeHoard while the backup runs and starts it again afterwards, so the
-  database is never copied mid-write. Expect HomeHoard to be unavailable for
-  those few seconds.
+- **HA backups are consistent, and HomeHoard keeps running.** Just before the
+  backup, the add-on writes a consistent copy of the SQLite database to
+  `/data/backups/ha-backup.db` (using SQLite's own online-backup mechanism, so
+  writes in progress can't tear it). The backup stores that copy instead of the
+  live database file, and the copy is deleted again afterwards. If the copy
+  can't be written, Home Assistant reports the HomeHoard part of the backup as
+  failed rather than saving one without your data.
 - **Pre-upgrade copies.** Before an update changes the database layout, the
   add-on saves a copy of the SQLite database to
   `/data/backups/pre-upgrade-<revision>-<time>.db` and keeps the newest two. If
@@ -239,7 +242,14 @@ integration uses). A normal Home Assistant backup includes all of it.
   the normal path.
 - **Restoring.** Stop the HomeHoard add-on, then restore the HA backup (or just
   the HomeHoard add-on from it) under **Settings → System → Backups**, and
-  start the add-on again.
+  start the add-on again. On start, the add-on finds the backup copy and puts it
+  in place as `/data/homehoard.db`. It also does this if the existing database
+  fails SQLite's integrity check; the damaged file is kept beside it as
+  `homehoard.db.corrupt-<time>`. A healthy database is never replaced.
+- **Restoring by hand** (e.g. from a downloaded backup): stop the add-on, copy
+  `data/backups/ha-backup.db` from the backup archive to `/data/homehoard.db`,
+  delete any `/data/homehoard.db-wal` and `/data/homehoard.db-shm`, and start
+  the add-on.
 - **Restore the whole `/data`, not just the database.** The signing key travels
   with the backup. Putting only the database file onto a fresh install gives it
   a newly generated key, which signs everyone out; they log in again with their

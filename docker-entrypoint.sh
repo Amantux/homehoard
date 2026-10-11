@@ -158,6 +158,14 @@ $RUN_AS python3 -m app.pg_provision \
   || echo "HomeHoard: pg_provision failed unexpectedly; continuing on SQLite." >&2
 [ "$STOP_REQUESTED" = 1 ] && { echo "HomeHoard: stop requested during startup; exiting after pg_provision"; exit 0; }
 
+# Restored from an HA hot backup: the live database is excluded from backups
+# (config.yaml backup_exclude) and only the consistent copy taken by
+# backup_pre travels. Put it in place when the live file is missing or fails
+# its integrity check. A failed restore must stop boot — continuing would
+# create a healthy empty database and the restore would never trigger again.
+$RUN_AS python3 /app/backend/backup_hook.py restore-if-needed \
+  || { echo "HomeHoard: could not restore the database from the HA backup copy; refusing to start." >&2; exit 1; }
+
 # Initialize / migrate the database ONCE, before starting workers. Otherwise
 # each of gunicorn's workers races to run create_all()/_migrate() on a fresh DB
 # and one crashes with "table already exists". After this, the per-worker

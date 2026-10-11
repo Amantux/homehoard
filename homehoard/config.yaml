@@ -10,11 +10,21 @@ arch:
   - amd64
 init: false
 startup: services
-# Cold backup: the Supervisor stops the add-on before an HA backup, so the
-# SQLite file in /data is copied while nothing is writing it (a hot copy of a
-# live WAL database can be inconsistent). Costs a few seconds of downtime per
-# backup.
-backup: cold
+# Hot backup: the add-on keeps running. A file copy of the live WAL database
+# can be torn, so the live homehoard.db (+ -wal/-shm) is EXCLUDED and
+# backup_pre instead writes a consistent copy with SQLite's online backup API
+# to /data/backups/ha-backup.db, which the backup carries; backup_post deletes
+# it. If backup_pre fails, the Supervisor fails this add-on's backup rather than
+# store one without a database. On restore the entrypoint puts ha-backup.db back
+# in place (backup_hook.py restore-if-needed). Postgres: nothing is copied; back
+# it up with pg_dump.
+backup: hot
+backup_pre: python3 /app/backend/backup_hook.py pre
+backup_post: python3 /app/backend/backup_hook.py post
+backup_exclude:
+  - homehoard.db
+  - homehoard.db-wal
+  - homehoard.db-shm
 # Seconds the Supervisor waits after SIGTERM before SIGKILL (default 10). An
 # upgrade migration on a large inventory can take longer than 10 s; being
 # killed mid-migration is what this prevents.
