@@ -165,6 +165,8 @@ $RUN_AS python3 -m app.pg_provision \
 # create a healthy empty database and the restore would never trigger again.
 $RUN_AS python3 /app/backend/backup_hook.py restore-if-needed \
   || { echo "HomeHoard: could not restore the database from the HA backup copy; refusing to start." >&2; exit 1; }
+# A crash between backup `pre` and `post` must not leave writes refused forever.
+rm -f "$HBOX_DATA_DIR/backups/.backup-in-progress"
 
 # Initialize / migrate the database ONCE, before starting workers. Otherwise
 # each of gunicorn's workers races to run create_all()/_migrate() on a fresh DB

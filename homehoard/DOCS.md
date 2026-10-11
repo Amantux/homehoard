@@ -246,13 +246,17 @@ integration uses). A normal Home Assistant backup includes all of it.
   the HomeHoard add-on from it) under **Settings → System → Backups**, and
   start the add-on again. On start, if the backup holds the consistent copy,
   the add-on puts it in place as `/data/homehoard.db` in preference to the live
-  files that travelled with it (unless those are more than 15 minutes newer).
-  It also uses the copy if the existing database is missing or fails SQLite's
-  integrity check; the damaged file is kept beside it as
-  `homehoard.db.corrupt-<time>` (and left out of later backups). A copy more
-  than 15 minutes older than the live database is a leftover from an
-  interrupted backup: it is deleted, and the live database is kept. The add-on
-  log names the copy's time either way.
+  files that travelled with it. It also uses the copy if the existing database
+  is missing or fails SQLite's integrity check; the damaged file is kept beside
+  it as `homehoard.db.corrupt-<time>` (and left out of later backups). The
+  add-on log names the copy's time.
+- **While a backup runs, edits are paused.** From the moment the consistent
+  copy is taken until Home Assistant has finished archiving the add-on, saves
+  are refused with "A Home Assistant backup is in progress. Try again in a
+  moment." (HTTP 503). Reads keep working. This guarantees nothing changes
+  between the copy and the archive, so a restore never has to guess which file
+  is newer. If a backup is interrupted, the pause clears on the next add-on
+  start, or by itself after two hours.
 - **Restoring by hand** (e.g. from a downloaded backup): stop the add-on, copy
   `data/backups/ha-backup.db` from the backup archive to `/data/homehoard.db`,
   delete any `/data/homehoard.db-wal` and `/data/homehoard.db-shm`, and start

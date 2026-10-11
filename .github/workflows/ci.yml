@@ -235,14 +235,60 @@ jobs:
     permissions:
       contents: read
       packages: read   # pulls the previous release image (public; harmless)
-    env:
-      # The upgrade fixture is written by this release. It must be the last
-      # published release whose Alembic head differs from the current head, so
-      # the boot below has a real pending migration. Bump it when a release
-      # ships a new migration.
-      PREV_IMAGE: ghcr.io/amantux/homehoard:1.1.50
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0   # full history + tags, to find the previous release
+          fetch-tags: true
+      - name: Pick the previous release to upgrade from
+        run: |
+          set -euo pipefail
+          # The upgrade fixture is written by this release. It must be the newest
+          # release whose migration set differs from HEAD's, so the boot below has
+          # a real pending migration. On a PR, HEAD is the merge ref, which is the
+          # tree we want to compare against.
+          mig=backend/migrations/versions/
+          tags=$(git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -20 || true)
+          prev=""
+          why=""
+          # A tag whose release build failed has no GHCR image; skip it rather
+          # than failing the later docker pull with an unhelpful error.
+          for t in $tags; do
+            if ! diff <(git ls-tree --name-only "$t" "$mig") <(git ls-tree --name-only HEAD "$mig") >/dev/null; then
+              if ! docker manifest inspect "ghcr.io/amantux/homehoard:${t#v}" >/dev/null 2>&1; then
+                echo "skip $t: no published image"
+                continue
+              fi
+              prev=$t
+              why="its migrations listing differs from HEAD"
+              break
+            fi
+          done
+          if [ -z "$prev" ]; then
+            for t in $tags; do
+              if ! docker manifest inspect "ghcr.io/amantux/homehoard:${t#v}" >/dev/null 2>&1; then
+                echo "skip $t: no published image"
+                continue
+              fi
+              prev=$t
+              why="the newest release with a published image (no migration change in the last 20 releases)"
+              break
+            done
+          fi
+          if [ -z "$prev" ]; then
+            echo "::error::No vX.Y.Z release tag with a published GHCR image found; cannot pick a previous release for the upgrade smoke test."
+            exit 1
+          fi
+          echo "::notice::Upgrading from $prev: $why."
+          echo "Migrations listing, $prev (<) vs HEAD (>):"
+          diff <(git ls-tree --name-only "$prev" "$mig") <(git ls-tree --name-only HEAD "$mig") || true
+          echo "PREV_IMAGE=ghcr.io/amantux/homehoard:${prev#v}" >> "$GITHUB_ENV"
+          # The previous release's Alembic head: the highest-numbered migration
+          # file in that tag (the chain is linear, NNNN_<slug>.py).
+          prev_rev=$(git ls-tree --name-only "$prev" "$mig" | sed 's#.*/##; s/\.py$//' | grep -E '^[0-9]{4}_' | sort | tail -1)
+          [ -n "$prev_rev" ] || { echo "::error::could not determine the Alembic head of $prev"; exit 1; }
+          echo "previous release alembic head: $prev_rev"
+          echo "PREV_REV=$prev_rev" >> "$GITHUB_ENV"
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
       - name: Build production image (amd64, load locally)
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
@@ -276,7 +322,7 @@ jobs:
           token=$(curl -fsS -X POST "$base/users/login" -H 'Content-Type: application/json' \
             -d '{"username":"smoke@example.com","password":"Smoke-upgrade-2026!"}' \
             | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
-          # A fractional quantity: the 0019 migration must carry it through intact.
+          # A fractional quantity (NUMERIC since 0019): the upgrade must carry it through intact.
           curl -fsS -X POST "$base/items" -H "Authorization: $token" \
             -H 'Content-Type: application/json' -d '{"name":"Smoke item","quantity":2.5}'
           echo
@@ -285,7 +331,7 @@ jobs:
           import sqlite3
           (cur,) = sqlite3.connect('/data/homehoard.db').execute('select version_num from alembic_version').fetchone()
           print('previous release alembic', cur)
-          assert cur == '0018_maintenance_recurrence', cur
+          assert cur == '$PREV_REV', cur
           "
           docker stop -t 30 hh-prev
           docker rm hh-prev
@@ -336,7 +382,7 @@ jobs:
       - name: Upgrade path (pre-upgrade snapshot, alembic at head, data intact)
         run: |
           set -euo pipefail
-          docker exec hh-ci sh -c 'ls -l /data/backups/pre-upgrade-0018_maintenance_recurrence-*'
+          docker exec hh-ci sh -c "ls -l /data/backups/pre-upgrade-${PREV_REV}-*"
           docker exec -w /app/backend hh-ci python3 -c "
           import sqlite3
           from alembic.config import Config

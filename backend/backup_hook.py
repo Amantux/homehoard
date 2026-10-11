@@ -9,12 +9,15 @@ homehoard.db (+ -wal/-shm); `post` removes it. The live files travel too, so
 a backup of a STOPPED add-on (no hooks run) still holds the database, and is
 consistent because nothing was writing.
 
+`pre` then writes FLAG; while it exists the app refuses every write
+(app/backup_guard.py), so nothing in the live files is newer than the copy.
+`post` removes the flag, then the copy.
+
 `restore-if-needed` (run by the entrypoint before the app starts) puts the
-copy in place when the live database is missing or fails `PRAGMA
-quick_check` (keeping the broken file aside), or when the live files are at
-most RESTORE_WINDOW newer than the copy (after an HA restore: the live files
-may be torn). A copy older than that is a leftover from a backup whose `post`
-never ran, and is deleted.
+copy in place whenever one exists: after an HA restore the live files may be
+torn, and after a crash between `pre` and `post` the copy holds every write
+because none were allowed since. A live database that fails `PRAGMA
+quick_check` is kept aside first.
 
 The Supervisor runs these with `docker exec` (as root, the image's env, no
 shell): paths are absolute, settings come from the same adapter the app uses,
@@ -27,10 +30,8 @@ import sys
 from datetime import datetime, timezone
 
 BACKUP_NAME = "ha-backup.db"
-# How much newer than the copy the live files may be and still lose to it on
-# restore: generous for the Supervisor tarring this add-on's /data (with
-# attachments) right after `pre`. See _restore_if_needed.
-RESTORE_WINDOW = 15 * 60
+# Must match app/backup_guard.py FLAG.
+FLAG = ".backup-in-progress"
 
 
 class HookError(RuntimeError):
@@ -106,25 +107,20 @@ def _pre(db_path, data_dir):
     os.makedirs(backups, exist_ok=True)
     _match_owner(backups, data_dir)
     _sqlite_copy(db_path, os.path.join(backups, BACKUP_NAME), data_dir)
-    print("homehoard backup: consistent database copy written")
+    # Only after the copy succeeded: from here on the app refuses writes.
+    flag = os.path.join(backups, FLAG)
+    os.close(os.open(flag, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600))
+    os.utime(flag)  # an old leftover flag must not look stale to the app
+    _match_owner(flag, data_dir)
+    print("homehoard backup: consistent database copy written; writes paused")
 
 
 def _post(data_dir):
-    try:
-        os.remove(os.path.join(data_dir, "backups", BACKUP_NAME))
-    except FileNotFoundError:
-        pass
-
-
-def _live_mtime(db_path):
-    """Newest mtime among the live main file and its -wal/-shm, or None."""
-    times = []
-    for suffix in ("", "-wal", "-shm"):
+    for name in (FLAG, BACKUP_NAME):  # flag first: resume writes promptly
         try:
-            times.append(os.stat(db_path + suffix).st_mtime)
+            os.remove(os.path.join(data_dir, "backups", name))
         except FileNotFoundError:
             pass
-    return max(times) if times else None
 
 
 def _restore_if_needed(db_path, data_dir):
@@ -134,30 +130,13 @@ def _restore_if_needed(db_path, data_dir):
     copy_mtime = os.stat(copy).st_mtime
     copy_when = datetime.fromtimestamp(copy_mtime, timezone.utc).isoformat(timespec="seconds")
     age = datetime.now(timezone.utc).timestamp() - copy_mtime
-    if os.path.exists(db_path):
-        if _quick_check_ok(db_path):
-            # Both exist. Everything in /data looks the same after an HA
-            # restore and after a crash between `pre` and `post`, so timing
-            # is the only signal. `pre` runs just before the tar, so after a
-            # restore the live files (possibly torn) are at most the tar's
-            # duration newer than the copy: prefer the copy. (The tar restores
-            # mtimes; were it not to, every file would carry extraction time
-            # and the copy would still win.) Live files newer than that are a
-            # leftover copy's database moving on: discard the copy. A leftover
-            # whose add-on restarts within the window loses at most those
-            # minutes of writes (a rare double failure); a restore whose tar
-            # took longer keeps the live files, which at worst lack the same
-            # window's writes that the copy lacks too.
-            if _live_mtime(db_path) - copy_mtime > RESTORE_WINDOW:
-                os.remove(copy)
-                print(f"homehoard restore: discarded a leftover backup copy "
-                      f"(copy {copy_when}, {age:.0f}s old) well older than the live database")
-                return
-        else:
-            stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-            os.replace(db_path, f"{db_path}.corrupt-{stamp}")
-            print(f"homehoard restore: database failed its integrity check; "
-                  f"kept aside as {os.path.basename(db_path)}.corrupt-{stamp}")
+    # Promote unconditionally: no write was allowed after `pre` (FLAG), so the
+    # copy is never behind a healthy live database, and may be ahead of a torn one.
+    if os.path.exists(db_path) and not _quick_check_ok(db_path):
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        os.replace(db_path, f"{db_path}.corrupt-{stamp}")
+        print(f"homehoard restore: database failed its integrity check; "
+              f"kept aside as {os.path.basename(db_path)}.corrupt-{stamp}")
     # A WAL/SHM left beside a replaced main file would be replayed into it.
     for suffix in ("-wal", "-shm"):
         try:
@@ -166,6 +145,10 @@ def _restore_if_needed(db_path, data_dir):
             pass
     _sqlite_copy(copy, db_path, data_dir)
     os.remove(copy)
+    try:
+        os.remove(os.path.join(data_dir, "backups", FLAG))
+    except FileNotFoundError:
+        pass
     print(f"homehoard restore: restored consistent copy from HA backup "
           f"(copy {copy_when}, {age:.0f}s old)")
 

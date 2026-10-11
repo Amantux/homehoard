@@ -24,6 +24,7 @@ from datetime import timedelta
 from flask import g, has_request_context, request
 from passlib.hash import bcrypt
 
+from ..backup_guard import paused as _backup_paused, refuse_during_backup
 from ..extensions import db
 from ..models import Group, Item, VaultUnlock, hash_token, utcnow
 
@@ -105,6 +106,8 @@ def lock(group) -> int:
     fp = _fingerprint()
     if not fp:
         return 0
+    # Bulk Query.delete bypasses the before_flush backstop; check explicitly.
+    refuse_during_backup()
     n = (db.session.query(VaultUnlock)
          .filter_by(group_id=group.id, credential_fingerprint=fp)
          .delete(synchronize_session=False))
@@ -119,6 +122,7 @@ def clear(group) -> None:
     Used by the reset. Closing the unlocks matters: a session that was open
     BEFORE the reset would otherwise keep reporting an unlocked vault that no
     longer exists."""
+    refuse_during_backup()  # the bulk delete below bypasses before_flush
     group.vault_passphrase_hash = ""
     db.session.query(VaultUnlock).filter_by(group_id=group.id).delete(
         synchronize_session=False)
@@ -129,6 +133,7 @@ def clear(group) -> None:
 def lock_all_for_user(user_id) -> int:
     """Close every unlock held by a user — called on logout, so a shared machine
     doesn't leave the vault open for the next person."""
+    refuse_during_backup()  # the bulk delete below bypasses before_flush
     n = (db.session.query(VaultUnlock).filter_by(user_id=user_id)
          .delete(synchronize_session=False))
     db.session.commit()
@@ -149,9 +154,12 @@ def is_unlocked(group=None) -> bool:
         row = q.first()
         if row is not None:
             if row.expires_at and row.expires_at < _now():
-                # Expired: clear it so `status` reports the truth.
-                db.session.delete(row)
-                db.session.commit()
+                # Expired: clear it so `status` reports the truth — unless an HA
+                # backup has writes paused: then it just reads as locked and a
+                # later request deletes it (a read must never 503).
+                if not _backup_paused():
+                    db.session.delete(row)
+                    db.session.commit()
             else:
                 result = True
     if has_request_context():

@@ -89,7 +89,9 @@ async function request(method, path, body, isForm = false) {
   } catch (e) {
     throw new ApiError({ status: 0, message: NETWORK_ERROR_MESSAGE })
   }
-  if (res.status === 401) {
+  // A 401 for a token that has since been replaced (e.g. a poll in flight
+  // across a password change) is stale: reject it, but keep the fresh session.
+  if (res.status === 401 && getToken() === token) {
     setToken(null)
     if (unauthorizedHook) unauthorizedHook()
   }
@@ -125,7 +127,9 @@ export async function streamPost(path, body, onEvent) {
   } catch (e) {
     throw new ApiError({ status: 0, message: NETWORK_ERROR_MESSAGE })
   }
-  if (res.status === 401) {
+  // A 401 for a token that has since been replaced (e.g. a poll in flight
+  // across a password change) is stale: reject it, but keep the fresh session.
+  if (res.status === 401 && getToken() === token) {
     setToken(null)
     if (unauthorizedHook) unauthorizedHook()
   }

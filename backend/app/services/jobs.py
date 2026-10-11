@@ -17,6 +17,7 @@ import logging
 
 from sqlalchemy.exc import IntegrityError
 
+from ..backup_guard import BackupInProgress, refuse_during_backup
 from ..extensions import db
 from .ai.base import safe_upstream_detail
 from .metrics import Timer
@@ -104,6 +105,15 @@ def run_job(job: Job) -> None:
             job.result = json.dumps(summary)
             job.status = "done"
             job.error = ""
+        except BackupInProgress:
+            # An HA backup paused writes mid-job. Not the job's fault: leave it
+            # 'running' (nothing can be written now anyway) so reap_stale
+            # requeues it once writes resume, instead of recording an error.
+            db.session.rollback()
+            _LOGGER.info("job %s (%s) interrupted by a backup; will be requeued",
+                         job.id, job.kind)
+            timer.set(ok=False)
+            return
         except Exception as exc:  # noqa: BLE001 - any failure marks the job errored
             db.session.rollback()
             _LOGGER.exception("job %s (%s) failed", job.id, job.kind)
@@ -125,6 +135,7 @@ def reap_stale() -> int:
     Returns how many were requeued."""
     from datetime import timedelta
     cutoff = utcnow() - timedelta(seconds=STALE_AFTER_S)
+    refuse_during_backup()  # bulk Query.update bypasses before_flush
     n = (db.session.query(Job)
          .filter(Job.status == "running", Job.started_at < cutoff)
          .update({"status": "pending", "started_at": None}))

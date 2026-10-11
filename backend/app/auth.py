@@ -20,6 +20,7 @@ from flask import current_app, g, request, jsonify
 from passlib.hash import bcrypt
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
+from .backup_guard import BackupInProgress
 from .extensions import db
 from .logging_setup import request_id_var
 from .logsafe import scrub
@@ -111,7 +112,13 @@ def _rotate_known_backdoor_password(user: User) -> None:
         return
     if verify_password(_KNOWN_BACKDOOR_PASSWORD, user.password_hash):
         user.password_hash = hash_password(secrets.token_urlsafe(32))
-        db.session.commit()
+        try:
+            db.session.commit()
+        except (SQLAlchemyError, BackupInProgress):
+            # A read must not fail on this bookkeeping (e.g. during an HA
+            # backup). Not recorded as checked, so the next request retries.
+            db.session.rollback()
+            return
     _ROTATION_CHECKED.add((user.id, user.password_hash))
 
 
@@ -283,7 +290,12 @@ def _ingress_user():
         _rotate_known_backdoor_password(user)
         if real_name and user.name != real_name:
             user.name = real_name
-            db.session.commit()
+            try:
+                db.session.commit()
+            except (SQLAlchemyError, BackupInProgress):
+                # Cosmetic refresh; skip it rather than fail the request (e.g.
+                # during an HA backup). The next request retries.
+                db.session.rollback()
         return user
 
     with _group_bootstrap_lock():
@@ -310,6 +322,11 @@ def _ingress_user():
     except IntegrityError:
         db.session.rollback()
         return db.session.query(User).filter_by(ha_user_id=ha_id).first()
+    except BackupInProgress:
+        # A brand-new HA user's first load during a backup (seconds long) can't
+        # be provisioned read-only: roll back and let the curated 503 answer.
+        db.session.rollback()
+        raise
 
 
 def load_current_user():
@@ -422,7 +439,7 @@ def _user_from_api_token(raw: str):
         # not turn an otherwise valid token into a 500. Roll back and carry on.
         try:
             db.session.commit()
-        except SQLAlchemyError as exc:
+        except (SQLAlchemyError, BackupInProgress) as exc:
             db.session.rollback()
             _LOGGER.warning("api token last_used_at update failed: %s", type(exc).__name__)
     return db.session.get(User, record.user_id)
