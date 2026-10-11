@@ -123,8 +123,8 @@ def test_unlock_is_per_credential_not_household_wide(auth_client, app):
 
 # ---- the trap: you must be able to get them back ---------------------------
 
-def test_hidden_items_can_be_listed_and_unhidden_while_locked(auth_client, app):
-    """A hidden item you cannot resolve is one you can never recover."""
+def test_hidden_items_can_be_listed_and_unhidden_after_unlock(auth_client, app):
+    """Unlock, then list and unhide: the way a hidden item comes back."""
     secret = _item(auth_client, "Secret Telescope")
     _hide(app, secret["id"])
     _set_phrase(auth_client, "open sesame")
@@ -209,15 +209,16 @@ def test_agent_wrong_phrase_reveals_nothing(auth_client, app, gid):
     assert "Secret Telescope" not in auth_client.get("/api/v1/items").get_data(as_text=True)
 
 
-def test_agent_list_hidden_works_while_locked(auth_client, app, gid):
-    """Otherwise a hidden item can never be found to bring it back."""
+def test_agent_list_hidden_is_empty_while_locked(auth_client, app, gid):
+    """P101 decision 1: a locked vault lists nothing, list_hidden included —
+    getting an item back means unlocking first."""
     secret = _item(auth_client, "Secret Telescope")
     _hide(app, secret["id"])
 
     with app.app_context():
         rows = _tool(gid, "list_hidden")
 
-    assert [r["name"] for r in rows] == ["Secret Telescope"]
+    assert rows == []
 
 
 def test_agent_read_tools_do_not_leak_a_hidden_item(auth_client, app, gid):

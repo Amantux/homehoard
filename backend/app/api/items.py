@@ -1,5 +1,6 @@
 import re
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 
 from flask import Blueprint, request, jsonify, abort, current_app
 from sqlalchemy.exc import IntegrityError
@@ -98,6 +99,23 @@ def _require_owned(model, obj_id, gid):
     return obj_id
 
 
+def _validate_money(data: dict) -> None:
+    """422 on a NaN/Infinity price. money.to_money would quietly store it as 0,
+    which turns a client bug into silently wrong valuations; like quantity, a
+    non-finite number is refused outright. Other junk keeps to_money's lenient
+    default (unchanged behaviour)."""
+    for key in ("purchasePrice", "soldPrice"):
+        value = data.get(key)
+        if value is None or value == "" or isinstance(value, bool):
+            continue
+        try:
+            finite = Decimal(str(value)).is_finite()
+        except InvalidOperation:
+            continue
+        if not finite:
+            abort(422, description=f"{key} must be a finite number")
+
+
 def _validate_quantity(data: dict) -> None:
     """Validate/normalise data["quantity"] in place, like the holdings API's
     _positive_qty. Both the item form (_apply) and create_item wrote it RAW
@@ -145,6 +163,7 @@ def _cascade_child_locations(parent, seen):
 
 
 def _apply(item: Item, data: dict):
+    _validate_money(data)
     _validate_quantity(data)  # normalises in place; _sync sees the clean value
     # Remember where the item was, so a synced move can pull its children along.
     _old_place = (item.location_id, item.bin_id)
@@ -257,11 +276,12 @@ def list_items():
     per_page = min(max(1, _int("pageSize", 50)), 1000)
     q = db.session.query(Item).filter_by(group_id=current_group().id)
     # Vault: hidden items are absent unless this session is unlocked.
-    # ?onlyHidden=true is how anything (agent or UI) lists what is in the vault,
-    # and it must work while locked — a hidden item you cannot list is one you
-    # can never get back.
+    # ?onlyHidden=true lists what is in the vault — and goes through the vault
+    # too, so while locked it is an empty list. Getting items back means
+    # unlocking first (the passphrase is the whole point); a locked vault that
+    # still lists its contents is not locked.
     if args.get("onlyHidden", "false").lower() == "true":
-        q = q.filter(Item.hidden.is_(True))
+        q = vault.visible(q.filter(Item.hidden.is_(True)))
     else:
         q = vault.visible(q)
 
@@ -505,6 +525,7 @@ def restock():
 @login_required
 def create_item():
     data = json_body()
+    _validate_money(data)
     _validate_quantity(data)
     gid = current_group().id
     bin_id = _require_owned(Bin, data.get("binId"), gid)
@@ -617,8 +638,12 @@ def _popular_placements(gid, limit):
         .filter_by(group_id=gid)
         .all()
     )
-    scored = [("bin", b, len(b.items)) for b in bins if b.items]
-    scored += [("location", loc, len(loc.items)) for loc in locs if loc.items]
+    # Counted through the vault: a place whose only items are hidden must not
+    # be suggested while locked (its name and count would reveal them).
+    scored = [("bin", b, sum(1 for i in b.items if vault.readable(i))) for b in bins]
+    scored += [("location", loc, sum(1 for i in loc.items if vault.readable(i)))
+               for loc in locs]
+    scored = [t for t in scored if t[2]]
     scored.sort(key=lambda t: t[2], reverse=True)
 
     out = []

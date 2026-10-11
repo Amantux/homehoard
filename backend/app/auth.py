@@ -476,7 +476,14 @@ def _user_from_acting_key(raw: str):
     )
     if record is None or (record.scope or "full") not in ("mcp", "full"):
         return None
+    # Same expiry rule as a directly-presented key: past expires_at it is no
+    # longer a credential, relayed or not.
+    if record.expires_at is not None and as_utc(record.expires_at) <= utcnow():
+        return None
     g.token_access = record.access or "write"
+    # The vault fingerprints the effective credential: this caller's key, not
+    # the integration token every MCP caller shares (services/vault.py).
+    g.vault_credential = record.token_hash
     return db.session.get(User, record.user_id)
 
 
