@@ -21,6 +21,18 @@ set -e
 # and persists it under HBOX_DATA_DIR instead.
 export HBOX_DATA_DIR
 
+# Early stop handling, installed before the first chown so a TERM during the
+# chown/config phase is recorded too. PID 1 silently drops a signal it has no
+# handler for, so
+# until `trap shutdown` below is installed a `docker stop` during boot did
+# nothing and ended in SIGKILL — possibly mid-migration. This trap only records
+# the request: sh runs it after the current foreground step (e.g. schema init)
+# finishes, so a migration is never interrupted; we then exit at the next
+# checkpoint instead of starting servers. (config.yaml `timeout:` gives that
+# step time to finish before the Supervisor escalates to SIGKILL.)
+STOP_REQUESTED=0
+trap 'STOP_REQUESTED=1' TERM INT
+
 mkdir -p "$HBOX_DATA_DIR"
 
 # Drop privileges to the non-root 'app' user for the server processes. The
@@ -42,6 +54,7 @@ if [ "$(id -u)" = "0" ]; then
   fi
   RUN_AS="gosu app"
 fi
+[ "$STOP_REQUESTED" = 1 ] && { echo "HomeHoard: stop requested during startup; exiting after data-dir setup"; exit 0; }
 
 cd /app/backend
 
@@ -79,16 +92,6 @@ if [ -z "${RESOLVED_PORT:-}" ] || [ -z "${RESOLVED_MCP_PORT:-}" ]; then
   echo "HomeHoard: could not resolve settings for startup; refusing to start." >&2
   exit 1
 fi
-
-# Early stop handling. PID 1 silently drops a signal it has no handler for, so
-# until `trap shutdown` below is installed a `docker stop` during boot did
-# nothing and ended in SIGKILL — possibly mid-migration. This trap only records
-# the request: sh runs it after the current foreground step (e.g. schema init)
-# finishes, so a migration is never interrupted; we then exit at the next
-# checkpoint instead of starting servers. (config.yaml `timeout:` gives that
-# step time to finish before the Supervisor escalates to SIGKILL.)
-STOP_REQUESTED=0
-trap 'STOP_REQUESTED=1' TERM INT
 
 # Shared PostgreSQL: when enabled, discover the add-on and provision our own
 # database (writes the DSN to /data/.database_url, which the app reads). Runs
