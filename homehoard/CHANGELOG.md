@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **Restoring a Home Assistant backup never has to guess.** While HA archives
+  the add-on, saves are briefly refused with a clear message (reads keep
+  working), so the consistent database copy in the backup is always the one a
+  restore uses.
+- You can change your password from the user menu.
+
 ## 1.1.53
 
 - **Home Assistant backups no longer restart the add-on.** While it runs, the
