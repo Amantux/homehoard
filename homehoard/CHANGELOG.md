@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased
+
+- **A locked vault now hides everything** — including the hidden-items list,
+  placement suggestions and the assistant's by-id lookups. Unlocking is per
+  session and per household, so an unlock through Home Assistant or MCP never
+  opens another caller's vault. Passphrase guesses are limited per person as
+  well as per session, whether typed on the vault screen or into the
+  assistant. Hidden items no longer show up in asset-tag lookups or in
+  overdue-checkout notifications.
+- Expired API keys are refused on every path, including through the MCP
+  server.
+- Rate limits are per account rather than per address, so one person can't
+  lock the whole household out behind Home Assistant. A new `proxy_hops`
+  option is available for reverse-proxy deployments.
+- The assistant previews a merge and asks before combining two items.
+- The backup hook refuses to follow symbolic links inside the data directory;
+  a tampered backups folder fails the backup loudly.
+- The MCP server rejects oversized and cross-site browser requests and no
+  longer writes key fragments to its logs.
+- Importing a malformed or non-UTF-8 CSV explains what's wrong instead of
+  failing; imports are capped at 10 000 rows. A price of NaN or Infinity is
+  rejected instead of being saved as 0.
+- AI provider errors show a reference instead of the provider's raw message;
+  AI source links are limited to http(s); attachment labels are validated and
+  a missing attachment file reports "not found".
+- DOCS gains a "Security notes" section.
+
 ## 1.1.54
 
 - **Restoring a Home Assistant backup never has to guess.** While HA archives

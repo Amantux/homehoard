@@ -136,5 +136,7 @@ def describe(fields, *, provider=None, note="") -> dict | None:
     out = _synthesize(fields, results, provider=provider, note=note)
     if not out.get("description"):
         return None
-    out["sources"] = [r.get("url") for r in results[:3] if r.get("url")]
+    # Rendered as <a href>: keep only http(s) so a hostile result can't be javascript:/data:.
+    out["sources"] = [u for u in (r.get("url") for r in results[:3])
+                      if isinstance(u, str) and u.lower().startswith(("http://", "https://"))]
     return out
