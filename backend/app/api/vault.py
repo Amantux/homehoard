@@ -20,6 +20,25 @@ _LOGGER = logging.getLogger("homehoard.vault")
 # bcrypt already bounds the work, but an unbounded body is still pointless work.
 _MAX_PHRASE = 1024
 
+# Passphrase guesses are a guessable-secret oracle, so every surface that takes
+# one (POST /vault/unlock and the assistant's passphrase turn) draws from this
+# ONE shared bucket — a second door with its own (or no) limit defeats it.
+_UNLOCK_LIMIT = limiter.shared_limit("10/minute;60/hour", scope="vault-unlock")
+
+
+def unlock_attempt_allowed() -> bool:
+    """Consume one attempt from the shared unlock bucket (same storage, key and
+    scope the @_UNLOCK_LIMIT decorator uses). False = exhausted: do not try the
+    passphrase. Always True when the limiter is disabled."""
+    if not limiter.enabled:
+        return True
+    for lim in _UNLOCK_LIMIT:
+        if not limiter.limiter.hit(
+                lim.limit, lim.key_func(),
+                lim.scope_for(request.endpoint or "", request.method)):
+            return False
+    return True
+
 
 @bp.get("/vault/status")
 @login_required
@@ -65,7 +84,7 @@ def set_passphrase():
 @bp.post("/vault/unlock")
 # Rate-limited because this is a guessable secret: without it the endpoint is an
 # offline-speed oracle over HTTP.
-@limiter.limit("10/minute;60/hour")
+@_UNLOCK_LIMIT
 @login_required
 def unlock():
     data = request.get_json(silent=True) or {}
