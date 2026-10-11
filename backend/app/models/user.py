@@ -16,6 +16,9 @@ class User(IDMixin, TimestampMixin, db.Model):
     # HA user behind ingress (from X-Remote-User-Id); NULL for local/JWT users.
     ha_user_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     activated_on: Mapped[str] = mapped_column(String(64), nullable=True)
+    # Set on a password change; a JWT issued (iat) before it is refused, so the
+    # change signs out every other session. NULL = never changed.
+    password_changed_at: Mapped[str] = mapped_column(DateTime, nullable=True)
 
     group_id: Mapped[str] = mapped_column(String(36), ForeignKey("groups.id"))
     group = relationship("Group", back_populates="users")

@@ -27,7 +27,7 @@ ENV PYTHONUNBUFFERED=1 \
 # options.json, fix /data ownership) as root, then drop to a non-root user for
 # the actual server processes. A non-root app user is the CIS-hardening default.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends gosu \
+    && apt-get install -y --no-install-recommends gosu tzdata \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd -r app && useradd -r -g app -u 1000 -m -d /home/app app
 

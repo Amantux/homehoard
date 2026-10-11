@@ -232,6 +232,15 @@ jobs:
     name: Container smoke (build → readiness → shutdown)
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: read   # pulls the previous release image (public; harmless)
+    env:
+      # The upgrade fixture is written by this release. It must be the last
+      # published release whose Alembic head differs from the current head, so
+      # the boot below has a real pending migration. Bump it when a release
+      # ships a new migration.
+      PREV_IMAGE: ghcr.io/amantux/homehoard:1.1.50
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
@@ -241,39 +250,45 @@ jobs:
           context: .
           load: true
           tags: homehoard:ci
+          cache-from: type=gha,scope=smoke-amd64
+          cache-to: type=gha,mode=max,scope=smoke-amd64
       - name: Seed a 0018-stamped SQLite volume (upgrade-path fixture)
         run: |
           set -euo pipefail
-          # The image builds its own old DB: migrate a fresh volume to 0018 only
-          # and insert a group + item with a fractional quantity, so the normal
-          # boot below has a real pending upgrade (and something to lose).
+          # Build the old DB with the REAL previous release, through its own REST
+          # API, so the upgrade below runs against data that release actually
+          # wrote (not a hand-rolled approximation). No fallback: if the pull
+          # fails, the job fails.
+          docker pull "$PREV_IMAGE"
           docker volume create hh-data
-          docker run --rm -i -w /app/backend -v hh-data:/data --entrypoint python3 homehoard:ci - <<'PY'
+          docker run -d --name hh-prev -p 127.0.0.1:7745:7745 -v hh-data:/data \
+            -e HBOX_SECRET_KEY="$(openssl rand -base64 48)" "$PREV_IMAGE"
+          ok=""
+          for i in $(seq 1 45); do
+            if curl -fsS http://127.0.0.1:7745/api/v1/ready >/dev/null 2>&1; then ok=1; break; fi
+            sleep 2
+          done
+          if [ -z "$ok" ]; then echo "PREVIOUS RELEASE NEVER BECAME READY"; docker logs hh-prev; exit 1; fi
+          base=http://127.0.0.1:7745/api/v1
+          curl -fsS -X POST "$base/users/register" -H 'Content-Type: application/json' \
+            -d '{"email":"smoke@example.com","name":"Smoke","password":"Smoke-upgrade-2026!"}'
+          echo
+          token=$(curl -fsS -X POST "$base/users/login" -H 'Content-Type: application/json' \
+            -d '{"username":"smoke@example.com","password":"Smoke-upgrade-2026!"}' \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
+          # A fractional quantity: the 0019 migration must carry it through intact.
+          curl -fsS -X POST "$base/items" -H "Authorization: $token" \
+            -H 'Content-Type: application/json' -d '{"name":"Smoke item","quantity":2.5}'
+          echo
+          # Prove the fixture really is at the previous head, i.e. a pending upgrade.
+          docker exec hh-prev python3 -c "
           import sqlite3
-          from alembic import command
-          from alembic.config import Config
-          cfg = Config("alembic.ini")
-          cfg.set_main_option("script_location", "migrations")
-          cfg.attributes["url"] = "sqlite:////data/homehoard.db"
-          command.upgrade(cfg, "0018_maintenance_recurrence")
-          c = sqlite3.connect("/data/homehoard.db")
-          def insert(table, row):
-              # Fill every other NOT NULL, no-default column with a type-shaped value.
-              for _, col, typ, notnull, dflt, pk in c.execute(f"pragma table_info({table})"):
-                  if col in row or not notnull or dflt is not None or pk:
-                      continue
-                  t = typ.upper()
-                  row[col] = (0 if t.startswith(("INT", "BOOL", "NUMERIC"))
-                              else "2026-01-01 00:00:00" if t.startswith("DATETIME") else "")
-              cols = ", ".join(row)
-              c.execute(f"insert into {table} ({cols}) values ({', '.join('?' * len(row))})",
-                        list(row.values()))
-          insert("groups", {"id": "g-smoke", "name": "Smoke", "currency": "USD"})
-          insert("items", {"id": "i-smoke", "name": "Smoke item", "quantity": 2.5,
-                           "asset_id": 1, "group_id": "g-smoke"})
-          c.commit()
-          print(c.execute("select version_num from alembic_version").fetchone())
-          PY
+          (cur,) = sqlite3.connect('/data/homehoard.db').execute('select version_num from alembic_version').fetchone()
+          print('previous release alembic', cur)
+          assert cur == '0018_maintenance_recurrence', cur
+          "
+          docker stop -t 30 hh-prev
+          docker rm hh-prev
           # A pristine copy for the TERM-during-boot step (the main boot upgrades hh-data).
           docker volume create hh-data-term
           docker run --rm -v hh-data:/src -v hh-data-term:/dst --entrypoint sh homehoard:ci \
@@ -330,11 +345,32 @@ jobs:
           head = ScriptDirectory.from_config(cfg).get_current_head()
           c = sqlite3.connect('/data/homehoard.db')
           (cur,) = c.execute('select version_num from alembic_version').fetchone()
-          (qty,) = c.execute(\"select quantity from items where id = 'i-smoke'\").fetchone()
+          (qty,) = c.execute(\"select quantity from items where name = 'Smoke item'\").fetchone()
           print('alembic current', cur, 'head', head, 'quantity', qty)
           assert cur == head, (cur, head)
           assert float(qty) == 2.5, qty
           "
+      - name: Hot backup hooks (consistent copy while running, removed after)
+        run: |
+          set -euo pipefail
+          # Same command strings the Supervisor runs (homehoard/config.yaml).
+          docker exec hh-ci python3 /app/backend/backup_hook.py pre
+          docker exec hh-ci python3 -c "
+          import os, sqlite3
+          p = '/data/backups/ha-backup.db'
+          st = os.stat(p)
+          assert oct(st.st_mode & 0o777) == '0o600', oct(st.st_mode)
+          assert st.st_uid == os.stat('/data').st_uid, (st.st_uid, os.stat('/data').st_uid)
+          c = sqlite3.connect(p)
+          (ok,) = c.execute('pragma integrity_check').fetchone()
+          (n,) = c.execute(\"select count(*) from items where name = 'Smoke item'\").fetchone()
+          print('integrity', ok, 'smoke rows', n)
+          assert ok == 'ok', ok
+          assert n == 1, n
+          "
+          docker exec hh-ci python3 /app/backend/backup_hook.py post
+          docker exec hh-ci sh -c 'test ! -e /data/backups/ha-backup.db'
+          curl -fsS http://localhost:7745/api/v1/ready
       - name: MCP crash is restarted and /ready recovers
         run: |
           set -euo pipefail
@@ -626,6 +662,9 @@ jobs:
           tags: |
             ghcr.io/amantux/homehoard:${{ needs.bump-version.outputs.new_version }}-${{ matrix.arch }}
             ghcr.io/amantux/homehoard:latest-${{ matrix.arch }}
+          # Scope per arch so amd64 and arm64 layers never share a cache.
+          cache-from: type=gha,scope=build-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=build-${{ matrix.arch }}
 
   merge-manifest:
     permissions:

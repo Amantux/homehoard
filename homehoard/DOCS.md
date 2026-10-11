@@ -227,10 +227,15 @@ database, uploaded photos and documents, and the add-on's own key files
 (`.secret_key`, which signs logins, and `.integration_token`, which the HA
 integration uses). A normal Home Assistant backup includes all of it.
 
-- **HA backups are consistent.** The add-on is backed up *cold*: the Supervisor
-  stops HomeHoard while the backup runs and starts it again afterwards, so the
-  database is never copied mid-write. Expect HomeHoard to be unavailable for
-  those few seconds.
+- **HA backups are consistent, and HomeHoard keeps running.** The backup
+  always includes the live database files. If the add-on is running, it also
+  writes a consistent copy of the SQLite database to
+  `/data/backups/ha-backup.db` just before the backup (using SQLite's own
+  online-backup mechanism, so writes in progress can't tear it), and deletes
+  the copy again afterwards. If the copy can't be written, Home Assistant
+  reports the HomeHoard part of the backup as failed. If the add-on is stopped,
+  Home Assistant runs no hooks and the backup holds the live files only, which
+  are consistent because nothing is writing to them.
 - **Pre-upgrade copies.** Before an update changes the database layout, the
   add-on saves a copy of the SQLite database to
   `/data/backups/pre-upgrade-<revision>-<time>.db` and keeps the newest two. If
@@ -239,7 +244,19 @@ integration uses). A normal Home Assistant backup includes all of it.
   the normal path.
 - **Restoring.** Stop the HomeHoard add-on, then restore the HA backup (or just
   the HomeHoard add-on from it) under **Settings → System → Backups**, and
-  start the add-on again.
+  start the add-on again. On start, if the backup holds the consistent copy,
+  the add-on puts it in place as `/data/homehoard.db` in preference to the live
+  files that travelled with it (unless those are more than 15 minutes newer).
+  It also uses the copy if the existing database is missing or fails SQLite's
+  integrity check; the damaged file is kept beside it as
+  `homehoard.db.corrupt-<time>` (and left out of later backups). A copy more
+  than 15 minutes older than the live database is a leftover from an
+  interrupted backup: it is deleted, and the live database is kept. The add-on
+  log names the copy's time either way.
+- **Restoring by hand** (e.g. from a downloaded backup): stop the add-on, copy
+  `data/backups/ha-backup.db` from the backup archive to `/data/homehoard.db`,
+  delete any `/data/homehoard.db-wal` and `/data/homehoard.db-shm`, and start
+  the add-on.
 - **Restore the whole `/data`, not just the database.** The signing key travels
   with the backup. Putting only the database file onto a fresh install gives it
   a newly generated key, which signs everyone out; they log in again with their
@@ -258,8 +275,16 @@ integration uses). A normal Home Assistant backup includes all of it.
 
 ## Time zone
 
-HomeHoard runs in UTC. The add-on log is timestamped in UTC. Overdue and
-expiring-soon checks (checkouts, warranties, maintenance) compare against the
-current UTC time, so for notifications and the HA sensors "today" rolls over
-at 00:00 UTC rather than your local midnight. The add-on does not pick up Home
-Assistant's time zone, and there is no option to change this yet.
+At startup the add-on asks the Supervisor for Home Assistant's time zone
+(Settings > System > General) and uses it as the container's local time, so
+the add-on log shows your local time. The zone is remembered in `/data`, so a
+restart while the Supervisor is unreachable keeps it; if it cannot be found at
+all, the add-on uses UTC and says so in the log. Outside Home Assistant, set
+`HBOX_TZ` (or `TZ`) to an IANA name such as `Europe/Brussels`; an unknown name
+is reported at startup and UTC is used.
+
+Stored timestamps are always UTC, and item dates (purchase, warranty, sold)
+are calendar dates that are never shifted by the time zone. Overdue and
+expiring-soon checks (checkouts, warranties, maintenance) use your zone's
+calendar day, so for notifications and the HA sensors "today" rolls over at
+your local midnight.

@@ -18,6 +18,8 @@ const newName = ref('')
 // full = REST + MCP; rest = REST only; mcp = MCP transport only (rejected at REST).
 const newScope = ref('full')
 const newAccess = ref('write')
+// Optional expiry (YYYY-MM-DD); empty = never expires.
+const newExpires = ref('')
 // The raw token is returned by the API exactly once — held here until the user
 // dismisses it, since it can never be shown again.
 const revealed = ref(null)
@@ -71,11 +73,14 @@ async function create() {
       // A debug key only ever reads; don't let the form offer to mint a
       // write-capable one.
       access: newScope.value === 'debug' ? 'read' : newAccess.value,
+      // End of the chosen day, UTC; omitted when blank so the key never expires.
+      ...(newExpires.value ? { expiresAt: new Date(newExpires.value + 'T23:59:59Z').toISOString() } : {}),
     })
     revealed.value = t
     newName.value = ''
     newScope.value = 'full'
     newAccess.value = 'write'
+    newExpires.value = ''
     await load()
   } catch (e) {
     ui.error(e.message)
@@ -224,6 +229,10 @@ const mcpUrl = computed(() => {
           <option value="read">Read only</option>
         </select>
       </label>
+      <label class="field" style="margin:0;max-width:170px">
+        <span>Expires (optional)</span>
+        <input v-model="newExpires" type="date" />
+      </label>
       <button :disabled="creating" @click="create">{{ creating ? 'Generating…' : 'Generate token' }}</button>
     </div>
 
@@ -244,7 +253,7 @@ const mcpUrl = computed(() => {
 
     <table v-else-if="tokens.length">
       <thead>
-        <tr><th>Name</th><th>Scope</th><th>Access</th><th>Token</th><th>Created</th><th>Last used</th><th></th></tr>
+        <tr><th>Name</th><th>Scope</th><th>Access</th><th>Token</th><th>Created</th><th>Last used</th><th>Expires</th><th></th></tr>
       </thead>
       <tbody>
         <tr v-for="t in tokens" :key="t.id">
@@ -254,6 +263,7 @@ const mcpUrl = computed(() => {
           <td class="muted"><code>{{ t.hint }}…</code></td>
           <td class="muted">{{ shortDate(t.createdAt) }}</td>
           <td class="muted">{{ t.lastUsedAt ? shortDate(t.lastUsedAt) : 'Never' }}</td>
+          <td class="muted">{{ t.expiresAt ? 'Expires ' + shortDate(t.expiresAt) : 'Never' }}</td>
           <td style="text-align:right">
             <button class="danger secondary sm" @click="revoke(t)">Revoke</button>
           </td>

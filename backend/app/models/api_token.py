@@ -59,6 +59,8 @@ class ApiToken(IDMixin, TimestampMixin, db.Model):
     # First few chars of the raw token, kept for display ("hh_ab12…").
     hint: Mapped[str] = mapped_column(String(16), default="")
     last_used_at: Mapped[str] = mapped_column(DateTime, nullable=True)
+    # Past this instant the key is no longer a credential (401). NULL = never.
+    expires_at: Mapped[str] = mapped_column(DateTime, nullable=True)
 
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"))
     group_id: Mapped[str] = mapped_column(

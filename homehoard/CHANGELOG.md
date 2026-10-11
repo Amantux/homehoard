@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+- **Home Assistant backups no longer restart the add-on.** While it runs, the
+  backup also carries a consistent copy of the database, which a restore
+  prefers; a backup of a stopped add-on still contains the database. A stale
+  copy left by an interrupted backup is cleaned up automatically. (Postgres
+  users: keep using pg_dump.)
+- **Changing your password now signs out every other session**, and API keys
+  can be given an optional expiry date — enforced for the web API and the MCP
+  server alike.
+- HomeHoard picks up your Home Assistant time zone at start-up (override with
+  `HBOX_TZ`). Stored timestamps stay UTC and item dates are never shifted; but
+  overdue maintenance, expiring warranties and overdue lends now roll over at
+  midnight in your zone instead of UTC.
+- Stopping the add-on during the first seconds of boot is honoured instead of
+  being ignored until the kill timeout.
+- The web app can be installed to a phone's home screen when opened directly
+  (outside Home Assistant).
+
 ## 1.1.52
 
 - **Your lists stay current.** A list refreshes right after you save, loads no

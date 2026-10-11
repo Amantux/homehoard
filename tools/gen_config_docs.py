@@ -33,6 +33,7 @@ GROUPS = [
                       "OPENAI_MODEL", "OPENAI_BASE_URL", "OLLAMA_URL", "OLLAMA_MODEL",
                       "OLLAMA_SEARCH_KEY", "OLLAMA_CLOUD_API_KEY", "OLLAMA_CLOUD_MODEL"]),
     ("Barcode identification", ["BARCODE_LOOKUP", "BARCODE_DB_URL", "BARCODE_DB_KEY"]),
+    ("Time zone", ["TZ"]),
     ("MCP (Home Assistant Assist)", ["MCP_ENABLED", "MCP_HOST", "MCP_PORT", "MCP_API",
                                      "MCP_API_TOKEN", "MCP_SERVER_TOKEN",
                                      "MCP_EXPOSE_EXTERNAL", "MCP_KEY_REQUIRED",

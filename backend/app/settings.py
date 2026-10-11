@@ -48,6 +48,7 @@ import secrets
 from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any, Callable
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 PLACEHOLDER_SECRETS = frozenset({
     "change-me-in-production", "change-me", "changeme", "secret", "password",
@@ -365,6 +366,13 @@ FIELDS: tuple[Field, ...] = (
     Field("BARCODE_DB_KEY", as_str, "",
           "API key for the barcode database. Blank uses the keyless trial tier.",
           secret=True, supports_file=True, ha_option="barcode_db_key"),
+
+    # --- time zone ---
+    # In the add-on the entrypoint fills this from the Supervisor's time zone
+    # (or a plain TZ env var), so it is env-only here, not an add-on option.
+    Field("TZ", as_str, "UTC",
+          "IANA time zone for local time (e.g. log timestamps); filled from Home "
+          "Assistant at boot. Storage stays UTC and item dates are never shifted."),
 
     # --- MCP (Home Assistant Assist) ---
     Field("MCP_ENABLED", parse_bool, True,
@@ -764,6 +772,19 @@ def _validate_semantics(values, sources, in_ha, errors, warnings) -> None:
             "(HBOX_DATABASE_URL is blank and USE_SHARED_POSTGRES is off), so there "
             "is nothing to migrate to and the setting is inert."
         )
+
+    # --- time zone ---
+    # Not fatal: an unknown zone only affects how dates are rendered, and
+    # app/timeutil.local_zone() falls back to UTC for it.
+    tz_name = (values["TZ"] or "").strip()
+    if tz_name and tz_name != "UTC":
+        try:
+            ZoneInfo(tz_name)
+        except (ZoneInfoNotFoundError, ValueError):
+            warnings.append(
+                f"HBOX_TZ={tz_name!r} is not a known IANA time zone; dates are "
+                "rendered in UTC. Use a name like 'Europe/Brussels'."
+            )
 
     # --- MCP ---
     if values["MCP_ENABLED"] and values["MCP_PORT"] == values["PORT"]:

@@ -65,6 +65,31 @@ def decode_token(token: str):
         return None
 
 
+def _user_from_jwt(token: str):
+    """The user a JWT names, or None when it is invalid — including when it was
+    issued before the user's last password change (that change signs out every
+    older session). ``iat`` is whole seconds (PyJWT truncates), so the change
+    instant is truncated too: a token minted in the same second as the change —
+    the one change-password hands back — stays valid."""
+    try:
+        payload = jwt.decode(
+            token, current_app.config["SECRET_KEY"], algorithms=["HS256"]
+        )
+    except jwt.PyJWTError:
+        return None
+    user_id = payload.get("sub")
+    user = db.session.get(User, user_id) if user_id else None
+    if user is None:
+        return None
+    changed = as_utc(user.password_changed_at)
+    if changed is not None:
+        iat = payload.get("iat")
+        # Fail closed: a token with no usable iat can't prove it postdates the change.
+        if not isinstance(iat, (int, float)) or iat < int(changed.timestamp()):
+            return None
+    return user
+
+
 # A version before this fix minted synthetic users with this literal password,
 # which /users/login's ungated email+password check made a public, guessable
 # owner-login backdoor. Rotating it only in the CREATE branch below would leave
@@ -334,8 +359,7 @@ def _resolve_current_user():
             return _user_from_api_token(token)
         if acting:
             return None
-        user_id = decode_token(token)
-        return db.session.get(User, user_id) if user_id else None
+        return _user_from_jwt(token)
 
     if acting:
         return None
@@ -375,6 +399,11 @@ def _user_from_api_token(raw: str):
     # `full`/`rest` (and legacy NULL→"full") pass. This is the one place the
     # scope is checked for REST, so a new scope is denied here or nowhere.
     if (record.scope or "full") in ("mcp", "debug"):
+        return None
+    # Expiry: past expires_at the key is no longer a credential — 401 like an
+    # unknown key, not 403. Checked before the acting-key branch so an expired
+    # integration key can't act for anyone either.
+    if record.expires_at is not None and as_utc(record.expires_at) <= utcnow():
         return None
     if request.headers.get(ACTING_KEY_HEADER) is not None:
         # Fail closed: any problem with the acting key is a 401, never a
