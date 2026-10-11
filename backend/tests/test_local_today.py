@@ -122,3 +122,33 @@ def test_ha_summary_expired_yesterday_drops_out_locally(app, auth_client, seeded
         db.session.commit()
     s = auth_client.get("/api/v1/ha/summary").get_json()
     assert s["warrantiesExpiring"]["days30"] == (0 if auckland else 1)
+
+
+@pytest.fixture()
+def lent(app, gid):
+    """Item checked out, due 2026-03-01 (a calendar date, stored at UTC midnight)."""
+    from app.models import Item
+    with app.app_context():
+        db.session.add(Item(name="Drill", group_id=gid, checked_out=True,
+                            checkout_due=datetime(2026, 3, 1)))
+        db.session.commit()
+    return app.tz_name == "Pacific/Auckland"
+
+
+def test_alert_digest_checkout_due_rolls_over_at_local_midnight(app, gid, lent):
+    from app.services.alerts import alert_digest
+    auckland = lent
+    with app.app_context():
+        d = alert_digest(gid, now=NOW)
+    # Due Mar 1: overdue once the local day is Mar 2, still due-today on Mar 1.
+    assert d["counts"]["overdueCheckouts"] == (1 if auckland else 0)
+
+
+def test_ha_summary_checkout_due_rolls_over_at_local_midnight(app, auth_client, lent,
+                                                              monkeypatch):
+    import app.api.ha as ha
+    monkeypatch.setattr(ha, "utcnow", lambda: NOW)
+    auckland = lent
+    s = auth_client.get("/api/v1/ha/summary").get_json()
+    entry = s["checkedOutItems"][0]
+    assert entry["overdue"] is auckland

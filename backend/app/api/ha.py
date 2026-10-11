@@ -43,7 +43,7 @@ def summary():
     gid = current_group().id
     now = utcnow()
     # Calendar dates (warranty, maintenance) compare by .date() against the
-    # household's local day; `now` stays the UTC instant for checkout_due.
+    # household's local day; checkout_due is a calendar date too.
     today = to_local(now).date()
     # Aggregates and short lists in SQL: the summary never loads every item.
     def items():
@@ -103,7 +103,7 @@ def summary():
             "checkedOutItems": [
                 {
                     "id": i.id, "name": i.name, "to": i.checked_out_to,
-                    "overdue": bool(i.checkout_due and as_utc(i.checkout_due) < now),
+                    "overdue": bool(i.checkout_due and i.checkout_due.date() < today),
                 }
                 for i in checked_out_items
             ],

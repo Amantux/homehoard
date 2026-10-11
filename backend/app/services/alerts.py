@@ -50,7 +50,7 @@ def alert_digest(group_id, now=None):
     `now` is injectable for testing. `isEmpty` is True when nothing needs
     attention, so a caller can skip sending a "nothing to report" message."""
     now = as_utc(now) or utcnow()
-    # Warranty/maintenance dates are calendar dates (stored as UTC midnight), so
+    # Warranty/maintenance/checkout-due dates are calendar dates (stored as UTC midnight), so
     # they compare by .date() against the household's local "today" — the day
     # rolls over at local midnight, not UTC's. Never shift the stored value.
     today = to_local(now).date()
@@ -58,7 +58,7 @@ def alert_digest(group_id, now=None):
 
     overdue_checkouts = [
         i for i in items
-        if i.checked_out and i.checkout_due and as_utc(i.checkout_due) < now
+        if i.checked_out and i.checkout_due and i.checkout_due.date() < today
     ]
     warranty_soon = [
         i for i in active_warranty_items(group_id)
