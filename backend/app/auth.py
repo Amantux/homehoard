@@ -404,6 +404,9 @@ def _bearer_token(header: str) -> str | None:
 
 
 def _user_from_api_token(raw: str):
+    # The vault fingerprints on the acting key only when one is relayed; make
+    # sure nothing carries over from an earlier request in the same context.
+    g.pop("vault_credential", None)
     record = (
         db.session.query(ApiToken)
         .filter_by(token_hash=hash_token(raw))

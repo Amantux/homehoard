@@ -507,8 +507,8 @@ def lock_items() -> str:
 
 @mcp.tool()
 def list_hidden() -> list[dict]:
-    """List what is in the vault. Works whether locked or unlocked, so a hidden
-    item can always be found and brought back."""
+    """List what is in the vault. Empty while the vault is locked — call
+    unlock_vault with the household passphrase first."""
     data = _get("/items", {"onlyHidden": "true", "pageSize": 200})
     return [{"id": i["id"], "name": i["name"]} for i in data.get("items", [])]
 
