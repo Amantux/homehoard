@@ -171,3 +171,38 @@ def test_guard_does_one_key_lookup_per_request(app, world, monkeypatch):
     asyncio.run(mcp_server._guard(downstream, "")(scope, receive, send))
     assert sent[0]["status"] == 200
     assert calls == [world.key_b]
+
+
+# --- P71c: expired API keys are rejected on the MCP transport ----------------
+
+def _set_expiry(app, raw, delta):
+    from app.extensions import db
+    from app.models import ApiToken, hash_token
+    from app.timeutil import utcnow
+    with app.app_context():
+        rec = db.session.query(ApiToken).filter_by(token_hash=hash_token(raw)).first()
+        rec.expires_at = None if delta is None else (utcnow() + delta).replace(tzinfo=None)
+        db.session.commit()
+
+
+def test_expired_key_is_rejected_like_an_unknown_key(app, world, monkeypatch):
+    from datetime import timedelta
+    monkeypatch.setattr(mcp_server, "_app", app)
+    assert mcp_server._key_record(world.key_a) is not None
+    _set_expiry(app, world.key_a, timedelta(seconds=-60))
+    assert mcp_server._key_record(world.key_a) is None
+    assert mcp_server._key_record("hh_not_a_real_key") is None
+    assert mcp_server._key_ok(world.key_a) is False
+
+
+def test_future_expiry_key_is_accepted(app, world, monkeypatch):
+    from datetime import timedelta
+    monkeypatch.setattr(mcp_server, "_app", app)
+    _set_expiry(app, world.key_a, timedelta(days=1))
+    assert mcp_server._key_record(world.key_a) == ("mcp", "write")
+
+
+def test_null_expiry_key_is_accepted(app, world, monkeypatch):
+    monkeypatch.setattr(mcp_server, "_app", app)
+    _set_expiry(app, world.key_a, None)
+    assert mcp_server._key_record(world.key_a) == ("mcp", "write")

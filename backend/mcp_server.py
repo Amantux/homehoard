@@ -652,8 +652,13 @@ def _key_record(raw: str):
         app = _get_app()
         from app.extensions import db
         from app.models import ApiToken, hash_token
+        from app.timeutil import as_utc, utcnow
         with app.app_context():
             rec = db.session.query(ApiToken).filter_by(token_hash=hash_token(raw)).first()
+            # An expired key is the same as an unknown one (the guard's 401),
+            # matching what the REST auth path does.
+            if rec is not None and rec.expires_at is not None and as_utc(rec.expires_at) <= utcnow():
+                rec = None
             out = ((rec.scope or "full"), (rec.access or "write")) if rec is not None else None
             db.session.remove()
             return out
