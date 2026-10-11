@@ -241,6 +241,8 @@ jobs:
           context: .
           load: true
           tags: homehoard:ci
+          cache-from: type=gha,scope=smoke-amd64
+          cache-to: type=gha,mode=max,scope=smoke-amd64
       - name: Seed a 0018-stamped SQLite volume (upgrade-path fixture)
         run: |
           set -euo pipefail
@@ -626,6 +628,9 @@ jobs:
           tags: |
             ghcr.io/amantux/homehoard:${{ needs.bump-version.outputs.new_version }}-${{ matrix.arch }}
             ghcr.io/amantux/homehoard:latest-${{ matrix.arch }}
+          # Scope per arch so amd64 and arm64 layers never share a cache.
+          cache-from: type=gha,scope=build-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=build-${{ matrix.arch }}
 
   merge-manifest:
     permissions:
