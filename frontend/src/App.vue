@@ -16,6 +16,7 @@ const QuickCreate = defineAsyncComponent(() => import('./components/QuickCreate.
 const ScannerModal = defineAsyncComponent(() => import('./components/ScannerModal.vue'))
 const SearchModal = defineAsyncComponent(() => import('./components/SearchModal.vue'))
 const ReportBug = defineAsyncComponent(() => import('./components/ReportBug.vue'))
+const ChangePasswordModal = defineAsyncComponent(() => import('./components/ChangePasswordModal.vue'))
 const route = useRoute()
 const auth = useAuth()
 const ui = useUI()
@@ -26,6 +27,7 @@ const showScanner = ref(false)
 const showSearch = ref(false)
 const showUserMenu = ref(false)
 const showReport = ref(false)
+const showChangePassword = ref(false)
 
 // Account menu: Esc closes and returns focus to the toggle; a click or tap
 // anywhere outside closes it without moving focus.
@@ -148,6 +150,9 @@ const nav = [
                     aria-haspopup="menu" :aria-expanded="showUserMenu ? 'true' : 'false'"
                     aria-controls="user-menu" @click="toggleUserMenu">👤</button>
             <div v-if="showUserMenu" id="user-menu" class="dropdown-menu" role="menu" @click="showUserMenu = false">
+              <!-- Password users only: HA-linked users have no password here. -->
+              <button v-if="auth.user && auth.user.ha === false" role="menuitem"
+                      @click="showChangePassword = true">Change password…</button>
               <button role="menuitem" @click="auth.logout()">Sign out</button>
             </div>
           </div>
@@ -172,6 +177,9 @@ const nav = [
     <SearchModal v-if="showSearch" @close="showSearch = false" />
     <ReportBug v-if="showReport || ui.bugReport" :initial="ui.bugReport"
                @close="showReport = false; ui.closeBugReport()" />
+    <!-- The menu item that opened it is gone by now, so hand focus back to the toggle. -->
+    <ChangePasswordModal v-if="showChangePassword"
+                         @close="showChangePassword = false; userMenuToggle?.focus()" />
     <ChatAssistant />
     <Toasts />
     <ConfirmDialog />
