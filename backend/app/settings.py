@@ -321,7 +321,8 @@ FIELDS: tuple[Field, ...] = (
           "requests. Empty = same-origin only (correct for normal deployments)."),
     Field("PROXY_HOPS", int_between(0, 10), 0,
           "How many reverse proxies sit in front. 0 = do not trust "
-          "X-Forwarded-* headers at all."),
+          "X-Forwarded-* headers at all.",
+          ha_option="proxy_hops"),
     Field("RATELIMIT_ENABLED", parse_bool, True,
           "Enable request rate limiting (disabled automatically under tests)."),
 
