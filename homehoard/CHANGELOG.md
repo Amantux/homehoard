@@ -5,8 +5,10 @@
 - **A locked vault now hides everything** — including the hidden-items list,
   placement suggestions and the assistant's by-id lookups. Unlocking is per
   session and per household, so an unlock through Home Assistant or MCP never
-  opens another caller's vault. Passphrase guesses typed into the assistant
-  count against the same limit as the vault screen.
+  opens another caller's vault. Passphrase guesses are limited per person as
+  well as per session, whether typed on the vault screen or into the
+  assistant. Hidden items no longer show up in asset-tag lookups or in
+  overdue-checkout notifications.
 - Expired API keys are refused on every path, including through the MCP
   server.
 - Rate limits are per account rather than per address, so one person can't
