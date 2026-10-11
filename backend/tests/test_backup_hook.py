@@ -267,3 +267,91 @@ def test_the_copy_leaves_no_temp_files_behind(tmp_path):
     assert backup_hook.run("pre", _url(db_path), str(tmp_path)) == 0
     assert sorted(p.name for p in (tmp_path / "backups").iterdir()) == sorted(
         [backup_hook.BACKUP_NAME, backup_hook.FLAG])
+
+
+# Races: the app user swaps a name between the hook's lstat and its read.
+# Every source must be read through an O_NOFOLLOW fd, and a swap after the
+# open must fail the hook, so root never copies a file the app can't read.
+def _secret_db(tmp_path):
+    """A root-only SQLite file outside /data the app user would like to read."""
+    path = tmp_path.parent / f"{tmp_path.name}-secret.db"
+    conn = sqlite3.connect(path)
+    conn.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT)")
+    conn.execute("INSERT INTO t (v) VALUES ('root-only')")
+    conn.commit()
+    conn.close()
+    return path
+
+
+def _spy_reads(monkeypatch):
+    """Record the real file behind every sqlite3.connect the hook makes."""
+    seen, real_connect = [], sqlite3.connect
+
+    def spy(target, *a, **k):
+        name = str(target)
+        if name.startswith("file:"):
+            name = name[5:].split("?")[0]
+        seen.append(os.path.realpath(name))
+        return real_connect(target, *a, **k)
+    monkeypatch.setattr(backup_hook.sqlite3, "connect", spy)
+    return seen
+
+
+def _plant_after_lstat(monkeypatch, victim, target):
+    """Make the link-refusal check pass, then swap `victim` for a link."""
+    real = backup_hook._refuse_link
+
+    def racing(path, kind):
+        ok = real(path, kind)
+        if str(path) == str(victim) and not os.path.islink(victim):
+            victim.unlink()
+            victim.symlink_to(target)
+        return ok
+    monkeypatch.setattr(backup_hook, "_refuse_link", racing)
+
+
+def test_pre_refuses_a_link_planted_after_the_lstat(tmp_path, monkeypatch):
+    db_path, secret = _plain_db(tmp_path), _secret_db(tmp_path)
+    seen = _spy_reads(monkeypatch)
+    _plant_after_lstat(monkeypatch, db_path, secret)
+    assert backup_hook.run("pre", _url(db_path), str(tmp_path)) == 1
+    assert os.path.realpath(secret) not in seen
+    assert not (tmp_path / "backups" / backup_hook.BACKUP_NAME).exists()
+    assert not (tmp_path / "backups" / backup_hook.FLAG).exists()
+
+
+def test_pre_refuses_a_swap_after_the_source_is_opened(tmp_path, monkeypatch, capsys):
+    db_path, secret = _plain_db(tmp_path), _secret_db(tmp_path)
+    real_open = backup_hook._open_src
+
+    def swapping(name, dir_fd):
+        fd = real_open(name, dir_fd)
+        if name == db_path.name:
+            db_path.rename(tmp_path / "moved.db")
+            db_path.symlink_to(secret)
+        return fd
+    monkeypatch.setattr(backup_hook, "_open_src", swapping)
+    assert backup_hook.run("pre", _url(db_path), str(tmp_path)) == 1
+    assert "replaced during the copy" in capsys.readouterr().err
+    assert not (tmp_path / "backups" / backup_hook.BACKUP_NAME).exists()
+
+
+def test_restore_refuses_a_link_planted_at_the_copy_after_the_lstat(tmp_path, monkeypatch):
+    db_path, secret = _restored_tree(tmp_path), _secret_db(tmp_path)
+    seen = _spy_reads(monkeypatch)
+    _plant_after_lstat(monkeypatch, tmp_path / "backups" / backup_hook.BACKUP_NAME, secret)
+    assert backup_hook.run("restore-if-needed", _url(db_path), str(tmp_path)) == 1
+    assert os.path.realpath(secret) not in seen
+    assert not db_path.exists()
+
+
+def test_reading_through_the_fd_leaves_no_sidecars_behind(tmp_path):
+    # Root-created -wal/-shm left beside a database would lock the app (uid
+    # 1000) out of it; the read must clean up what it created.
+    db_path = _plain_db(tmp_path)
+    assert backup_hook.run("pre", _url(db_path), str(tmp_path)) == 0
+    assert sorted(os.listdir(tmp_path)) == ["backups", "homehoard.db"]
+    db_path.unlink()
+    assert backup_hook.run("restore-if-needed", _url(db_path), str(tmp_path)) == 0
+    assert sorted(os.listdir(tmp_path)) == ["backups", "homehoard.db"]
+    assert os.listdir(tmp_path / "backups") == []

@@ -94,10 +94,46 @@ def _fd_path(dir_fd, name):
     return f"/proc/self/fd/{dir_fd}/{name}"
 
 
-def _sqlite_copy(src_path, dst_dir_fd, name, owner):
-    """Consistent copy of `src_path` via the online backup API into
-    `name` inside `dst_dir_fd`: written in a private 0700 dir first (0600 from
-    creation) and renamed into place only once it checks out."""
+# SQLite takes a path, not an fd, so every source is opened O_RDONLY|O_NOFOLLOW
+# by this process and SQLite is pointed at /proc/self/fd/N. That pins the main
+# file's inode: a link planted at the name after the lstat makes the open fail
+# (ELOOP), and a swap after the open is caught by the inode check after the
+# copy. The copy source is connected read-write through that fd, not mode=ro:
+# mode=ro does work (WAL, no writer, no -shm: checked on 3.37.2) but leaves
+# the -wal/-shm it creates behind on close, and created by root they would
+# lock the app out of its own database; a read-write connection removes them
+# on last close, as before. quick_check stays mode=ro: restore deletes the
+# sidecars right after it. What remains: SQLite readlinks the fd and derives
+# the -wal/-shm names from the resolved path, so the sidecars are still opened
+# (and may be created, root-owned, while the copy runs) by name. A link planted
+# at a sidecar name made the open fail instead of being followed, with or
+# without mode=ro (3.37.2, checked; the image's SQLite may differ). Removing
+# that last by-name step needs the read done as the app user, which this hook
+# (it must chown) does not do.
+def _open_src(name, dir_fd):
+    """Read-only fd on the regular file `name` in `dir_fd`; never a link."""
+    fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=dir_fd)
+    if not stat.S_ISREG(os.fstat(fd).st_mode):
+        os.close(fd)
+        raise HookError(f"{name} is not what it should be; refusing")
+    return fd
+
+
+def _still_same(fd, name, dir_fd):
+    """Fail unless `name` in `dir_fd` is still the inode `fd` read from."""
+    held = os.fstat(fd)
+    try:
+        now = os.lstat(name, dir_fd=dir_fd)
+    except FileNotFoundError:
+        now = None
+    if now is None or (now.st_ino, now.st_dev) != (held.st_ino, held.st_dev):
+        raise HookError(f"{name} was replaced during the copy; refusing")
+
+
+def _sqlite_copy(src_dir_fd, src_name, dst_dir_fd, name, owner):
+    """Consistent copy of `src_name` (in `src_dir_fd`) via the online backup
+    API into `name` inside `dst_dir_fd`: written in a private 0700 dir first
+    (0600 from creation) and renamed into place only once it checks out."""
     priv = f".{name}.tmp-{os.getpid()}-{secrets.token_hex(4)}"
     os.mkdir(priv, 0o700, dir_fd=dst_dir_fd)
     try:
@@ -107,17 +143,22 @@ def _sqlite_copy(src_path, dst_dir_fd, name, owner):
                 raise HookError("the temporary directory was replaced; refusing")
             os.close(os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
                              0o600, dir_fd=pfd))
-            src = sqlite3.connect(src_path)
+            sfd = _open_src(src_name, src_dir_fd)
             try:
-                out = sqlite3.connect(_fd_path(pfd, name))
+                src = sqlite3.connect(f"/proc/self/fd/{sfd}")
                 try:
-                    src.backup(out)
-                    if out.execute("PRAGMA quick_check").fetchone()[0] != "ok":
-                        raise HookError("the database copy failed its integrity check")
+                    out = sqlite3.connect(_fd_path(pfd, name))
+                    try:
+                        src.backup(out)
+                        if out.execute("PRAGMA quick_check").fetchone()[0] != "ok":
+                            raise HookError("the database copy failed its integrity check")
+                    finally:
+                        out.close()
                 finally:
-                    out.close()
+                    src.close()
+                _still_same(sfd, src_name, src_dir_fd)
             finally:
-                src.close()
+                os.close(sfd)
             if owner:
                 os.chown(name, *owner, dir_fd=pfd, follow_symlinks=False)
             # rename() replaces a link at the destination; it never follows it.
@@ -130,15 +171,18 @@ def _sqlite_copy(src_path, dst_dir_fd, name, owner):
         os.rmdir(priv, dir_fd=dst_dir_fd)
 
 
-def _quick_check_ok(path):
+def _quick_check_ok(name, dir_fd):
+    fd = _open_src(name, dir_fd)
     try:
-        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        conn = sqlite3.connect(f"file:/proc/self/fd/{fd}?mode=ro", uri=True)
         try:
             return conn.execute("PRAGMA quick_check").fetchone()[0] == "ok"
         finally:
             conn.close()
     except sqlite3.Error:
         return False
+    finally:
+        os.close(fd)
 
 
 def _pre(db_path, data_dir):
@@ -156,7 +200,11 @@ def _pre(db_path, data_dir):
     try:
         if owner:
             os.fchown(bfd, *owner)
-        _sqlite_copy(db_path, bfd, BACKUP_NAME, owner)
+        dfd = _open_dir(os.path.dirname(db_path))
+        try:
+            _sqlite_copy(dfd, os.path.basename(db_path), bfd, BACKUP_NAME, owner)
+        finally:
+            os.close(dfd)
         # Only after the copy succeeded: from here on the app refuses writes.
         # Remove-then-create-exclusive: a planted link is unlinked, never
         # followed, and a fresh file can't look stale to the app.
@@ -217,7 +265,7 @@ def _restore(db_path, data_dir, bfd, dfd):
     age = datetime.now(timezone.utc).timestamp() - copy_mtime
     # Promote unconditionally: no write was allowed after `pre` (FLAG), so the
     # copy is never behind a healthy live database, and may be ahead of a torn one.
-    if _refuse_link(db_path, stat.S_ISREG) and not _quick_check_ok(_fd_path(dfd, db_name)):
+    if _refuse_link(db_path, stat.S_ISREG) and not _quick_check_ok(db_name, dfd):
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         os.replace(db_name, f"{db_name}.corrupt-{stamp}", src_dir_fd=dfd, dst_dir_fd=dfd)
         print(f"homehoard restore: database failed its integrity check; "
@@ -228,7 +276,7 @@ def _restore(db_path, data_dir, bfd, dfd):
             os.remove(db_name + suffix, dir_fd=dfd)  # unlink never follows a link
         except FileNotFoundError:
             pass
-    _sqlite_copy(_fd_path(bfd, BACKUP_NAME), dfd, db_name, _owner_of(data_dir))
+    _sqlite_copy(bfd, BACKUP_NAME, dfd, db_name, _owner_of(data_dir))
     os.remove(BACKUP_NAME, dir_fd=bfd)
     try:
         os.remove(FLAG, dir_fd=bfd)
