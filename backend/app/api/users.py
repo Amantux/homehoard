@@ -226,5 +226,9 @@ def change_password():
     if not ok:
         return err
     user.password_hash = hash_password(data.get("new", ""))
+    # Every JWT issued before this instant is now refused (see auth.py), which
+    # includes the one on this request — hand back a fresh one so the caller
+    # keeps its session while every other session is signed out.
+    user.password_changed_at = utcnow()
     db.session.commit()
-    return "", 204
+    return jsonify({"token": f"Bearer {create_token(user)}"}), 200
