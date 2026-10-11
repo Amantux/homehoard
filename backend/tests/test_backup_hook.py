@@ -182,3 +182,88 @@ def test_main_resolves_paths_through_the_settings_adapter(tmp_path, monkeypatch)
     monkeypatch.delenv("DATABASE_URL", raising=False)
     assert backup_hook.main(["pre"]) == 0
     assert (tmp_path / "backups" / backup_hook.BACKUP_NAME).exists()
+
+
+# --- The hook runs as root over /data, which the app user owns: it must never
+# follow a link the app user planted (chown or write anywhere as root).
+# Exercised as the current user in a temp dir; root itself is not exercised.
+
+def _plain_db(tmp_path):
+    db_path, writer = _live_db(tmp_path)
+    writer.execute("ROLLBACK")
+    writer.close()
+    return db_path
+
+
+def test_pre_refuses_a_symlinked_backups_dir(tmp_path, capsys):
+    data = tmp_path / "data"
+    data.mkdir()
+    victim = tmp_path / "victim"
+    victim.mkdir()
+    db_path = _plain_db(data)
+    (data / "backups").symlink_to(victim)
+    assert backup_hook.run("pre", _url(db_path), str(data)) == 1
+    assert list(victim.iterdir()) == []  # nothing written through the link
+    err = capsys.readouterr().err
+    assert "symbolic link" in err and "refusing" in err
+
+
+def test_pre_does_not_clobber_a_symlinked_flag_target(tmp_path):
+    db_path = _plain_db(tmp_path)
+    victim = tmp_path / "victim.txt"
+    victim.write_text("precious")
+    (tmp_path / "backups").mkdir()
+    (tmp_path / "backups" / backup_hook.FLAG).symlink_to(victim)
+    assert backup_hook.run("pre", _url(db_path), str(tmp_path)) == 0
+    flag = tmp_path / "backups" / backup_hook.FLAG
+    assert not flag.is_symlink() and flag.is_file()  # the link itself was replaced
+    assert victim.read_text() == "precious"
+
+
+def test_pre_refuses_a_symlinked_live_db(tmp_path):
+    real = _plain_db(tmp_path)
+    data = tmp_path / "data"
+    data.mkdir()
+    (data / "homehoard.db").symlink_to(real)
+    assert backup_hook.run("pre", _url(data / "homehoard.db"), str(data)) == 1
+    assert not (data / "backups" / backup_hook.BACKUP_NAME).exists()
+
+
+def test_restore_refuses_a_symlinked_live_db(tmp_path, capsys):
+    db_path = _restored_tree(tmp_path)
+    victim = tmp_path / "victim.db"
+    victim.write_text("precious")
+    db_path.symlink_to(victim)
+    assert backup_hook.run("restore-if-needed", _url(db_path), str(tmp_path)) == 1
+    assert victim.read_text() == "precious"
+    assert db_path.is_symlink()
+    assert (tmp_path / "backups" / backup_hook.BACKUP_NAME).exists()  # kept for a retry
+    assert "symbolic link" in capsys.readouterr().err
+
+
+def test_restore_refuses_a_symlinked_copy(tmp_path):
+    db_path = _restored_tree(tmp_path)
+    copy = tmp_path / "backups" / backup_hook.BACKUP_NAME
+    other = tmp_path / "elsewhere.db"
+    copy.rename(other)
+    copy.symlink_to(other)
+    assert backup_hook.run("restore-if-needed", _url(db_path), str(tmp_path)) == 1
+    assert not db_path.exists()
+
+
+def test_post_refuses_a_symlinked_backups_dir(tmp_path):
+    victim = tmp_path / "victim"
+    victim.mkdir()
+    (victim / backup_hook.BACKUP_NAME).write_text("not ours")
+    data = tmp_path / "data"
+    data.mkdir()
+    (data / "backups").symlink_to(victim)
+    assert backup_hook.run("post", _url(data / "homehoard.db"), str(data)) == 1
+    assert (victim / backup_hook.BACKUP_NAME).exists()
+
+
+def test_the_copy_leaves_no_temp_files_behind(tmp_path):
+    db_path = _plain_db(tmp_path)
+    assert backup_hook.run("pre", _url(db_path), str(tmp_path)) == 0
+    assert sorted(p.name for p in (tmp_path / "backups").iterdir()) == sorted(
+        [backup_hook.BACKUP_NAME, backup_hook.FLAG])

@@ -25,7 +25,9 @@ and a non-zero exit makes the Supervisor fail this add-on's backup rather than
 store one without a database.
 """
 import os
+import secrets
 import sqlite3
+import stat
 import sys
 from datetime import datetime, timezone
 
@@ -49,43 +51,83 @@ def _sqlite_path(db_url):
     return os.path.abspath(url.database)
 
 
-def _match_owner(path, like):
-    # Running as root (docker exec): hand the file to whoever owns the data
-    # dir (the app user), so the app can read/replace it later.
-    if os.geteuid() == 0:
-        st = os.stat(like)
-        os.chown(path, st.st_uid, st.st_gid)
+def _owner_of(like):
+    """(uid, gid) to hand created files to when running as root (docker
+    exec): whoever owns the data dir (the app user). None when not root."""
+    if os.geteuid() != 0:
+        return None
+    st = os.stat(like)
+    return st.st_uid, st.st_gid
 
 
-def _sqlite_copy(src_path, dst_path, owner_like):
-    """Consistent copy via the online backup API, written to a temp file first
-    (0600 from creation) and renamed into place only once it checks out."""
-    tmp = dst_path + ".tmp"
+# The app user owns /data, and this hook runs as root: every path below /data
+# may be a link the app user planted. So nothing here follows a link: dirs are
+# lstat-checked and then used only through an O_NOFOLLOW fd (dir_fd=...),
+# files are created O_EXCL|O_NOFOLLOW, chown never follows, and the SQLite
+# temp copy lives in a fresh root-only dir the app user cannot write into.
+def _refuse_link(path, kind):
+    """lstat `path`; refuse a symlink or anything but `kind` (S_ISDIR/S_ISREG).
+    Returns False when it does not exist."""
     try:
-        os.remove(tmp)
+        st = os.lstat(path)
     except FileNotFoundError:
-        pass
-    os.close(os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600))
+        return False
+    if stat.S_ISLNK(st.st_mode):
+        raise HookError(f"{os.path.basename(path)} is a symbolic link; refusing")
+    if not kind(st.st_mode):
+        raise HookError(f"{os.path.basename(path)} is not what it should be; refusing")
+    return True
+
+
+def _open_dir(path, root=None):
+    """An fd on the real directory `path` (not a link; under `root` if given)."""
+    if not _refuse_link(path, stat.S_ISDIR):
+        raise FileNotFoundError(path)
+    if root is not None and not os.path.realpath(path).startswith(
+            os.path.realpath(root) + os.sep):
+        raise HookError(f"{os.path.basename(path)} is outside the data directory; refusing")
+    return os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+
+
+def _fd_path(dir_fd, name):
+    # Resolves through the already-open directory, whatever its path now names.
+    return f"/proc/self/fd/{dir_fd}/{name}"
+
+
+def _sqlite_copy(src_path, dst_dir_fd, name, owner):
+    """Consistent copy of `src_path` via the online backup API into
+    `name` inside `dst_dir_fd`: written in a private 0700 dir first (0600 from
+    creation) and renamed into place only once it checks out."""
+    priv = f".{name}.tmp-{os.getpid()}-{secrets.token_hex(4)}"
+    os.mkdir(priv, 0o700, dir_fd=dst_dir_fd)
     try:
-        src = sqlite3.connect(src_path)
+        pfd = os.open(priv, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=dst_dir_fd)
         try:
-            out = sqlite3.connect(tmp)
+            if os.fstat(pfd).st_uid != os.geteuid():  # swapped under us
+                raise HookError("the temporary directory was replaced; refusing")
+            os.close(os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                             0o600, dir_fd=pfd))
+            src = sqlite3.connect(src_path)
             try:
-                src.backup(out)
-                if out.execute("PRAGMA quick_check").fetchone()[0] != "ok":
-                    raise HookError("the database copy failed its integrity check")
+                out = sqlite3.connect(_fd_path(pfd, name))
+                try:
+                    src.backup(out)
+                    if out.execute("PRAGMA quick_check").fetchone()[0] != "ok":
+                        raise HookError("the database copy failed its integrity check")
+                finally:
+                    out.close()
             finally:
-                out.close()
+                src.close()
+            if owner:
+                os.chown(name, *owner, dir_fd=pfd, follow_symlinks=False)
+            # rename() replaces a link at the destination; it never follows it.
+            os.replace(name, name, src_dir_fd=pfd, dst_dir_fd=dst_dir_fd)
         finally:
-            src.close()
-        _match_owner(tmp, owner_like)
-        os.replace(tmp, dst_path)
-    except BaseException:
-        try:
-            os.remove(tmp)
-        except OSError:
-            pass
-        raise
+            for leftover in os.listdir(pfd):
+                os.remove(leftover, dir_fd=pfd)
+            os.close(pfd)
+    finally:
+        os.rmdir(priv, dir_fd=dst_dir_fd)
 
 
 def _quick_check_ok(path):
@@ -100,53 +142,96 @@ def _quick_check_ok(path):
 
 
 def _pre(db_path, data_dir):
-    if not os.path.exists(db_path):
+    if not _refuse_link(db_path, stat.S_ISREG):
         print("homehoard backup: no database yet, nothing to snapshot")
         return
+    os.close(_open_dir(data_dir))  # /data itself must be a real directory
+    owner = _owner_of(data_dir)
     backups = os.path.join(data_dir, "backups")
-    os.makedirs(backups, exist_ok=True)
-    _match_owner(backups, data_dir)
-    _sqlite_copy(db_path, os.path.join(backups, BACKUP_NAME), data_dir)
-    # Only after the copy succeeded: from here on the app refuses writes.
-    flag = os.path.join(backups, FLAG)
-    os.close(os.open(flag, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600))
-    os.utime(flag)  # an old leftover flag must not look stale to the app
-    _match_owner(flag, data_dir)
+    try:
+        os.mkdir(backups, 0o700)
+    except FileExistsError:
+        pass
+    bfd = _open_dir(backups, root=data_dir)
+    try:
+        if owner:
+            os.fchown(bfd, *owner)
+        _sqlite_copy(db_path, bfd, BACKUP_NAME, owner)
+        # Only after the copy succeeded: from here on the app refuses writes.
+        # Remove-then-create-exclusive: a planted link is unlinked, never
+        # followed, and a fresh file can't look stale to the app.
+        try:
+            os.remove(FLAG, dir_fd=bfd)
+        except FileNotFoundError:
+            pass
+        fd = os.open(FLAG, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                     0o600, dir_fd=bfd)
+        try:
+            if owner:
+                os.fchown(fd, *owner)
+        finally:
+            os.close(fd)
+    finally:
+        os.close(bfd)
     print("homehoard backup: consistent database copy written; writes paused")
 
 
 def _post(data_dir):
-    for name in (FLAG, BACKUP_NAME):  # flag first: resume writes promptly
-        try:
-            os.remove(os.path.join(data_dir, "backups", name))
-        except FileNotFoundError:
-            pass
+    try:
+        bfd = _open_dir(os.path.join(data_dir, "backups"), root=data_dir)
+    except FileNotFoundError:
+        return
+    try:
+        for name in (FLAG, BACKUP_NAME):  # flag first: resume writes promptly
+            try:
+                os.remove(name, dir_fd=bfd)  # unlink never follows a link
+            except FileNotFoundError:
+                pass
+    finally:
+        os.close(bfd)
 
 
 def _restore_if_needed(db_path, data_dir):
-    copy = os.path.join(data_dir, "backups", BACKUP_NAME)
-    if not os.path.exists(copy):
+    try:
+        bfd = _open_dir(os.path.join(data_dir, "backups"), root=data_dir)
+    except FileNotFoundError:
         return
-    copy_mtime = os.stat(copy).st_mtime
+    try:
+        copy = os.path.join(data_dir, "backups", BACKUP_NAME)
+        if not _refuse_link(copy, stat.S_ISREG):
+            return
+        _refuse_link(db_path, stat.S_ISREG)
+        dfd = _open_dir(os.path.dirname(db_path))
+        try:
+            _restore(db_path, data_dir, bfd, dfd)
+        finally:
+            os.close(dfd)
+    finally:
+        os.close(bfd)
+
+
+def _restore(db_path, data_dir, bfd, dfd):
+    db_name = os.path.basename(db_path)
+    copy_mtime = os.stat(BACKUP_NAME, dir_fd=bfd, follow_symlinks=False).st_mtime
     copy_when = datetime.fromtimestamp(copy_mtime, timezone.utc).isoformat(timespec="seconds")
     age = datetime.now(timezone.utc).timestamp() - copy_mtime
     # Promote unconditionally: no write was allowed after `pre` (FLAG), so the
     # copy is never behind a healthy live database, and may be ahead of a torn one.
-    if os.path.exists(db_path) and not _quick_check_ok(db_path):
+    if _refuse_link(db_path, stat.S_ISREG) and not _quick_check_ok(_fd_path(dfd, db_name)):
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        os.replace(db_path, f"{db_path}.corrupt-{stamp}")
+        os.replace(db_name, f"{db_name}.corrupt-{stamp}", src_dir_fd=dfd, dst_dir_fd=dfd)
         print(f"homehoard restore: database failed its integrity check; "
-              f"kept aside as {os.path.basename(db_path)}.corrupt-{stamp}")
+              f"kept aside as {db_name}.corrupt-{stamp}")
     # A WAL/SHM left beside a replaced main file would be replayed into it.
     for suffix in ("-wal", "-shm"):
         try:
-            os.remove(db_path + suffix)
+            os.remove(db_name + suffix, dir_fd=dfd)  # unlink never follows a link
         except FileNotFoundError:
             pass
-    _sqlite_copy(copy, db_path, data_dir)
-    os.remove(copy)
+    _sqlite_copy(_fd_path(bfd, BACKUP_NAME), dfd, db_name, _owner_of(data_dir))
+    os.remove(BACKUP_NAME, dir_fd=bfd)
     try:
-        os.remove(os.path.join(data_dir, "backups", FLAG))
+        os.remove(FLAG, dir_fd=bfd)
     except FileNotFoundError:
         pass
     print(f"homehoard restore: restored consistent copy from HA backup "
@@ -169,7 +254,11 @@ def run(cmd, db_url, data_dir):
             _post(data_dir)
         else:
             _restore_if_needed(db_path, data_dir)
-    except (OSError, sqlite3.Error, HookError) as exc:
+    except HookError as exc:
+        # Curated message (no file contents, no secrets); non-zero aborts the backup.
+        print(f"homehoard backup: {cmd} failed: {exc}", file=sys.stderr)
+        return 1
+    except (OSError, sqlite3.Error) as exc:
         print(f"homehoard backup: {cmd} failed ({exc.__class__.__name__}); is the "
               f"data directory full or read-only? check {data_dir}/backups",
               file=sys.stderr)
