@@ -6,7 +6,7 @@ from werkzeug.utils import secure_filename
 
 from ..auth import current_group, login_required
 from ._scoping import get_owned_or_404
-from ._validation import json_body
+from ._validation import abort_fields, json_body
 from ..extensions import db
 from ..services import thumbnails, videos
 from ..models import Attachment, Bin, Document, Item, MaintenanceEntry
@@ -14,6 +14,32 @@ from ..schemas.serializers import attachment_out, bin_out, item_out
 from ..services import vault
 
 bp = Blueprint("attachments", __name__)
+
+# The kinds the UI creates ("photo"/"attachment" on upload, "video" via the
+# videos routes). Anything else is a client error, not a free-form label.
+ATTACHMENT_TYPES = ("attachment", "photo", "video")
+TITLE_MAX = 200
+
+
+def _clean_type(value: object) -> str:
+    if value not in ATTACHMENT_TYPES:
+        abort_fields({"type": "Type must be one of: " + ", ".join(ATTACHMENT_TYPES)},
+                     "Invalid attachment type")
+    return value
+
+
+def _clean_title(value: object) -> str:
+    if not isinstance(value, str) or len(value) > TITLE_MAX:
+        abort_fields({"title": f"Title must be text of at most {TITLE_MAX} characters"},
+                     "Invalid attachment title")
+    return value
+
+
+def _send_stored(path: str, title: str):
+    """send_file for a stored attachment; a file removed out of band is a 404."""
+    if not os.path.isfile(path):
+        return jsonify({"error": "that file is no longer on disk"}), 404
+    return send_file(path, download_name=title, as_attachment=True)
 
 
 def _get_item(item_id) -> Item:
@@ -31,8 +57,8 @@ def upload(item_id):
     if not file:
         return jsonify({"error": "file required"}), 422
 
-    atype = request.form.get("type", "attachment")
-    name = request.form.get("name") or file.filename
+    atype = _clean_type(request.form.get("type", "attachment"))
+    name = _clean_title(request.form.get("name") or file.filename)
     stored = f"{uuid.uuid4()}-{secure_filename(file.filename)}"
     path = os.path.join(current_app.config["attachments_dir"](), stored)
     file.save(path)
@@ -60,8 +86,7 @@ def download(item_id, attachment_id):
     att = db.session.get(Attachment, attachment_id)
     if not att or att.item_id != item_id:
         abort(404)
-    return send_file(att.document.path, download_name=att.document.title,
-                     as_attachment=True)
+    return _send_stored(att.document.path, att.document.title)
 
 
 @bp.put("/items/<item_id>/attachments/<attachment_id>")
@@ -73,9 +98,9 @@ def update(item_id, attachment_id):
         abort(404)
     data = json_body()
     if "type" in data:
-        att.type = data["type"]
+        att.type = _clean_type(data["type"])
     if "title" in data and att.document:
-        att.document.title = data["title"]
+        att.document.title = _clean_title(data["title"])
     if data.get("primary"):
         for other in item.attachments:
             other.primary = other.id == att.id
@@ -120,8 +145,8 @@ def bin_upload(bin_id):
     if not file:
         return jsonify({"error": "file required"}), 422
 
-    atype = request.form.get("type", "attachment")
-    name = request.form.get("name") or file.filename
+    atype = _clean_type(request.form.get("type", "attachment"))
+    name = _clean_title(request.form.get("name") or file.filename)
     stored = f"{uuid.uuid4()}-{secure_filename(file.filename)}"
     path = os.path.join(current_app.config["attachments_dir"](), stored)
     file.save(path)
@@ -147,8 +172,7 @@ def bin_download(bin_id, attachment_id):
     att = db.session.get(Attachment, attachment_id)
     if not att or att.bin_id != bin_id:
         abort(404)
-    return send_file(att.document.path, download_name=att.document.title,
-                     as_attachment=True)
+    return _send_stored(att.document.path, att.document.title)
 
 
 @bp.put("/bins/<bin_id>/attachments/<attachment_id>")
@@ -160,9 +184,9 @@ def bin_update(bin_id, attachment_id):
         abort(404)
     data = json_body()
     if "type" in data:
-        att.type = data["type"]
+        att.type = _clean_type(data["type"])
     if "title" in data and att.document:
-        att.document.title = data["title"]
+        att.document.title = _clean_title(data["title"])
     if data.get("primary"):
         for other in b.attachments:
             other.primary = other.id == att.id
@@ -204,7 +228,7 @@ def get_document(document_id):
         if os.path.isfile(tp):
             return send_file(tp, mimetype="image/jpeg",
                              download_name=doc.title)
-    return send_file(doc.path, download_name=doc.title, as_attachment=True)
+    return _send_stored(doc.path, doc.title)
 
 
 # ---------------------------------------------------------------------------

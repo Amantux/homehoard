@@ -62,3 +62,15 @@ def test_describe_422_when_nothing_found(app, auth_client, monkeypatch, gid):
 
 # Bulk enrichment moved to an async job (POST /jobs/enrich); see test_jobs.py for
 # its owner-only guard and per-item processing.
+
+
+def test_describe_keeps_only_http_sources(app, monkeypatch):
+    from app.services import enrich
+    _enable(app, monkeypatch, [
+        {"title": "a", "url": "javascript:alert(1)", "content": "Cordless drill."},
+        {"title": "b", "url": "data:text/html,x", "content": "x"},
+        {"title": "c", "url": "https://example.com/p", "content": "y"},
+    ])
+    with app.app_context():
+        out = enrich.describe({"name": "DCD777"})
+    assert out["sources"] == ["https://example.com/p"]
