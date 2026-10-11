@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.1.53
 
 - **Home Assistant backups no longer restart the add-on.** While it runs, the
   backup also carries a consistent copy of the database, which a restore
