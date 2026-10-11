@@ -12,7 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from ..auth import current_group, login_required, owner_required
 from ..extensions import db, limiter
 from ..models import Group, Item
-from ..services.csv_io import export_items, import_items
+from ..services.csv_io import CsvImportError, export_items, import_items
 from ._validation import json_body
 
 bp = Blueprint("misc", __name__)
@@ -406,12 +406,21 @@ def export():
 def do_import():
     file = request.files.get("csv") or request.files.get("file")
     if file:
-        text = file.read().decode("utf-8-sig")
+        try:
+            text = file.read().decode("utf-8-sig")
+        except UnicodeDecodeError:
+            return jsonify({"error": "file is not UTF-8 text"}), 422
     else:
-        text = (request.get_json(silent=True) or {}).get("data", "")
+        body = request.get_json(silent=True)
+        text = body.get("data", "") if isinstance(body, dict) else ""
+        if not isinstance(text, str):
+            return jsonify({"error": "data must be a string"}), 422
     if not text:
         return jsonify({"error": "no csv data"}), 422
-    count = import_items(current_group().id, text)
+    try:
+        count = import_items(current_group().id, text)
+    except CsvImportError as exc:
+        return jsonify({"error": str(exc)}), 422
     return jsonify({"imported": count}), 201
 
 
