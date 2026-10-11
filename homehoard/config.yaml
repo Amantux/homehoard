@@ -10,21 +10,22 @@ arch:
   - amd64
 init: false
 startup: services
-# Hot backup: the add-on keeps running. A file copy of the live WAL database
-# can be torn, so the live homehoard.db (+ -wal/-shm) is EXCLUDED and
-# backup_pre instead writes a consistent copy with SQLite's online backup API
-# to /data/backups/ha-backup.db, which the backup carries; backup_post deletes
-# it. If backup_pre fails, the Supervisor fails this add-on's backup rather than
-# store one without a database. On restore the entrypoint puts ha-backup.db back
-# in place (backup_hook.py restore-if-needed). Postgres: nothing is copied; back
-# it up with pg_dump.
+# Hot backup: the add-on keeps running. The live homehoard.db (+ -wal/-shm)
+# always travels in the backup. If the add-on is RUNNING, backup_pre also
+# writes a consistent copy with SQLite's online backup API to
+# /data/backups/ha-backup.db (a file copy of a WAL database being written can
+# be torn), and backup_post deletes it; if backup_pre fails, the Supervisor
+# fails this add-on's backup. If the add-on is STOPPED, the Supervisor runs no
+# hooks: the backup holds the live files only, consistent because nothing is
+# writing. On restore the entrypoint prefers the copy unless the live files are
+# over 15 min newer (backup_hook.py restore-if-needed). Databases kept
+# aside as corrupt are excluded so they don't ride along in every backup.
+# Postgres: nothing is copied; back it up with pg_dump.
 backup: hot
 backup_pre: python3 /app/backend/backup_hook.py pre
 backup_post: python3 /app/backend/backup_hook.py post
 backup_exclude:
-  - homehoard.db
-  - homehoard.db-wal
-  - homehoard.db-shm
+  - homehoard.db.corrupt-*
 # Seconds the Supervisor waits after SIGTERM before SIGKILL (default 10). An
 # upgrade migration on a large inventory can take longer than 10 s; being
 # killed mid-migration is what this prevents.

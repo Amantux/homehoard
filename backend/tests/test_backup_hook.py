@@ -1,10 +1,10 @@
 """Hot Home Assistant backups (backend/backup_hook.py, wired as backup_pre /
 backup_post in homehoard/config.yaml).
 
-The Supervisor tars /data while the add-on keeps running; the live SQLite
-file and its WAL are excluded, so the copy `pre` writes is the database the
-backup restores. That copy must be consistent even while another connection
-is writing, and must hold committed rows only.
+The Supervisor tars /data while the add-on keeps running. The live SQLite
+files travel too, but a file copy of them can be torn, so the copy `pre`
+writes is the database a restore prefers. That copy must be consistent even
+while another connection is writing, and must hold committed rows only.
 """
 import os
 import sqlite3
@@ -88,7 +88,7 @@ def test_unknown_command_is_rejected(tmp_path):
 
 
 def _restored_tree(tmp_path):
-    """/data as a restore leaves it: the copy, but no live DB (excluded)."""
+    """/data holding the copy but no live DB."""
     db_path, writer = _live_db(tmp_path)
     writer.execute("ROLLBACK")
     writer.close()
@@ -111,18 +111,77 @@ def test_restore_if_needed_puts_the_copy_in_place_when_the_db_is_missing(tmp_pat
     assert not (tmp_path / "backups" / backup_hook.BACKUP_NAME).exists()
 
 
-def test_restore_if_needed_leaves_a_healthy_live_db_alone(tmp_path):
+def _set_mtime(path, when):
+    os.utime(path, (when, when))
+
+
+def _copy_vs_live_tree(tmp_path, live_minus_copy):
+    """A healthy live DB with one row more than the copy `pre` wrote, plus
+    stale -wal/-shm files; mtimes set so the live files are `live_minus_copy`
+    seconds newer than the copy (negative: the copy is newer). Small gaps are
+    an HA restore (`pre` ran just before the tar); large ones a leftover from a
+    backup whose `post` never ran."""
     db_path, writer = _live_db(tmp_path)
     writer.execute("ROLLBACK")
     assert backup_hook.run("pre", _url(db_path), str(tmp_path)) == 0
-    writer.execute("INSERT INTO t (v) VALUES ('newer than the copy')")
+    writer.execute("INSERT INTO t (v) VALUES ('live only')")
     writer.close()
+    for suffix in ("-wal", "-shm"):
+        (tmp_path / ("homehoard.db" + suffix)).write_bytes(b"stale")
+    copy = tmp_path / "backups" / backup_hook.BACKUP_NAME
+    copy_t = 2_000_000_000
+    _set_mtime(copy, copy_t)
+    for suffix in ("", "-wal", "-shm"):
+        _set_mtime(tmp_path / ("homehoard.db" + suffix), copy_t + live_minus_copy)
+    return db_path, copy
+
+
+def test_restore_if_needed_discards_a_leftover_copy_older_than_the_live_db(tmp_path, capsys):
+    db_path, copy = _copy_vs_live_tree(tmp_path, live_minus_copy=3600)
+    before = db_path.read_bytes()
     assert backup_hook.run("restore-if-needed", _url(db_path), str(tmp_path)) == 0
+    assert not copy.exists()
+    assert db_path.read_bytes() == before
+    assert (tmp_path / "homehoard.db-wal").read_bytes() == b"stale"
     conn = sqlite3.connect(db_path)
     try:
         assert conn.execute("SELECT count(*) FROM t").fetchone()[0] == 2001
     finally:
         conn.close()
+    assert "leftover" in capsys.readouterr().out
+
+
+def test_restore_if_needed_prefers_the_copy_when_live_is_newer_within_the_window(tmp_path, capsys):
+    # A write landed between `pre` and the tar reading the WAL.
+    db_path, copy = _copy_vs_live_tree(tmp_path, live_minus_copy=120)
+    assert backup_hook.run("restore-if-needed", _url(db_path), str(tmp_path)) == 0
+    assert not copy.exists()
+    assert not (tmp_path / "homehoard.db-wal").exists()
+    assert not (tmp_path / "homehoard.db-shm").exists()
+    conn = sqlite3.connect(db_path)
+    try:
+        assert conn.execute("SELECT count(*) FROM t").fetchone()[0] == 2000
+    finally:
+        conn.close()
+    out = capsys.readouterr().out
+    assert "restored consistent copy from HA backup" in out
+    assert "2033-05-18" in out  # the copy's mtime (2_000_000_000), in UTC
+
+
+def test_restore_if_needed_prefers_a_copy_newer_than_the_live_db(tmp_path, capsys):
+    db_path, copy = _copy_vs_live_tree(tmp_path, live_minus_copy=-100_000_000)
+    assert backup_hook.run("restore-if-needed", _url(db_path), str(tmp_path)) == 0
+    assert not copy.exists()
+    assert not (tmp_path / "homehoard.db-wal").exists()
+    assert not (tmp_path / "homehoard.db-shm").exists()
+    conn = sqlite3.connect(db_path)
+    try:
+        assert conn.execute("SELECT count(*) FROM t").fetchone()[0] == 2000
+    finally:
+        conn.close()
+    out = capsys.readouterr().out
+    assert "restored consistent copy from HA backup" in out
+    assert "2033-05-18" in out  # the copy's mtime (2_000_000_000), in UTC
 
 
 def test_restore_if_needed_replaces_a_corrupt_db_and_keeps_it_aside(tmp_path):

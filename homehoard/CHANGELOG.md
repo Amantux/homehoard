@@ -2,9 +2,11 @@
 
 ## Unreleased
 
-- **Home Assistant backups no longer restart the add-on.** A consistent copy of
-  the database is taken while it keeps running, and restoring a backup puts
-  that copy back automatically. (Postgres users: keep using pg_dump.)
+- **Home Assistant backups no longer restart the add-on.** While it runs, the
+  backup also carries a consistent copy of the database, which a restore
+  prefers; a backup of a stopped add-on still contains the database. A stale
+  copy left by an interrupted backup is cleaned up automatically. (Postgres
+  users: keep using pg_dump.)
 - **Changing your password now signs out every other session**, and API keys
   can be given an optional expiry date — enforced for the web API and the MCP
   server alike.

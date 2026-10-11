@@ -3,15 +3,18 @@
 homehoard/config.yaml sets `backup: hot` with
   backup_pre:  python3 /app/backend/backup_hook.py pre
   backup_post: python3 /app/backend/backup_hook.py post
-and excludes the live homehoard.db (+ -wal/-shm) from the backup tar, because
-a file copy of a WAL database that is being written can be torn. Instead `pre`
-writes a consistent copy with SQLite's online backup API to
-<DATA_DIR>/backups/ha-backup.db, which the tar picks up; `post` removes it.
+and writes a consistent copy with SQLite's online backup API to
+<DATA_DIR>/backups/ha-backup.db, which the tar picks up next to the live
+homehoard.db (+ -wal/-shm); `post` removes it. The live files travel too, so
+a backup of a STOPPED add-on (no hooks run) still holds the database, and is
+consistent because nothing was writing.
 
-After an HA restore /data holds that copy but no live database, so
-`restore-if-needed` (run by the entrypoint before the app starts) puts it in
-place. It also replaces a live database that fails `PRAGMA quick_check`,
-keeping the broken file aside. A healthy live database is never touched.
+`restore-if-needed` (run by the entrypoint before the app starts) puts the
+copy in place when the live database is missing or fails `PRAGMA
+quick_check` (keeping the broken file aside), or when the live files are at
+most RESTORE_WINDOW newer than the copy (after an HA restore: the live files
+may be torn). A copy older than that is a leftover from a backup whose `post`
+never ran, and is deleted.
 
 The Supervisor runs these with `docker exec` (as root, the image's env, no
 shell): paths are absolute, settings come from the same adapter the app uses,
@@ -24,6 +27,10 @@ import sys
 from datetime import datetime, timezone
 
 BACKUP_NAME = "ha-backup.db"
+# How much newer than the copy the live files may be and still lose to it on
+# restore: generous for the Supervisor tarring this add-on's /data (with
+# attachments) right after `pre`. See _restore_if_needed.
+RESTORE_WINDOW = 15 * 60
 
 
 class HookError(RuntimeError):
@@ -109,17 +116,48 @@ def _post(data_dir):
         pass
 
 
+def _live_mtime(db_path):
+    """Newest mtime among the live main file and its -wal/-shm, or None."""
+    times = []
+    for suffix in ("", "-wal", "-shm"):
+        try:
+            times.append(os.stat(db_path + suffix).st_mtime)
+        except FileNotFoundError:
+            pass
+    return max(times) if times else None
+
+
 def _restore_if_needed(db_path, data_dir):
     copy = os.path.join(data_dir, "backups", BACKUP_NAME)
     if not os.path.exists(copy):
         return
+    copy_mtime = os.stat(copy).st_mtime
+    copy_when = datetime.fromtimestamp(copy_mtime, timezone.utc).isoformat(timespec="seconds")
+    age = datetime.now(timezone.utc).timestamp() - copy_mtime
     if os.path.exists(db_path):
         if _quick_check_ok(db_path):
-            return
-        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        os.replace(db_path, f"{db_path}.corrupt-{stamp}")
-        print(f"homehoard restore: database failed its integrity check; "
-              f"kept aside as {os.path.basename(db_path)}.corrupt-{stamp}")
+            # Both exist. Everything in /data looks the same after an HA
+            # restore and after a crash between `pre` and `post`, so timing
+            # is the only signal. `pre` runs just before the tar, so after a
+            # restore the live files (possibly torn) are at most the tar's
+            # duration newer than the copy: prefer the copy. (The tar restores
+            # mtimes; were it not to, every file would carry extraction time
+            # and the copy would still win.) Live files newer than that are a
+            # leftover copy's database moving on: discard the copy. A leftover
+            # whose add-on restarts within the window loses at most those
+            # minutes of writes (a rare double failure); a restore whose tar
+            # took longer keeps the live files, which at worst lack the same
+            # window's writes that the copy lacks too.
+            if _live_mtime(db_path) - copy_mtime > RESTORE_WINDOW:
+                os.remove(copy)
+                print(f"homehoard restore: discarded a leftover backup copy "
+                      f"(copy {copy_when}, {age:.0f}s old) well older than the live database")
+                return
+        else:
+            stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+            os.replace(db_path, f"{db_path}.corrupt-{stamp}")
+            print(f"homehoard restore: database failed its integrity check; "
+                  f"kept aside as {os.path.basename(db_path)}.corrupt-{stamp}")
     # A WAL/SHM left beside a replaced main file would be replayed into it.
     for suffix in ("-wal", "-shm"):
         try:
@@ -128,7 +166,8 @@ def _restore_if_needed(db_path, data_dir):
             pass
     _sqlite_copy(copy, db_path, data_dir)
     os.remove(copy)
-    print("homehoard restore: database restored from the Home Assistant backup copy")
+    print(f"homehoard restore: restored consistent copy from HA backup "
+          f"(copy {copy_when}, {age:.0f}s old)")
 
 
 def run(cmd, db_url, data_dir):
