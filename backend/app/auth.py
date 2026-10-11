@@ -356,6 +356,10 @@ def _resolve_current_user():
        standalone open deployment and an ingress request with no identity
        headers.
     """
+    # The vault fingerprints on the acting key only when one is relayed; clear
+    # it on EVERY path (JWT, ingress, open mode too) so nothing carries over
+    # from an earlier resolution in the same context.
+    g.pop("vault_credential", None)
     # Only an API key can be read-only; it overwrites this. JWT, ingress and the
     # open-mode fallback are explicitly write.
     g.token_access = "write"
@@ -404,9 +408,6 @@ def _bearer_token(header: str) -> str | None:
 
 
 def _user_from_api_token(raw: str):
-    # The vault fingerprints on the acting key only when one is relayed; make
-    # sure nothing carries over from an earlier request in the same context.
-    g.pop("vault_credential", None)
     record = (
         db.session.query(ApiToken)
         .filter_by(token_hash=hash_token(raw))

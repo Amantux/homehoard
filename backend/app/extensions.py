@@ -48,6 +48,19 @@ def _digest(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8", "replace")).hexdigest()[:16]
 
 
+def normalise_credential(header: str) -> str:
+    """The credential inside an Authorization header, spelled one way.
+
+    auth._bearer_token accepts a case-insensitive scheme and any whitespace, so
+    `Bearer X`, `bearer X` and `Bearer  X` are ONE identity; keying a bucket on
+    the raw header would hand each spelling its own budget. Mirrors
+    services/vault.py::_credential (kept here, not imported from auth.py, to
+    avoid an import cycle)."""
+    raw = (header or "").strip()
+    raw = raw[7:] if raw.lower().startswith("bearer ") else raw
+    return raw.strip()
+
+
 def _limiter_key() -> str:
     """Bucket key, evaluated by Flask-Limiter on every request.
 
@@ -57,8 +70,8 @@ def _limiter_key() -> str:
     would let an attacker mint a fresh bucket per attempt. Register stays on
     the bare IP for the same reason, and because keying it on the submitted
     email would let one address mint unlimited accounts by varying the email.
-    Elsewhere: the credential (hash of the Authorization header) when present,
-    else the remote IP. Never raises."""
+    Elsewhere: the credential (hash of the normalised Authorization header)
+    when present, else the remote IP. Never raises."""
     ip = get_remote_address() or "unknown"
     try:
         if request.path.endswith(_LOGIN_PATH):
@@ -73,9 +86,9 @@ def _limiter_key() -> str:
             return ip
         if request.path.endswith(_REGISTER_PATH):
             return ip
-        auth = request.headers.get("Authorization")
-        if auth:
-            return "cred:" + _digest(auth)
+        cred = normalise_credential(request.headers.get("Authorization") or "")
+        if cred:
+            return "cred:" + _digest(cred)
     except Exception:  # noqa: BLE001 - a key function must never break a request
         pass
     return ip

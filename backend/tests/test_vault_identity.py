@@ -157,3 +157,22 @@ def test_non_finite_money_is_422(auth_client, field, value):
     item = auth_client.post("/api/v1/items", json={"name": "Lamp"}).get_json()
     r = auth_client.patch(f"/api/v1/items/{item['id']}", json={field: value})
     assert r.status_code == 422, r.get_data(as_text=True)
+
+
+# (P109/B2) -------------------------------------------------------------------
+
+def test_asset_lookup_hides_hidden_items_while_locked(app, auth_client):
+    # Asset ids are sequential: an unfiltered GET /assets/<id> enumerates the
+    # vault one id at a time.
+    item = _hidden_item(app, auth_client, "Secret Watch")
+    with app.app_context():
+        asset = db.session.get(Item, item["id"]).asset_id
+    assert asset is not None
+    assert auth_client.post("/api/v1/vault/passphrase", json={"phrase": PHRASE}).status_code == 200
+
+    locked = auth_client.get(f"/api/v1/assets/{asset}")
+    assert _hidden_names(locked) == []
+    assert locked.get_json()["total"] == 0
+
+    assert auth_client.post("/api/v1/vault/unlock", json={"phrase": PHRASE}).status_code == 200
+    assert _hidden_names(auth_client.get(f"/api/v1/assets/{asset}")) == ["Secret Watch"]

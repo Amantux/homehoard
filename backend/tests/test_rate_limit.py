@@ -179,3 +179,68 @@ def test_login_spraying_across_emails_is_capped_per_address(limited_client):
     for i in range(40):
         assert _login(limited_client, f"u{i}@example.com").status_code != 429
     assert _login(limited_client, "u99@example.com").status_code == 429
+
+
+def _register_and_login(c, email="v@v.com"):
+    c.post("/api/v1/users/register",
+           json={"email": email, "password": "password", "name": "V"})
+    tok = c.post("/api/v1/users/login",
+                 json={"username": email, "password": "password"}).get_json()["token"]
+    return tok.split(" ", 1)[-1]  # login returns "Bearer <jwt>"; keep the bare jwt
+
+
+# P109/B1: one credential, many spellings. auth._bearer_token accepts any scheme
+# case and inner whitespace, so the bucket key must too.
+_SPELLINGS = ["Bearer {}", "bearer {}", "BEARER {}", "Bearer  {}", " Bearer {} ",
+              "bEaReR   {}", "{}", "Bearer {}\t", "bearer  {} ",
+              "Bearer   {}  ", "BeArEr {}"]
+
+
+def test_limiter_key_ignores_authorization_spelling(limited_client):
+    from app.extensions import _limiter_key
+
+    app = limited_client.application
+    keys = set()
+    for spelling in _SPELLINGS:
+        with app.test_request_context("/api/v1/vault/unlock",
+                                      headers={"Authorization": spelling.format("tok")},
+                                      environ_base={"REMOTE_ADDR": "10.0.0.1"}):
+            keys.add(_limiter_key())
+    assert len(keys) == 1, keys
+
+
+def test_header_spelling_rotation_does_not_mint_buckets(limited_client):
+    # /vault/passphrase: 10/hour on the credential key, and no per-user bucket
+    # to mask a regression in the key itself.
+    tok = _register_and_login(limited_client)
+    codes = [
+        limited_client.post("/api/v1/vault/passphrase", json={"phrase": "x"},
+                            headers={"Authorization": s.format(tok)}).status_code
+        for s in _SPELLINGS
+    ]
+    assert 429 not in codes[:10], codes
+    assert codes[10] == 429, codes
+
+
+# P109/SF1: every login is a fresh JWT = a fresh credential bucket, so unlock
+# also draws from a bucket keyed on the authenticated user.
+def test_unlock_user_bucket_is_shared_across_logins(limited_client):
+    import time
+
+    tok_a = _register_and_login(limited_client)
+    time.sleep(1.1)  # a second login in the same second can mint the same JWT
+    tok_b = limited_client.post("/api/v1/users/login", json={
+        "username": "v@v.com", "password": "password"}).get_json()["token"]
+    tok_b = tok_b.split(" ", 1)[-1]
+    assert tok_a != tok_b
+    assert limited_client.post("/api/v1/vault/passphrase", json={"phrase": "right"},
+                               headers={"Authorization": f"Bearer {tok_a}"}).status_code == 200
+
+    def unlock(tok, phrase="wrong"):
+        return limited_client.post("/api/v1/vault/unlock", json={"phrase": phrase},
+                                   headers={"Authorization": f"Bearer {tok}"}).status_code
+
+    assert [unlock(tok_a) for _ in range(5)] == [403] * 5
+    assert [unlock(tok_b) for _ in range(5)] == [403] * 5
+    # B's credential bucket has 5 left; only the user bucket can refuse this.
+    assert unlock(tok_b, "right") == 429

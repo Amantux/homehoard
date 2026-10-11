@@ -4,7 +4,8 @@ The REST API is the only implementation — the MCP tools and the chat handlers
 are thin wrappers over these, so the three surfaces cannot drift on what
 "unlocked" means.
 """
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, abort, jsonify, request
+from limits import parse_many
 
 from ..auth import current_group, current_user, login_required, owner_required
 from ..models import Item
@@ -23,21 +24,50 @@ _MAX_PHRASE = 1024
 # Passphrase guesses are a guessable-secret oracle, so every surface that takes
 # one (POST /vault/unlock and the assistant's passphrase turn) draws from this
 # ONE shared bucket — a second door with its own (or no) limit defeats it.
-_UNLOCK_LIMIT = limiter.shared_limit("10/minute;60/hour", scope="vault-unlock")
+_UNLOCK_RATE = "10/minute;60/hour"
+_UNLOCK_LIMIT = limiter.shared_limit(_UNLOCK_RATE, scope="vault-unlock")
+# ...and from a second budget keyed on the AUTHENTICATED user. The credential
+# bucket alone is per-session, and every login mints a fresh JWT — i.e. a fresh
+# bucket — so it bounds one session, not one guesser.
+_USER_UNLOCK_ITEMS = parse_many(_UNLOCK_RATE)
+_USER_UNLOCK_SCOPE = "vault-unlock-user"
+
+
+def _hit(items, key: str, scope: str) -> bool:
+    """Consume one hit per item, with the storage key shaped exactly as the
+    Flask-Limiter decorator shapes it (prefix, key, scope). False = exhausted."""
+    args = [key, scope]
+    if limiter._key_prefix:
+        args = [limiter._key_prefix, *args]
+    for item in items:
+        if not limiter.limiter.hit(item, *args):
+            return False
+    return True
+
+
+def user_unlock_attempt_allowed() -> bool:
+    """Consume one attempt from the per-user unlock bucket ONLY. Call after
+    authentication. Always True when the limiter is disabled."""
+    if not limiter.enabled:
+        return True
+    return _hit(_USER_UNLOCK_ITEMS, f"user:{current_user().id}",
+                _USER_UNLOCK_SCOPE)
 
 
 def unlock_attempt_allowed() -> bool:
-    """Consume one attempt from the shared unlock bucket (same storage, key and
-    scope the @_UNLOCK_LIMIT decorator uses). False = exhausted: do not try the
-    passphrase. Always True when the limiter is disabled."""
+    """Consume one attempt from BOTH unlock buckets — the shared credential
+    bucket (same storage, key and scope the @_UNLOCK_LIMIT decorator uses) and
+    the per-user one. For surfaces with no decorator (the chat phrase turn);
+    POST /vault/unlock gets the credential hit from its decorator and calls
+    user_unlock_attempt_allowed() only, so each bucket is hit once per attempt.
+    False = exhausted: do not try the passphrase."""
     if not limiter.enabled:
         return True
     for lim in _UNLOCK_LIMIT:
-        if not limiter.limiter.hit(
-                lim.limit, lim.key_func(),
-                lim.scope_for(request.endpoint or "", request.method)):
+        if not _hit([lim.limit], lim.key_func(),
+                    lim.scope_for(request.endpoint or "", request.method)):
             return False
-    return True
+    return user_unlock_attempt_allowed()
 
 
 @bp.get("/vault/status")
@@ -87,6 +117,9 @@ def set_passphrase():
 @_UNLOCK_LIMIT
 @login_required
 def unlock():
+    # Credential bucket: the decorator above. User bucket: here, after auth.
+    if not user_unlock_attempt_allowed():
+        abort(429)
     data = request.get_json(silent=True) or {}
     phrase = (data.get("phrase") or "")[:_MAX_PHRASE]
     group = current_group()

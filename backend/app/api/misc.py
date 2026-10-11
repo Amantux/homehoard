@@ -538,8 +538,12 @@ def get_by_asset(asset_id):
             num = int(asset_id)
     except ValueError:
         return jsonify({"error": "invalid asset id"}), 422
+    from ..services import vault
+
+    # Through the vault: asset ids are sequential, so an unfiltered lookup
+    # would enumerate hidden items one id at a time while locked.
     items = (
-        db.session.query(Item)
+        vault.visible(db.session.query(Item))
         .filter_by(group_id=current_group().id, asset_id=num)
         .all()
     )

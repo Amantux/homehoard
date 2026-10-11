@@ -54,7 +54,8 @@ def alert_digest(group_id, now=None):
     # they compare by .date() against the household's local "today" — the day
     # rolls over at local midnight, not UTC's. Never shift the stored value.
     today = to_local(now).date()
-    items = db.session.query(Item).filter_by(group_id=group_id).all()
+    items = (vault.never_hidden(db.session.query(Item))
+             .filter_by(group_id=group_id).all())
 
     overdue_checkouts = [
         i for i in items

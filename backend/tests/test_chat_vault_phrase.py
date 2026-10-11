@@ -326,3 +326,26 @@ def test_chat_stream_error_event_hides_upstream_text(auth_client, monkeypatch):
     err = [e for e in events if e["type"] == "error"][0]["error"]
     assert err.startswith("The AI provider returned an error (ref ")
     assert "upstream-secret" not in err and "claude request failed" not in err
+
+
+def test_chat_and_endpoint_share_the_user_bucket_across_logins(limited):
+    # P109/SF1: each login mints a fresh JWT = a fresh credential bucket, so the
+    # chat door must ALSO draw from the per-user bucket. 5 endpoint guesses on
+    # login A + 5 chat guesses on login B exhaust it for both sessions.
+    import time
+
+    c, app, gid = limited
+    _setup_vault(c, app, gid)
+    time.sleep(1.1)  # a second login in the same second can mint the same JWT
+    tok_b = c.post("/api/v1/users/login",
+                   json={"username": "t@t.com", "password": "password"}).get_json()["token"]
+    assert tok_b != c.environ_base["HTTP_AUTHORIZATION"]
+    b = app.test_client()
+    b.environ_base["HTTP_AUTHORIZATION"] = tok_b
+
+    for _ in range(5):
+        assert c.post("/api/v1/vault/unlock", json={"phrase": "nope"}).status_code == 403
+    for _ in range(5):
+        assert "isn't right" in _chat_guess(b, app, gid).get_json()["reply"]
+    assert "Too many" in _chat_guess(b, app, gid, phrase=PHRASE).get_json()["reply"]
+    assert c.post("/api/v1/vault/unlock", json={"phrase": PHRASE}).status_code == 429
