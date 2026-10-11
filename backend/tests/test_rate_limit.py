@@ -171,3 +171,11 @@ def test_proxy_hops_option_round_trips_through_the_settings_adapter():
     s = load_settings(env={"HBOX_PROXY_HOPS": "1"}, ha_options={"proxy_hops": 3},
                       validate=False)
     assert s.PROXY_HOPS == 3
+
+
+def test_login_spraying_across_emails_is_capped_per_address(limited_client):
+    # Per-email buckets alone would let one address try 10 passwords against
+    # every account; the second, address-keyed limit stops that at 40/min.
+    for i in range(40):
+        assert _login(limited_client, f"u{i}@example.com").status_code != 429
+    assert _login(limited_client, "u99@example.com").status_code == 429
