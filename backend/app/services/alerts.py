@@ -9,7 +9,7 @@ from sqlalchemy.orm import joinedload
 from ..extensions import db
 from ..models import Item, MaintenanceEntry
 from . import vault
-from ..timeutil import as_utc, utcnow
+from ..timeutil import as_utc, to_local, utcnow
 
 # Warranties within this window are "expiring soon" for alerting purposes.
 WARRANTY_SOON_DAYS = 30
@@ -50,6 +50,10 @@ def alert_digest(group_id, now=None):
     `now` is injectable for testing. `isEmpty` is True when nothing needs
     attention, so a caller can skip sending a "nothing to report" message."""
     now = as_utc(now) or utcnow()
+    # Warranty/maintenance dates are calendar dates (stored as UTC midnight), so
+    # they compare by .date() against the household's local "today" — the day
+    # rolls over at local midnight, not UTC's. Never shift the stored value.
+    today = to_local(now).date()
     items = db.session.query(Item).filter_by(group_id=group_id).all()
 
     overdue_checkouts = [
@@ -58,10 +62,10 @@ def alert_digest(group_id, now=None):
     ]
     warranty_soon = [
         i for i in active_warranty_items(group_id)
-        if now <= as_utc(i.warranty_expires) <= now + timedelta(days=WARRANTY_SOON_DAYS)
+        if today <= i.warranty_expires.date() <= today + timedelta(days=WARRANTY_SOON_DAYS)
     ]
     maintenance_overdue = [
-        m for m in open_maintenance(group_id) if as_utc(m.scheduled_date) < now
+        m for m in open_maintenance(group_id) if m.scheduled_date.date() < today
     ]
     # include_hidden=False, NOT the default: the dispatcher runs inside a
     # request, and if that session happened to be vault-unlocked the default

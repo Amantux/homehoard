@@ -21,7 +21,7 @@ from ..services import money
 from ..services.alerts import active_warranty_items as _active_warranty_items
 from ..services.alerts import open_maintenance as _open_maintenance
 from ..services import vault
-from ..timeutil import as_utc, utcnow
+from ..timeutil import as_utc, to_local, utcnow
 
 bp = Blueprint("ha", __name__)
 
@@ -42,6 +42,9 @@ def _parse(value):
 def summary():
     gid = current_group().id
     now = utcnow()
+    # Calendar dates (warranty, maintenance) compare by .date() against the
+    # household's local day; `now` stays the UTC instant for checkout_due.
+    today = to_local(now).date()
     # Aggregates and short lists in SQL: the summary never loads every item.
     def items():
         return vault.visible(db.session.query(Item).filter(Item.group_id == gid))
@@ -57,12 +60,12 @@ def summary():
     item_count = len(priced)
 
     warranty_items = _active_warranty_items(gid)
-    exp_30 = [i for i in warranty_items if now <= as_utc(i.warranty_expires) <= now + timedelta(days=30)]
-    exp_90 = [i for i in warranty_items if now <= as_utc(i.warranty_expires) <= now + timedelta(days=90)]
+    exp_30 = [i for i in warranty_items if today <= i.warranty_expires.date() <= today + timedelta(days=30)]
+    exp_90 = [i for i in warranty_items if today <= i.warranty_expires.date() <= today + timedelta(days=90)]
 
     maint = _open_maintenance(gid)
-    overdue = [m for m in maint if as_utc(m.scheduled_date) < now]
-    upcoming_30 = [m for m in maint if now <= as_utc(m.scheduled_date) <= now + timedelta(days=30)]
+    overdue = [m for m in maint if m.scheduled_date.date() < today]
+    upcoming_30 = [m for m in maint if today <= m.scheduled_date.date() <= today + timedelta(days=30)]
 
     # Overview lists — power the Home Assistant "Overview" dashboard cards.
     recent_items = items().order_by(Item.created_at.desc()).limit(6).all()
@@ -140,7 +143,7 @@ def summary():
                         "id": m.id, "name": m.name, "itemId": m.item_id,
                         "itemName": m.item.name if m.item else None,
                         "scheduled": m.scheduled_date.date().isoformat(),
-                        "overdue": as_utc(m.scheduled_date) < now,
+                        "overdue": m.scheduled_date.date() < today,
                     }
                     for m in sorted(maint, key=lambda x: x.scheduled_date)
                 ],
