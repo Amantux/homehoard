@@ -4,17 +4,17 @@ Flask-SQLAlchemy==3.1.1
 # >=5.0.0 for CVE-2024-6221 (ACL Private-Network) and related CORS fixes.
 Flask-Cors==6.0.5
 Flask-Limiter==4.1.1
-SQLAlchemy==2.0.51
+SQLAlchemy==2.1.4
 # Schema migrations (SQLite + Postgres). Replaces the old create_all/_migrate.
 alembic==1.20.0
 # Postgres driver (optional backend). psycopg 3 bundles libpq via [binary];
 # unused when HBOX_DATABASE_URL is blank (SQLite default).
-psycopg[binary]==3.3.4
+psycopg[binary]==3.3.6
 PyJWT==2.15.1
 passlib==1.7.4
 # passlib 1.7.4 reads bcrypt.__about__ which bcrypt>=4.1 removed; pin below that.
 bcrypt==4.0.1
-python-dotenv==1.2.2
+python-dotenv==1.2.4
 qrcode[pil]==8.2
 # Photo thumbnails (services/thumbnails.py). Already present transitively via
 # qrcode[pil]; pinned explicitly because the app now imports PIL directly.
@@ -22,7 +22,7 @@ Pillow==12.3.0
 # >=23.0.0 for CVE-2024-6827 (Transfer-Encoding request smuggling).
 gunicorn==26.2.0
 # MCP server exposed to Home Assistant (runs alongside the app in the same container)
-mcp==1.29.0  # pin: newer mcp dropped mcp.server.fastmcp (breaks the MCP server + CI)
+mcp==1.30.0  # pin: newer mcp dropped mcp.server.fastmcp (breaks the MCP server + CI)
 uvicorn==0.54.0
 httpx==0.28.1
 # AI providers (lazy-imported by services/ai; only loaded when that provider is
@@ -30,5 +30,5 @@ httpx==0.28.1
 # the anthropic SDK. A pure-Ollama install never imports these.
 # Floors chosen for httpx>=0.28 compatibility: older openai/anthropic pass the
 # removed `proxies` kwarg to httpx and crash on client construction.
-anthropic==1.13.0
+anthropic==1.14.0
 openai==2.48.0
