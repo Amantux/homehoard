@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **One-tap restock.** Low items on the restock list get a one-tap 'mark stocked' action; the next suggested quantity recalculates from the restock rule (reach target, min-stock floor).
+
 ## 1.1.55
 
 - Maintenance release.

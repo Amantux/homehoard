@@ -9,7 +9,6 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
-- **One-tap restock.** Low items on the restock list can be marked stocked in one tap; the next suggested quantity recalculates from the canonical rule (restock to target, min-stock floor).
 - **MCP tools sharpened (HA voice / agents).** New tools: `inventory_value`
   (what it's worth / insured vs. uninsured / by room & label), `warranties_expiring`,
   `maintenance_due`, and `describe_item` (AI web-search enrich). Clarified that
