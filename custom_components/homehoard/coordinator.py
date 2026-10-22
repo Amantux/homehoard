@@ -79,6 +79,18 @@ class HomeHoardDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             resp.raise_for_status()
             return await resp.json()
 
+    async def _post_json(self, path: str, json: dict | None = None) -> dict:
+        """POST JSON to a HomeHoard API endpoint."""
+        url = build_url(self.host, self.port, path)
+        try:
+            async with self._session.post(
+                url, json=json or {}, headers=self._headers, timeout=_TIMEOUT
+            ) as resp:
+                resp.raise_for_status()
+                return await resp.json()
+        except (ClientError, asyncio.TimeoutError):
+            return {}
+
     async def contents(self, name: str) -> dict:
         """List what's inside a named bin or location (voice: 'what's in X')."""
         results = await self.search(name, types="bin,location")
