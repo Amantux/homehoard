@@ -72,23 +72,5 @@
         }
       }
     }
-  },
-  "notification_actions": {
-    "hoard_checkin": {
-      "name": "Check in",
-      "description": "Check an item back into HomeHoard"
-    },
-    "hoard_checkout": {
-      "name": "Check out",
-      "description": "Check an item out of HomeHoard"
-    },
-    "hoard_maintenance_done": {
-      "name": "Mark Maintenance Done",
-      "description": "Complete a maintenance entry"
-    },
-    "hoard_restock": {
-      "name": "Reorder",
-      "description": "Record a reorder intent for a low-stock item"
-    }
   }
 }
