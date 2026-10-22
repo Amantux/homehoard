@@ -37,7 +37,7 @@
       }
     }
   },
-  "actions": {
+  "services": {
     "check_in": {
       "name": "Check in",
       "description": "Check an item back into HomeHoard (mark it as here) by name. Also triggered by actionable notification actions."
