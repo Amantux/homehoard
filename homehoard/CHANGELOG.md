@@ -27,6 +27,10 @@
   a missing attachment file reports "not found".
 - DOCS gains a "Security notes" section.
 
+## 1.1.55
+
+- Maintenance release.
+
 ## 1.1.54
 
 - **Restoring a Home Assistant backup never has to guess.** While HA archives
