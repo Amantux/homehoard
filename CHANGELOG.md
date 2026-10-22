@@ -9,6 +9,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Actionable HA notifications.** Digest notifications carry one-tap actions
+  (check-in, check-out, mark maintenance done, reorder) delivered back to
+  HomeHoard through the `mobile_app_notification_action` event bus.
 - **MCP tools sharpened (HA voice / agents).** New tools: `inventory_value`
   (what it's worth / insured vs. uninsured / by room & label), `warranties_expiring`,
   `maintenance_due`, and `describe_item` (AI web-search enrich). Clarified that

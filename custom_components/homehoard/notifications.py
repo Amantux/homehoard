@@ -70,7 +70,7 @@ def async_setup(hass: HomeAssistant) -> None:
     @callback
     def handle_notification_action(event: dict) -> None:
         """Handle a mobile_app_notification_action event."""
-        action = event.get("action")
+        action = (event.data or {}).get("action")
         if not action:
             return
 
