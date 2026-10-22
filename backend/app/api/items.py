@@ -490,6 +490,61 @@ def undo_merge():
     return jsonify(item_out(item)), 201
 
 
+@bp.post("/restock/<item_id>/restocked")
+@login_required
+def restock_restocked(item_id):
+    """Mark an item as restocked by setting its quantity to the suggested amount.
+    
+    - Single-holding items: write holding + item.quantity via services/holdings
+    - Multi-holding items: 409 with {detail: edit placements} so the row falls back
+      to a link to the item page
+    - No body -> use restock_state(item).suggestedQuantity; optional {quantity: n}
+      overrides (validated by the same _validate_quantity/to_quantity rule)
+    """
+    from ..services.restock import restock_state
+    from ..services.holdings import ensure_holding, resync_item
+    
+    item = db.session.get(Item, item_id)
+    if item is None or item.group_id != current_group().id:
+        abort(404)
+    if not vault.readable(item):
+        abort(404)
+    
+    # Multi-holding check FIRST: one-tap never edits placements, even when the
+    # rolled-up quantity happens to be fine (the UI falls back to the item link).
+    if len(item.holdings) > 1:
+        abort(409, description="edit placements")
+    
+    state = restock_state(item)
+    if state is None:
+        abort(422, description="item has no restock policy (no minQuantity)")
+    if not state["isLow"]:
+        abort(422, description="item is not low (no restock needed)")
+    
+    # Get quantity to set
+    data = json_body()
+    if data:
+        _validate_quantity(data)
+        if "quantity" in data and data["quantity"] is not None:
+            quantity = data["quantity"]
+        else:
+            quantity = state["suggestedQuantity"]
+    else:
+        quantity = state["suggestedQuantity"]
+    
+    # Ensure single holding exists
+    if not item.holdings:
+        ensure_holding(item)
+    
+    # Update the single holding's quantity
+    item.holdings[0].quantity = quantity
+    resync_item(item)
+    db.session.commit()
+    
+    # Return updated restock state
+    return jsonify(restock_state(item))
+
+
 @bp.get("/restock")
 @login_required
 def restock():
