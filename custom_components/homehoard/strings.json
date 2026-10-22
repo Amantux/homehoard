@@ -54,23 +54,5 @@
       "name": "Locate",
       "description": "Find items, bins, or locations in HomeHoard and where they are."
     }
-  },
-  "automation": {
-    "blueprint": {
-      "homehoard_alert_notification": {
-        "name": "HomeHoard Alert Digest Notification",
-        "description": "Send an actionable notification with the HomeHoard alert digest (low stock, overdue maintenance, due checkouts).",
-        "input": {
-          "group_id": {
-            "name": "HomeHoard Group",
-            "description": "The HomeHoard group to monitor (from the sensor's attributes)"
-          },
-          "notifier": {
-            "name": "Notifier",
-            "description": "The notification service to use (e.g., mobile_app_<device_name>)"
-          }
-        }
-      }
-    }
   }
 }
