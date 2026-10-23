@@ -419,9 +419,12 @@ def do_import():
         return jsonify({"error": "no csv data"}), 422
     try:
         count = import_items(current_group().id, text)
-    except CsvImportError:
-        current_app.logger.warning("CSV import validation failed", exc_info=True)
-        return jsonify({"error": "invalid csv data"}), 422
+    except CsvImportError as exc:
+        # CsvImportError messages are curated validation strings (see
+        # csv_io.py) with no file content or internals, so they're safe to
+        # return to the client. Still log for observability.
+        current_app.logger.warning("CSV import validation failed: %s", exc)
+        return jsonify({"error": str(exc)}), 422
     return jsonify({"imported": count}), 201
 
 
