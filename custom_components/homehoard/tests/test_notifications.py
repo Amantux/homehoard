@@ -69,7 +69,7 @@ async def test_checkin_action_calls_coordinator(hass, aioclient_mock):
     notifications.async_setup(hass)
 
     # Mock the checkin response
-    aioclient_mock.post("http://127.0.0.1:7745/api/v1/resolve", json={
+    aioclient_mock.get("http://127.0.0.1:7745/api/v1/resolve", json={
         "confidence": "high",
         "match": {"id": "i1", "name": "Drill"}
     })
@@ -101,7 +101,7 @@ async def test_checkout_action_calls_coordinator(hass, aioclient_mock):
 
     notifications.async_setup(hass)
 
-    aioclient_mock.post("http://127.0.0.1:7745/api/v1/resolve", json={
+    aioclient_mock.get("http://127.0.0.1:7745/api/v1/resolve", json={
         "confidence": "high",
         "match": {"id": "i1", "name": "Drill"}
     })
