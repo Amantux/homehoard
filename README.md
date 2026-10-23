@@ -89,10 +89,13 @@ from chat or voice.
 ## 🗺️ Roadmap
 
 - **Consumables / low-stock** thresholds → a to-do / shopping list entity
-- Richer printable QR label sheets
-- Multi-language Assist sentences
+- **Multi-language Assist sentences**
 - Actionable notifications ("Reorder" / "Mark maintenance done")
 - Optional **photo recognition** for label-less bins/shelves (AI vision)
+
+## What's new
+
+- **Richer printable QR label sheets** — The Print QR labels page now offers multiple layout presets (Address labels 3-up, Small labels 4-up, Large labels 2-up) with configurable cell sizes and QR dimensions. The large layout includes an extra text line showing the item's asset/short code for labels that remain scannable even with degraded QR print quality.
 
 
 ## Home Assistant

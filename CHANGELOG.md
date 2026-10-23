@@ -9,6 +9,7 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Richer printable QR label sheets.** The Print QR labels page now offers multiple layout presets: Address labels 3-up (63.5×38.1mm), Small labels 4-up (50.8×25.4mm), and Large labels 2-up (101.6×50.8mm). The large layout includes an extra text line showing the item's asset/short code for labels that remain scannable even with degraded QR print quality. Layout selection is persisted in localStorage.
 - **MCP tools sharpened (HA voice / agents).** New tools: `inventory_value`
   (what it's worth / insured vs. uninsured / by room & label), `warranties_expiring`,
   `maintenance_due`, and `describe_item` (AI web-search enrich). Clarified that
