@@ -5,23 +5,36 @@ things up with tools and answers. Sessions + messages are group-scoped and
 persisted so a conversation survives a reload.
 """
 import json
+import logging
 
 from flask import Blueprint, jsonify, Response, stream_with_context
 
 from ..extensions import db, limiter
 from ..models import ChatSession, ChatMessage, utcnow
 from ..auth import login_required, current_group, current_user
+from ..logging_setup import request_id_var
 from ..services import vault
+from .vault import unlock_attempt_allowed
 from ._scoping import get_owned_or_404
 from ._validation import json_body
 from ..schemas.serializers import (
     chat_session_out, chat_session_summary, chat_message_out,
 )
-from ..services.ai.base import ProviderError
+from ..services.ai.base import ProviderError, safe_upstream_detail
 from ..services.ai.registry import get_provider
 from ..services.ai.agent import run_chat, run_chat_stream, actions_from_trace
 
 bp = Blueprint("chat", __name__)
+
+_LOGGER = logging.getLogger("homehoard.chat")
+
+
+def _provider_error_message(exc: ProviderError) -> str:
+    """Curated text for a failed provider call: the upstream detail goes to the
+    log (scrubbed, with the request id) and the client gets only the id."""
+    rid = request_id_var.get()
+    _LOGGER.warning("AI provider error (ref %s): %s", rid, safe_upstream_detail(exc))
+    return f"The AI provider returned an error (ref {rid})."
 
 
 def _get_session(session_id) -> ChatSession:
@@ -80,7 +93,10 @@ def _vault_phrase_turn(session, phrase: str) -> str:
     assistant-style reply."""
     group = current_group()
     session.awaiting_vault_phrase = False
-    if vault.unlock(group, current_user(), phrase):
+    if not unlock_attempt_allowed():
+        # Same bucket as POST /vault/unlock: no attempt is made once exhausted.
+        reply = "Too many passphrase attempts — try again later."
+    elif vault.unlock(group, current_user(), phrase):
         n = vault.hidden_count(group.id)
         reply = f"Unlocked — {n} hidden item{'s' if n != 1 else ''} now visible."
     else:
@@ -148,7 +164,7 @@ def chat():
         # Discard the flushed-but-uncommitted session so a failed turn leaves no
         # phantom session behind.
         db.session.rollback()
-        return jsonify({"error": str(exc)}), 502
+        return jsonify({"error": _provider_error_message(exc)}), 502
 
     pos = _next_position(session)
     user_msg = ChatMessage(role="user", content=message, position=pos, session_id=session.id)
@@ -241,7 +257,7 @@ def chat_stream():
                     reply, trace = ev["reply"], ev["trace"]
         except ProviderError as exc:
             db.session.rollback()
-            yield json.dumps({"type": "error", "error": str(exc)}) + "\n"
+            yield json.dumps({"type": "error", "error": _provider_error_message(exc)}) + "\n"
             return
         except Exception:  # noqa: BLE001 - never leak a stack into the stream
             db.session.rollback()

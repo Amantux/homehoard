@@ -73,6 +73,7 @@ options:
   postgres_provision_token: ""
   mcp_debug_tools: false
   log_level: INFO
+  proxy_hops: 0
 schema:
   disable_auth: bool
   allow_registration: bool
@@ -126,3 +127,9 @@ schema:
   # chasing a problem: DEBUG is noisy and can include request paths. The startup
   # line naming the database backend is printed regardless of log_level.
   log_level: list(DEBUG|INFO|WARNING|ERROR)?
+  # How many reverse proxies sit between users and this add-on (0-10). Leave at 0
+  # for Home Assistant ingress and direct access. Set it ONLY if you put your own
+  # proxy (nginx, Traefik, ...) in front: it lets HomeHoard read the real client
+  # address from X-Forwarded-For. Too high lets a client spoof its address and
+  # dodge the login rate limits; too low makes every user look like the proxy.
+  proxy_hops: int(0,10)?

@@ -7,6 +7,7 @@ or check items in/out via Assist.
 
 Run:  python mcp_server.py    (serves SSE on HBOX_MCP_HOST:HBOX_MCP_PORT/sse)
 """
+import hashlib
 import hmac
 import json
 import os
@@ -40,6 +41,8 @@ _HTTP = httpx.Client(base_url=API, headers=_HEADERS, timeout=10)
 # Home Assistant's MCP Client connects to this add-on by its container hostname
 # (e.g. http://<slug>-homehoard:7766/sse), so we must allow non-local hosts.
 # This server is only reachable on the trusted Supervisor/LAN network.
+# The SDK check is replaced by _origin_ok() in _guard: a browser always sends an
+# Origin header, HA's MCP client never does, so a cross-site Origin is refused.
 _fastmcp_kwargs: dict = {}
 try:  # mcp >= ~1.9.4
     from mcp.server.transport_security import TransportSecuritySettings
@@ -504,8 +507,8 @@ def lock_items() -> str:
 
 @mcp.tool()
 def list_hidden() -> list[dict]:
-    """List what is in the vault. Works whether locked or unlocked, so a hidden
-    item can always be found and brought back."""
+    """List what is in the vault. Empty while the vault is locked — call
+    unlock_vault with the household passphrase first."""
     data = _get("/items", {"onlyHidden": "true", "pageSize": 200})
     return [{"id": i["id"], "name": i["name"]} for i in data.get("items", [])]
 
@@ -728,15 +731,27 @@ def _request_access(header_value: str, server_token: str, record=_UNSET):
     return None
 
 
+MAX_BODY_BYTES = 1024 * 1024  # a JSON-RPC tool call is tiny; 1 MiB is generous
+
+
+class BodyTooLarge(Exception):
+    """The request body exceeded MAX_BODY_BYTES."""
+
+
 async def _buffer_body(receive):
     """Read all http.request messages so the body can be inspected, returning
-    (body_bytes, messages) — messages are replayed downstream via _replay()."""
-    messages, chunks, more = [], [], True
+    (body_bytes, messages) — messages are replayed downstream via _replay().
+    Raises BodyTooLarge as soon as the cap is crossed, without reading more."""
+    messages, chunks, more, total = [], [], True, 0
     while more:
         msg = await receive()
         messages.append(msg)
         if msg["type"] == "http.request":
-            chunks.append(msg.get("body", b""))
+            chunk = msg.get("body", b"")
+            total += len(chunk)
+            if total > MAX_BODY_BYTES:
+                raise BodyTooLarge
+            chunks.append(chunk)
             more = msg.get("more_body", False)
         else:
             more = False
@@ -888,6 +903,57 @@ async def _deny(send, status: int, message: bytes) -> None:
     await send({"type": "http.response.body", "body": message})
 
 
+def _host_allowed(host: str) -> bool:
+    """Loopback, HA-internal names, or the host of the configured PUBLIC_URL."""
+    import ipaddress
+    from urllib.parse import urlsplit
+    host = host.strip().lower().rstrip(".")
+    if not host:
+        return False
+    if host == "localhost" or host == "homeassistant.local" or host.endswith(".local.hass.io"):
+        return True
+    try:
+        if ipaddress.ip_address(host).is_loopback:
+            return True
+    except ValueError:
+        pass
+    public = (getattr(_SETTINGS, "PUBLIC_URL", "") or "").strip()
+    if public:
+        try:
+            return host == (urlsplit(public).hostname or "").lower()
+        except ValueError:
+            return False
+    return False
+
+
+def _hostname_of(netloc: str) -> str:
+    from urllib.parse import urlsplit
+    try:
+        return urlsplit("//" + netloc).hostname or ""
+    except ValueError:
+        return ""
+
+
+def _origin_ok(headers: dict) -> bool:
+    """False for a browser request from a non-allowlisted site (CSRF / DNS rebinding).
+
+    No Origin header (HA's client, curl, server-to-server) passes. When present,
+    both the Origin's host and the Host header must be on the allowlist: an
+    Origin that merely equals Host proves nothing, since a rebound page has both
+    set to its own hostname.
+    """
+    origin = headers.get(b"origin", b"").decode("latin-1").strip()
+    if not origin:
+        return True
+    from urllib.parse import urlsplit
+    try:
+        origin_host = urlsplit(origin).hostname or ""
+    except ValueError:
+        return False
+    host = _hostname_of(headers.get(b"host", b"").decode("latin-1"))
+    return _host_allowed(origin_host) and _host_allowed(host)
+
+
 def _guard(asgi_app, server_token: str):
     """The single ASGI gate, ALWAYS installed.
 
@@ -912,7 +978,10 @@ def _guard(asgi_app, server_token: str):
         if scope["type"] != "http":
             return await asgi_app(scope, receive, send)
 
-        header = dict(scope.get("headers") or []).get(b"authorization", b"").decode()
+        hdrs = dict(scope.get("headers") or [])
+        if not _origin_ok(hdrs):
+            return await _deny(send, 403, b"cross-origin request refused")
+        header = hdrs.get(b"authorization", b"").decode()
         raw = header[len("Bearer "):].strip() if header.startswith("Bearer ") else ""
         # ONE key lookup per request, off the event loop: the DB call is sync
         # and would otherwise stall every other SSE session while it runs.
@@ -923,7 +992,10 @@ def _guard(asgi_app, server_token: str):
         # for, and the body has to be replayed downstream either way.
         body, messages = b"", None
         if _is_message_path(scope):
-            body, messages = await _buffer_body(receive)
+            try:
+                body, messages = await _buffer_body(receive)
+            except BodyTooLarge:
+                return await _deny(send, 413, b"request body too large")
             receive = _replay(messages)
         names = _tool_names(scope, body)
         if _is_message_path(scope) and body.strip() and names is None:
@@ -995,7 +1067,9 @@ def _audit(names, raw: str, outcome: str) -> None:
         from app.services.metrics import record
         # NOT `key=`: the log redactor treats `key=<value>` as a credential and
         # would replace the whole field, erasing which client made the call.
-        hint = f"{raw[:7]}~" if raw else "none"
+        # A hash prefix identifies a client without leaking any key bytes.
+        hint = (f"key:{hashlib.sha256(raw.encode()).hexdigest()[:8]}"
+                if raw else "none")
         for name in names or ["-"]:
             record("mcp_tool", name=name or "-", client=hint, outcome=outcome)
     except Exception as exc:  # noqa: BLE001 - auditing must never break a request
