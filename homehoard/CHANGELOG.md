@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- **Actionable HA notifications.** Digest notifications carry one-tap actions
+  (check-in, check-out, mark maintenance done, reorder) delivered back to
+  HomeHoard through the `mobile_app_notification_action` event bus.
+
 ## 1.1.55
 
 - Maintenance release.

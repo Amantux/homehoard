@@ -1,0 +1,46 @@
+blueprint:
+  name: HomeHoard Alert Digest Notification
+  description: Send an actionable notification with the HomeHoard alert digest (low stock, overdue maintenance, due checkouts)
+  domain: automation
+  source_url: https://github.com/Amantux/homehoard
+  author: Amantux
+
+  input:
+    group_id:
+      name: HomeHoard Group
+      description: The HomeHoard group to monitor (from the sensor's attributes)
+      selector:
+        text:
+    notifier:
+      name: Notifier
+      description: The notification service to use (e.g., mobile_app_<device_name>)
+      selector:
+        text:
+
+variables:
+  group_id: !input group_id
+  notifier: !input notifier
+
+trigger:
+  - platform: time
+    at: "08:00"
+
+condition: []
+
+action:
+  - service: homehoard.locate
+    data:
+      query: "alert digest"
+    response_variable: digest
+
+  - service: notify.{{ notifier }}
+    data:
+      message: "{{ digest.speech }}"
+      data:
+        actions:
+          - action: "hoard:restock"
+            title: "Reorder"
+          - action: "hoard:maintenance_done"
+            title: "Mark Maintenance Done"
+          - action: "hoard:checkin"
+            title: "Check In"

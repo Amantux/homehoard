@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Connect to HomeHoard",
-        "description": "Add-on users are set up automatically. Only fill in an API token if your HomeHoard has authentication enabled — generate one in HomeHoard under “Home Assistant”.",
+        "description": "Add-on users are set up automatically. Only fill in an API token if your HomeHoard has authentication enabled - generate one in HomeHoard under Home Assistant.",
         "data": {
           "host": "HomeHoard host (e.g. 127.0.0.1 or an add-on hostname)",
           "port": "Port",
@@ -17,7 +17,7 @@
     },
     "error": {
       "cannot_connect": "Unable to connect. Make sure HomeHoard is installed and running.",
-      "invalid_auth": "HomeHoard rejected the request. Enter a valid API token (generate one in HomeHoard under “Home Assistant”)."
+      "invalid_auth": "HomeHoard rejected the request. Enter a valid API token (generate one in HomeHoard under Home Assistant)."
     },
     "abort": {
       "already_configured": "HomeHoard is already configured.",
@@ -35,6 +35,24 @@
           "update_interval": "How often to fetch inventory statistics. Minimum 30 s, maximum 3600 s."
         }
       }
+    }
+  },
+  "services": {
+    "check_in": {
+      "name": "Check in",
+      "description": "Check an item back into HomeHoard (mark it as here) by name. Also triggered by actionable notification actions."
+    },
+    "check_out": {
+      "name": "Check out",
+      "description": "Check an item out of HomeHoard (mark it as not here / lent out) by name. Also triggered by actionable notification actions."
+    },
+    "contents": {
+      "name": "Contents",
+      "description": "List what's inside a named bin or location."
+    },
+    "locate": {
+      "name": "Locate",
+      "description": "Find items, bins, or locations in HomeHoard and where they are."
     }
   }
 }
