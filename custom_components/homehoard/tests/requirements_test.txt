@@ -8,4 +8,4 @@
 # pins its own dependency set (historically pydantic 1.x), which can break the
 # `mcp` package and stop backend test modules collecting. Use a venv, or let CI
 # run it.
-pytest-homeassistant-custom-component==0.13.371
+pytest-homeassistant-custom-component==0.13.373
