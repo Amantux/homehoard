@@ -84,7 +84,7 @@ def ensure_integration_token(app=None) -> str | None:
             fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
             with os.fdopen(fd, "w") as fh:
                 fh.write(raw)
-            _LOGGER.info("Provisioned Home Assistant integration API key (%s…)", raw[:9])
+            _LOGGER.info("Provisioned Home Assistant integration API key (id %s)", record.id)
             return raw
     except Exception as exc:  # noqa: BLE001 - best effort; never block startup
         _LOGGER.warning("Integration token provisioning failed (non-fatal): %s", exc)

@@ -84,3 +84,10 @@ configuration:
       Leave at INFO unless chasing a problem: DEBUG is noisy and can include
       request paths. The startup line naming the storage backend stays visible
       at WARNING.
+  proxy_hops:
+    name: Reverse proxies in front
+    description: >-
+      Leave at 0 for Home Assistant ingress. Set to the number of proxies you
+      run in front of HomeHoard (nginx, Traefik, ...) so it sees real client
+      addresses. Too high lets clients spoof their address; too low makes
+      everyone look like the proxy.

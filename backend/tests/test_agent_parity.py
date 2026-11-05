@@ -117,7 +117,8 @@ def test_merge_by_id_sums_quantities_and_deletes_source(auth_client, app, gid):
 
     with app.app_context():
         out = _tool(gid, "merge_duplicate_items",
-                    keep_name_or_id=keep["id"], source_name_or_id=dupe["id"])
+                    keep_name_or_id=keep["id"], source_name_or_id=dupe["id"],
+                    confirm=True)
         db.session.commit()
 
     assert out["ok"] is True and out["kept"] == "AA batteries"
@@ -134,7 +135,8 @@ def test_merge_refuses_ambiguous_name_and_changes_nothing(auth_client, app, gid)
 
     with app.app_context():
         out = _tool(gid, "merge_duplicate_items",
-                    keep_name_or_id=keep["id"], source_name_or_id="Drill")
+                    keep_name_or_id=keep["id"], source_name_or_id="Drill",
+                    confirm=True)
         db.session.commit()
 
     assert out["needsClarification"] is True
@@ -159,9 +161,11 @@ def test_hidden_item_is_not_mergeable(auth_client, app, gid):
 
     with app.app_context():
         by_id = _tool(gid, "merge_duplicate_items",
-                      keep_name_or_id=keep["id"], source_name_or_id=secret["id"])
+                      keep_name_or_id=keep["id"], source_name_or_id=secret["id"],
+                      confirm=True)
         by_name = _tool(gid, "merge_duplicate_items",
-                        keep_name_or_id=keep["id"], source_name_or_id="Passport")
+                        keep_name_or_id=keep["id"], source_name_or_id="Passport",
+                        confirm=True)
         db.session.commit()
 
     assert by_id["error"] == "no matching duplicate item"

@@ -277,6 +277,37 @@ integration uses). A normal Home Assistant backup includes all of it.
   does the same from the command line
   (`python scripts/backup.py --data-dir /data --out <dir>`).
 
+## Security notes
+
+Deliberate trade-offs, so you can decide whether they fit your setup:
+
+- **Registration.** The add-on ships with `allow_registration: false`. A
+  standalone Docker install leaves registration open by default so the first
+  person can create the first account; close it (`HBOX_ALLOW_REGISTRATION=false`)
+  once your household has signed up. Registering with an email that already
+  exists answers "already registered", which reveals that the email has an
+  account.
+- **Sessions.** Signing in issues a token that stays valid for 72 hours
+  (`HBOX_JWT_HOURS`, standalone only) and is kept in the browser's local
+  storage. Logging out closes your vault unlocks but cannot revoke the token
+  itself; it simply stops being used once the browser discards it. On a shared
+  machine, log out and clear the site's data.
+- **MCP on the Home Assistant network.** With `enable_mcp` on, the MCP server
+  accepts requests from the HA network without a key unless `mcp_require_key`
+  is on. Anything that can reach port `7766` inside that network can use it.
+- **MCP browser origins.** A request carrying an `Origin` header (that is, from
+  a web page) is accepted only when both the Origin and the `Host` header are
+  loopback, `homeassistant.local`, `*.local.hass.io`, or the host of your
+  configured public URL; anything else gets 403. Clients without an `Origin`
+  (Home Assistant, scripts) are unaffected. Behind Ingress, every household
+  member shares one unlock-attempt bucket, so repeated wrong vault passphrases
+  from one person can rate-limit the others.
+- **Hardened install.** Set `disable_auth: false` if you are not using Ingress
+  only, `allow_registration: false`, `mcp_require_key: true` (give other MCP
+  clients a key), leave `mcp_expose_external` and `mcp_debug_tools` off, use a
+  short `HBOX_JWT_HOURS` if you run standalone, and keep the vault locked when
+  you are not using it.
+
 ## Time zone
 
 At startup the add-on asks the Supervisor for Home Assistant's time zone

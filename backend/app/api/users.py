@@ -11,6 +11,8 @@ from ..auth import (
     login_required,
     verify_password,
 )
+from flask_limiter.util import get_remote_address
+
 from ..extensions import db, limiter
 from ..logsafe import mask_email, scrub
 from ..models import Group, GroupInvitation, User
@@ -117,7 +119,11 @@ def register():
 
 
 @bp.post("/users/login")
+# Two buckets: per account (the limiter's default key is IP+email here, so one
+# household member can't lock the others out behind ingress) AND per address,
+# so rotating emails from one source — password spraying — is still capped.
 @limiter.limit("10 per minute")
+@limiter.limit("40 per minute", key_func=get_remote_address)
 def login():
     data = json_body()
     # homebox accepts form or json; support both

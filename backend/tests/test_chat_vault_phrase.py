@@ -9,6 +9,7 @@ import json
 
 from app.extensions import db
 from app.models import ChatSession, Item
+from app.services import vault
 from app.services.ai.base import ChatResult, ToolCall
 
 PHRASE = "open sesame 42"
@@ -209,3 +210,142 @@ def test_normal_chat_unaffected_when_flag_unset(auth_client, app, monkeypatch, g
     assert r.status_code == 200 and r.get_json()["reply"] == "hello back"
     msgs = _messages(auth_client, r.get_json()["sessionId"])
     assert msgs[0]["content"] == "just chatting"
+
+
+# --- passphrase guesses share the vault endpoint's rate limit ---------------
+
+import pytest  # noqa: E402
+
+from app import create_app  # noqa: E402
+from app.config import Config  # noqa: E402
+from app.extensions import limiter  # noqa: E402
+from app.models import User  # noqa: E402
+
+
+@pytest.fixture()
+def limited(tmp_path):
+    """(client, app, gid) with the real limiter enabled (it is off in `app`)."""
+    class LimitedConfig(Config):
+        DATA_DIR = str(tmp_path)
+        DATABASE_URL = f"sqlite:///{tmp_path}/test.db"
+        DISABLE_AUTH = False
+        SECRET_KEY = "test-secret-key-that-is-long-enough-32b"
+        RATELIMIT_ENABLED = True
+        RATELIMIT_STORAGE_URI = "memory://"
+        PROXY_HOPS = 0
+        WORKER_ENABLED = False
+
+    app = create_app(LimitedConfig)
+    c = app.test_client()
+    c.post("/api/v1/users/register",
+           json={"email": "t@t.com", "password": "password", "name": "T"})
+    tok = c.post("/api/v1/users/login",
+                 json={"username": "t@t.com", "password": "password"}).get_json()["token"]
+    c.environ_base["HTTP_AUTHORIZATION"] = tok
+    with app.app_context():
+        gid = db.session.query(User).filter_by(email="t@t.com").one().group_id
+    yield c, app, gid
+    limiter.reset()
+    with app.app_context():
+        db.session.remove()
+        db.drop_all()
+
+
+def _chat_guess(c, app, gid, phrase="wrong guess"):
+    sid = _awaiting_session(app, gid)
+    return c.post("/api/v1/chat", json={"message": phrase, "sessionId": sid})
+
+
+def test_chat_phrase_guesses_are_capped_without_calling_unlock(limited, monkeypatch):
+    c, app, gid = limited
+    _setup_vault(c, app, gid)
+    calls = []
+    real = vault.unlock
+    monkeypatch.setattr("app.api.chat.vault.unlock",
+                        lambda *a, **k: calls.append(1) or real(*a, **k))
+
+    replies = [_chat_guess(c, app, gid).get_json()["reply"] for _ in range(10)]
+    assert all("isn't right" in r for r in replies)
+    assert len(calls) == 10
+
+    r = _chat_guess(c, app, gid, phrase=PHRASE)  # even the RIGHT phrase is refused
+    assert r.status_code == 200
+    assert "Too many passphrase attempts" in r.get_json()["reply"]
+    assert len(calls) == 10  # no 11th unlock attempt
+    assert c.get("/api/v1/vault/status").get_json()["locked"] is True
+
+
+def test_endpoint_and_chat_attempts_share_one_counter(limited):
+    c, app, gid = limited
+    _setup_vault(c, app, gid)
+    for _ in range(5):
+        assert c.post("/api/v1/vault/unlock", json={"phrase": "nope"}).status_code == 403
+    for _ in range(5):
+        assert "isn't right" in _chat_guess(c, app, gid).get_json()["reply"]
+    # 10 attempts used across both doors: both are now closed.
+    assert c.post("/api/v1/vault/unlock", json={"phrase": PHRASE}).status_code == 429
+    assert "Too many" in _chat_guess(c, app, gid, phrase=PHRASE).get_json()["reply"]
+
+
+# --- provider errors are curated --------------------------------------------
+
+from app.services.ai.base import ProviderError  # noqa: E402
+
+LEAK = "claude request failed: 401 sk-ant-SECRET body={'detail':'upstream-secret'}"
+
+
+class _FailingProvider:
+    name = "fail"
+
+    def available(self):
+        return True
+
+    def chat(self, *a, **k):
+        raise ProviderError(LEAK)
+
+    def chat_stream(self, *a, **k):
+        raise ProviderError(LEAK)
+        yield  # pragma: no cover
+
+
+def test_chat_502_hides_upstream_text_and_gives_a_ref(auth_client, monkeypatch, caplog):
+    monkeypatch.setattr("app.api.chat.get_provider", lambda: _FailingProvider())
+    with caplog.at_level("WARNING", logger="homehoard.chat"):
+        r = auth_client.post("/api/v1/chat", json={"message": "hi"})
+    assert r.status_code == 502
+    err = r.get_json()["error"]
+    assert err.startswith("The AI provider returned an error (ref ")
+    assert "upstream-secret" not in err and "claude request failed" not in err
+    assert any("ProviderError" in m for m in caplog.messages)  # detail logged, not sent
+
+
+def test_chat_stream_error_event_hides_upstream_text(auth_client, monkeypatch):
+    monkeypatch.setattr("app.api.chat.get_provider", lambda: _FailingProvider())
+    r = auth_client.post("/api/v1/chat/stream", json={"message": "hi"})
+    events = [json.loads(line) for line in r.get_data(as_text=True).splitlines() if line]
+    err = [e for e in events if e["type"] == "error"][0]["error"]
+    assert err.startswith("The AI provider returned an error (ref ")
+    assert "upstream-secret" not in err and "claude request failed" not in err
+
+
+def test_chat_and_endpoint_share_the_user_bucket_across_logins(limited):
+    # P109/SF1: each login mints a fresh JWT = a fresh credential bucket, so the
+    # chat door must ALSO draw from the per-user bucket. 5 endpoint guesses on
+    # login A + 5 chat guesses on login B exhaust it for both sessions.
+    import time
+
+    c, app, gid = limited
+    _setup_vault(c, app, gid)
+    time.sleep(1.1)  # a second login in the same second can mint the same JWT
+    tok_b = c.post("/api/v1/users/login",
+                   json={"username": "t@t.com", "password": "password"}).get_json()["token"]
+    assert tok_b != c.environ_base["HTTP_AUTHORIZATION"]
+    b = app.test_client()
+    b.environ_base["HTTP_AUTHORIZATION"] = tok_b
+
+    for _ in range(5):
+        assert c.post("/api/v1/vault/unlock", json={"phrase": "nope"}).status_code == 403
+    for _ in range(5):
+        assert "isn't right" in _chat_guess(b, app, gid).get_json()["reply"]
+    assert "Too many" in _chat_guess(b, app, gid, phrase=PHRASE).get_json()["reply"]
+    assert c.post("/api/v1/vault/unlock", json={"phrase": PHRASE}).status_code == 429

@@ -356,6 +356,10 @@ def _resolve_current_user():
        standalone open deployment and an ingress request with no identity
        headers.
     """
+    # The vault fingerprints on the acting key only when one is relayed; clear
+    # it on EVERY path (JWT, ingress, open mode too) so nothing carries over
+    # from an earlier resolution in the same context.
+    g.pop("vault_credential", None)
     # Only an API key can be read-only; it overwrites this. JWT, ingress and the
     # open-mode fallback are explicitly write.
     g.token_access = "write"
@@ -476,7 +480,14 @@ def _user_from_acting_key(raw: str):
     )
     if record is None or (record.scope or "full") not in ("mcp", "full"):
         return None
+    # Same expiry rule as a directly-presented key: past expires_at it is no
+    # longer a credential, relayed or not.
+    if record.expires_at is not None and as_utc(record.expires_at) <= utcnow():
+        return None
     g.token_access = record.access or "write"
+    # The vault fingerprints the effective credential: this caller's key, not
+    # the integration token every MCP caller shares (services/vault.py).
+    g.vault_credential = record.token_hash
     return db.session.get(User, record.user_id)
 
 

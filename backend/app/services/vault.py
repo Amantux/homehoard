@@ -59,6 +59,11 @@ def _credential():
 
 
 def _fingerprint():
+    # The EFFECTIVE credential: when REST honoured an MCP caller's relayed
+    # acting key, auth.py stashes that key's hash here, so each MCP caller has
+    # its own unlock instead of sharing the integration token's.
+    if has_request_context() and getattr(g, "vault_credential", None):
+        return g.vault_credential
     raw = _credential()
     return hash_token(raw) if raw else None
 
@@ -147,10 +152,14 @@ def is_unlocked(group=None) -> bool:
         return g.__dict__["_vault_unlocked"]
     result = False
     fp = _fingerprint()
-    if fp:
-        q = db.session.query(VaultUnlock).filter_by(credential_fingerprint=fp)
-        if group is not None:
-            q = q.filter_by(group_id=group.id)
+    # Always household-scoped: an unlock made in one group never opens another,
+    # even for the same credential. The request's group wins; the explicit arg
+    # is the fallback outside a login_required request.
+    if has_request_context():
+        group = getattr(g, "current_group", None) or group
+    if fp and group is not None:
+        q = db.session.query(VaultUnlock).filter_by(
+            credential_fingerprint=fp, group_id=group.id)
         row = q.first()
         if row is not None:
             if row.expires_at and row.expires_at < _now():
@@ -170,18 +179,16 @@ def is_unlocked(group=None) -> bool:
 def visible(query, *, include_hidden=None):
     """EVERY user-facing read of items goes through here.
 
-    Excludes hidden rows unless this session is unlocked. `include_hidden=True`
-    is for the two paths that MUST see them while locked — unhide-by-name and
-    list-hidden — because a hidden item you cannot resolve is a hidden item you
-    can never get back.
+    Excludes hidden rows unless this session is unlocked. There is no bypass:
+    listing or unhiding hidden items means unlocking first. `include_hidden`
+    is accepted only so existing callers keep working; `True` no longer skips
+    the vault (it means the same as None), `False` filters even when unlocked.
 
     Deliberately NOT applied to the `misc.py` maintenance routines
     (ensure_asset_ids, zero_time_fields, set_primary_photos): they repair data
     across every row and surface nothing to a user.
     """
-    if include_hidden is True:
-        return query
-    if include_hidden is None and is_unlocked():
+    if include_hidden is not False and is_unlocked():
         return query
     return query.filter(Item.hidden.is_(False))
 

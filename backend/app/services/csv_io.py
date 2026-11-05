@@ -176,15 +176,34 @@ def _get_or_create_label(group_id, name, cache):
     return label
 
 
+MAX_IMPORT_ROWS = 10_000
+
+
+class CsvImportError(ValueError):
+    """The uploaded CSV can't be imported; the message is safe to show."""
+
+
 def import_items(group_id, text: str) -> int:
+    if "\x00" in text:
+        raise CsvImportError("file is not valid CSV text (contains NUL bytes)")
     # Detect delimiter (homebox historically used tab, newer uses comma).
     sample = text.split("\n", 1)[0]
     delimiter = "\t" if sample.count("\t") > sample.count(",") else ","
     reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
 
+    # Parse everything first so a malformed or oversized file imports nothing.
+    rows = []
+    try:
+        for raw_row in reader:
+            if len(rows) >= MAX_IMPORT_ROWS:
+                raise CsvImportError(f"too many rows (max {MAX_IMPORT_ROWS})")
+            rows.append(raw_row)
+    except csv.Error as exc:  # csv's own messages carry no file content
+        raise CsvImportError(f"malformed CSV: {exc}") from exc
+
     loc_cache, label_cache = {}, {}
     count = 0
-    for raw_row in reader:
+    for raw_row in rows:
         # Reverse the export-side formula-injection escaping cell-by-cell so the
         # round-trip is lossless (and negatives don't crash numeric parsing).
         row = {k: _csv_unescape(v) for k, v in raw_row.items()}

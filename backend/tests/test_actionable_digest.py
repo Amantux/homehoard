@@ -60,3 +60,30 @@ def test_links_appear_only_when_public_url_is_set(auth_client, app):
 
     assert "https://" not in plain["text"], "invented a link with no base URL"
     assert "https://ha.example/api/hassio_ingress/tok/#/restock" in linked["text"]
+
+
+def test_hidden_overdue_checkout_never_reaches_a_notification(auth_client, app):
+    # P109/SF2: the overdue-checkout section went unfiltered, so a hidden lent
+    # item's NAME rode along in the push body. A visible control proves the
+    # section itself still fires.
+    from datetime import timedelta
+
+    from app.timeutil import utcnow
+
+    shown = _item(auth_client, "Lent Ladder")
+    hidden = _item(auth_client, "Secret Lent Camera")
+    with app.app_context():
+        for it, is_hidden in ((shown, False), (hidden, True)):
+            row = db.session.get(Item, it["id"])
+            row.checked_out = True
+            row.checked_out_to = "Sam"
+            row.checkout_due = utcnow() - timedelta(days=3)
+            row.hidden = is_hidden
+        db.session.commit()
+
+    with app.app_context():
+        digest = alert_digest(_gid(app))
+
+    names = [c["name"] for c in digest["overdueCheckouts"]]
+    assert names == ["Lent Ladder"]
+    assert "Secret Lent Camera" not in digest["text"]
