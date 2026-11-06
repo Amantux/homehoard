@@ -16,6 +16,13 @@
   messages no longer print over the labels, and the text prints black on white
   even with a dark theme.
 
+- **Security updates.** Pillow 13 fixes dozens of image-decoder flaws, some of
+  them reachable just by uploading a photo, and the MCP library fixes 4 more.
+  Also updates SQLAlchemy to 2.1 and the other backend and frontend libraries.
+- **A data folder with something like `%20` in its name keeps working.** The
+  SQLAlchemy update would otherwise have opened a different, empty database. The
+  add-on's `/data` was never affected.
+
 ## 1.1.55
 
 - Maintenance release.
