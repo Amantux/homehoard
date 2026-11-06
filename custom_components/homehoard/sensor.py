@@ -85,6 +85,12 @@ SENSORS: tuple[HomeHoardSensorDescription, ...] = (
             "entries": d.get("maintenance", {}).get("entries", []),
         },
     ),
+    HomeHoardSensorDescription(
+        key="restock_needed", name="Restock needed",
+        icon="mdi:cart-arrow-down", state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda d: d.get("restock", {}).get("count"),
+        attrs_fn=lambda d: {"items": d.get("restock", {}).get("items", [])},
+    ),
 )
 
 

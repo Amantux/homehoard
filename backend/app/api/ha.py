@@ -68,8 +68,12 @@ def summary():
     upcoming_30 = [m for m in maint if today <= m.scheduled_date.date() <= today + timedelta(days=30)]
 
     # Overview lists — power the Home Assistant "Overview" dashboard cards.
-    recent_items = items().order_by(Item.created_at.desc()).limit(6).all()
-    checked_out_items = items().filter(Item.checked_out.is_(True)).all()
+    # never_hidden, NOT items(): these names land in HA's sensor attributes and the
+    # recorder, which outlive any unlock of this credential (MCP shares the
+    # integration token).
+    named = vault.never_hidden(db.session.query(Item).filter(Item.group_id == gid))
+    recent_items = named.order_by(Item.created_at.desc()).limit(6).all()
+    checked_out_items = named.filter(Item.checked_out.is_(True)).all()
     locations = (
         db.session.query(Location)
         .filter_by(group_id=gid)
@@ -77,20 +81,29 @@ def summary():
         .all()
     )
 
-    from ..services.restock import restock_suggestions
-    restock = restock_suggestions(gid)
+    from ..services.restock import in_several_places, restock_suggestions
+    # include_hidden=False, NOT the default, for the same reason as the lists above;
+    # and the digest blueprint puts this feed on a phone.
+    restock = restock_suggestions(gid, include_hidden=False)
+    restock_shown = restock[:20]
+    several = in_several_places([r["id"] for r in restock_shown])
 
     return jsonify(
         {
             "health": True,
             # Low consumables — the to-do/shopping feed for HA (same policy as
-            # GET /restock and the notifier digest, so they can never disagree).
+            # GET /restock and the notifier digest). Only an unlocked session's
+            # /restock also lists hidden items, so the Dashboard's count, which comes
+            # from here, can be lower than that page's.
             "restock": {
                 "count": len(restock),
+                # oneTap: POST /restock/<id>/restocked will take it, so a
+                # "Bought it" button is worth offering.
                 "items": [{"id": r["id"], "name": r["name"],
                            "onHand": r["onHand"],
-                           "suggestedQuantity": r["suggestedQuantity"]}
-                          for r in restock[:20]],
+                           "suggestedQuantity": r["suggestedQuantity"],
+                           "oneTap": r["id"] not in several}
+                          for r in restock_shown],
             },
             "group": current_group().name,
             "recentItems": [

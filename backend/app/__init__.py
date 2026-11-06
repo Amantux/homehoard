@@ -291,9 +291,11 @@ def _maybe_boot_migrate(app):
     if not os.path.exists(src_file):
         _LOGGER.info("migrate_from_sqlite: no local %s to migrate — skipping", src_file)
         return
+    from sqlalchemy.engine import URL
     from .services.db_copy import TargetNotEmpty, copy_database
     try:
-        report = copy_database(f"sqlite:///{src_file}", target)
+        source = URL.create("sqlite", database=src_file).render_as_string()
+        report = copy_database(source, target)
         _LOGGER.warning("migrate_from_sqlite: copied %d rows from SQLite into the "
                         "external database", report["total"])
     except TargetNotEmpty:

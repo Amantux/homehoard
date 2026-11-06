@@ -7,7 +7,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import aiohttp_client
 
-from . import services
+from . import notifications, services
 from .const import DOMAIN
 from .coordinator import HomeHoardDataUpdateCoordinator
 
@@ -54,6 +54,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     # Voice intent ("where is my drill?") + homehoard.locate response service.
     await services.async_register(hass)
+    # One-tap actions from phone notifications ("Bought ...", "Done: ...").
+    notifications.async_setup(hass)
     # Ship the custom Lovelace card (type: custom:homehoard-card).
     await _async_register_card(hass)
     entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
@@ -70,4 +72,5 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.data[DOMAIN].pop(entry.entry_id, None)
         if not hass.data[DOMAIN]:
             services.async_unregister(hass)
+            notifications.async_unload(hass)
     return unload_ok

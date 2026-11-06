@@ -2,6 +2,7 @@ import re
 from datetime import datetime
 
 from flask import Blueprint, request, jsonify, abort, current_app
+from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
@@ -11,7 +12,7 @@ from ..models import (Item, ItemField, ItemHolding, Label, Location, Bin,
 from ..auth import login_required, current_group
 from ._scoping import get_owned_or_404
 from ._validation import json_body
-from ..schemas.serializers import item_out, item_summary
+from ..schemas.serializers import item_out, item_summary, num
 from ..services.holdings import ensure_holding, resync_item, primary_holding
 from .lookup import location_path_str
 from ..services import money
@@ -488,6 +489,74 @@ def undo_merge():
     resync_item(keep)                          # keeper shrinks back
     db.session.commit()
     return jsonify(item_out(item)), 201
+
+
+@bp.post("/restock/<item_id>/restocked")
+@login_required
+def restock_restocked(item_id):
+    """Record a purchase from the restock list: "I bought N" ADDS N to on-hand.
+
+    N is the body's {quantity} (how many were bought: > 0, same to_quantity rules
+    as every other quantity write), or the current suggestedQuantity when absent.
+
+    - Several holdings: 409, before anything else. One tap never guesses which
+      placement got the stock; the row falls back to a link to the item page.
+    - One holding: added to it. No holding: ensure_holding mirrors the current
+      quantity into one first, then the purchase is added, so it counts once.
+    - No policy, not low, or archived (not on the list): 422.
+
+    Returns the item's restock_state after the purchase, plus `bought` and
+    `previousOnHand`: the values the UI's Undo needs, exact rather than recomputed
+    from floats on the client.
+    """
+    from ..services.restock import restock_state
+    from ..utils_validation import to_quantity
+
+    # One purchase at a time per item, each judged on what the last one left, so
+    # simultaneous taps can't each write "the count I read + N" and lose all but
+    # one behind a 200. It must come before anything reads the item. A no-op UPDATE
+    # because it locks on both backends: the row on Postgres, the database's write
+    # lock on SQLite (where with_for_update does nothing). A refusal rolls it back.
+    db.session.execute(
+        update(Item)
+        .where(Item.id == item_id, Item.group_id == current_group().id)
+        .values(group_id=Item.group_id)
+        .execution_options(synchronize_session=False))
+
+    item = _get(item_id)
+    if len(item.holdings) > 1:
+        abort(409, description="edit placements")
+
+    state = restock_state(item)
+    if state is None:
+        abort(422, description="This item no longer has a Min quantity, so it is "
+                               "not on the restock list.")
+    if item.archived or not state["isLow"]:
+        abort(422, description="This item is not on the restock list any more: it "
+                               "is no longer low, or it was archived.")
+
+    # An explicit null means "not given", as in _validate_quantity. Unlike there,
+    # 0 is refused: buying nothing is not a purchase. The suggestion goes through
+    # to_quantity too, because restock_state hands it back as a JSON int/float.
+    raw = json_body().get("quantity")
+    bought = to_quantity(state["suggestedQuantity"] if raw is None else raw)
+    if bought is None or bought <= 0:
+        abort(422, description="quantity must be a positive number with at most "
+                               "3 decimal places")
+
+    ensure_holding(item)
+    holding = item.holdings[0]
+    previous = holding.quantity
+    total = to_quantity(previous + bought)
+    if total is None:
+        abort(422, description="that would take this item past the largest "
+                               "quantity HomeHoard can store")
+    holding.quantity = total
+    resync_item(item)
+    db.session.commit()
+
+    return jsonify({**restock_state(item), "bought": num(bought),
+                    "previousOnHand": num(previous)})
 
 
 @bp.get("/restock")

@@ -264,7 +264,10 @@ def resolve_one():
     # An id is an unambiguous handle — never a fuzzy match.
     model = {"item": Item, "bin": Bin, "location": Location}[kind]
     direct = db.session.get(model, q)
-    if direct is not None and direct.group_id == gid:
+    # Knowing a hidden item's id is not authorisation (see vault.readable). It falls
+    # through to the search below, which can't see it either: "nothing matched".
+    if (direct is not None and direct.group_id == gid
+            and (kind != "item" or vault.readable(direct))):
         return jsonify({"confidence": "high", "matchedOn": "id",
                         "match": _resolved_out(kind, direct)})
 

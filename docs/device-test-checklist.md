@@ -30,8 +30,11 @@ Ordered so the highest-risk items are first; the whole pass is ~15 minutes.
    the code field should already have focus; a trigger pull should type + Enter
    + link in one motion. *Broken: focus elsewhere, scan goes nowhere.*
 8. **Label sheet print preview** — Tools → QR label sheet → select a few →
-   Print. In the preview: 3-across grid, ~63×38 mm cells, no clipped codes,
-   sane page breaks. *This is the least-verified layout in the app.*
+   Print, once per layout (3, 4 and 2 across), at 100% scale. In the preview:
+   cells at the size the page states, the first label at the page's top-left
+   corner, no clipped codes, sane page breaks, and no chat button or toast over
+   the labels. Measure one printed label with a ruler. *Real label stock on a
+   real printer is still unverified: only Chromium and Firefox PDFs were checked.*
 9. **`/` opens search; search "battery"** — should find "batteries" items.
 
 ## HA side
@@ -41,6 +44,13 @@ Ordered so the highest-risk items are first; the whole pass is ~15 minutes.
 11. **Notification digest** — trigger `POST /notifiers/dispatch` (or wait for
     your automation): links present only if `public_url` is set, and no
     vault-hidden item ever named.
+12. **Digest blueprint** — import it by URL, create an automation, then **Run
+    actions** with something low: buttons appear on the phone, **Bought** raises
+    the quantity by the amount on the button and **Done** completes the
+    maintenance. With 3 buttons on Android, check you can still tell them apart:
+    nothing documents how much of a title the phone shows. Leave one on an Android
+    phone for a day: it should be gone. *The test suite stops at the bus event;
+    only a real phone proves the tap fires it, and how the phone draws it.*
 
 Anything that fails: note which numbered item and what you saw — each maps to
 one specific commit.

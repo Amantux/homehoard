@@ -1,0 +1,116 @@
+blueprint:
+  name: HomeHoard daily digest
+  description: >-
+    Once a day, tells a phone what is running low and which maintenance is
+    overdue, with buttons to act on it from the notification. A "Bought" button
+    adds the amount it names to HomeHoard. A "Done" button marks the maintenance
+    done and schedules the next occurrence. Nothing is sent on a day with nothing
+    to report. Needs the HomeHoard integration, and the Home Assistant Companion
+    app for the buttons.
+  domain: automation
+  author: Amantux
+  source_url: https://raw.githubusercontent.com/Amantux/homehoard/main/blueprints/automation/homehoard/homehoard_daily_digest.yaml
+  homeassistant:
+    min_version: 2024.11.0
+  input:
+    time:
+      name: Time
+      description: When to send the digest.
+      default: "08:00:00"
+      selector:
+        time:
+    notifier:
+      name: Notifier
+      description: >-
+        The Companion app's notify action, such as mobile_app_my_phone (find
+        yours under Developer Tools, Actions, by searching for
+        notify.mobile_app). A notify group of Companion apps works too.
+      selector:
+        text:
+
+variables:
+  notifier: !input notifier
+  # Found by how their ids end: an id starts with the device's name, which can be
+  # renamed, and Home Assistant adds _2 to a repeat. With several HomeHoards this is
+  # the first one set up, the same one the buttons act on.
+  restock_sensor: >-
+    {{ integration_entities('homehoard') | select('search', '_restock_needed(_[0-9]+)?$')
+       | first | default('', true) }}
+  overdue_sensor: >-
+    {{ integration_entities('homehoard') | select('search', '_maintenance_overdue(_[0-9]+)?$')
+       | first | default('', true) }}
+  low: "{{ state_attr(restock_sensor, 'items') or [] }}"
+  # The sensor's entries include what is merely coming up.
+  overdue: >-
+    {{ (state_attr(overdue_sensor, 'entries') or [])
+       | selectattr('overdue') | list }}
+  # A button must never be dead or read the same as another:
+  # - Only items the server marks oneTap get one: it would refuse the rest (kept in
+  #   several places).
+  # - No restock sensor means an integration too old to hear a tap: no Done either.
+  # - Two rows nothing tells apart get none: a tap could act on the wrong one, and
+  #   there is no undo. The message still lists them.
+  # - The amount travels in the action: the tap adds what the message said to buy,
+  #   not what the server would suggest by then.
+  # Android shows 3 buttons at most, so keep one for maintenance when both have
+  # something to offer.
+  buttons: >-
+    {% set ns = namespace(bought=[], done=[]) %}
+    {% for item in low | selectattr('oneTap') %}
+      {% if low | selectattr('name', 'eq', item.name)
+         | selectattr('suggestedQuantity', 'eq', item.suggestedQuantity)
+         | list | count == 1 %}
+        {% set ns.bought = ns.bought + [{
+          'action': 'hoard:restock:' ~ item.id ~ ':' ~ item.suggestedQuantity,
+          'title': 'Bought ' ~ item.suggestedQuantity ~ ' ' ~ item.name}] %}
+      {% endif %}
+    {% endfor %}
+    {% for entry in overdue if restock_sensor %}
+      {% if overdue | selectattr('name', 'eq', entry.name)
+         | selectattr('itemName', 'eq', entry.itemName)
+         | list | count == 1 %}
+        {% set ns.done = ns.done + [{
+          'action': 'hoard:maintenance_done:' ~ entry.itemId ~ ':' ~ entry.id,
+          'title': 'Done: ' ~ (entry.itemName ~ ' - ' ~ entry.name
+                               if entry.name and entry.itemName
+                               else entry.name or entry.itemName)}] %}
+      {% endif %}
+    {% endfor %}
+    {% set bought_slots = min(ns.bought | count, 2 if ns.done else 3) %}
+    {{ ns.bought[:bought_slots] + ns.done[:3 - bought_slots] }}
+
+triggers:
+  - trigger: time
+    at: !input time
+
+conditions:
+  - condition: template
+    value_template: "{{ (low | count) + (overdue | count) > 0 }}"
+
+actions:
+  - action: "notify.{{ notifier | replace('notify.', '') }}"
+    data:
+      title: HomeHoard
+      message: >-
+        {%- if low -%}
+        Running low ({{ states(restock_sensor) }}):
+        {% for item in low[:10] -%}
+        {{ item.name }} (buy {{ item.suggestedQuantity }}){{ ', ' if not loop.last else '' }}
+        {%- endfor %}.
+        {%- endif -%}
+        {{ '\n' if low and overdue else '' }}
+        {%- if overdue -%}
+        Maintenance overdue ({{ overdue | count }}):
+        {% for entry in overdue[:10] -%}
+        {{ entry.name or entry.itemName }}
+        {{- ' (' ~ entry.itemName ~ ')' if entry.name and entry.itemName else '' }}
+        {{- ', ' if not loop.last else '' }}
+        {%- endfor %}.
+        {%- endif -%}
+      data:
+        # A new digest replaces yesterday's, so old buttons don't pile up. On a quiet
+        # day nothing replaces it: Android drops it after a day, and an old button
+        # still tapped is refused once its job is done or its item is no longer low.
+        tag: homehoard-digest
+        timeout: 86400
+        actions: "{{ buttons }}"

@@ -30,13 +30,16 @@ def active_warranty_items(group_id):
 
 
 def open_maintenance(group_id):
-    """Scheduled, not-yet-completed maintenance entries for the group's items."""
+    """Scheduled, not-yet-completed maintenance entries for the items the group
+    still keeps: nobody services what they sold or archived."""
     return (
         vault.never_hidden(db.session.query(MaintenanceEntry)
                            .join(Item, Item.id == MaintenanceEntry.item_id))
         .options(joinedload(MaintenanceEntry.item))  # digest reads m.item.name
         .filter(
             Item.group_id == group_id,
+            Item.archived.is_(False),
+            Item.sold_date.is_(None),
             MaintenanceEntry.completed_date.is_(None),
             MaintenanceEntry.scheduled_date.isnot(None),
         )

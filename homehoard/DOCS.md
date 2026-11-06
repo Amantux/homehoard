@@ -110,9 +110,86 @@ Set **public_url** (Configuration tab) to the URL you open HomeHoard at, and
 every notification digest gains tap-through links straight to the Restock,
 Checked-out and Maintenance pages.
 
-For real buttons, pair the digest with a Home Assistant actionable
-notification — the add-on provides the data and the REST endpoints, HA provides
-the buttons. Example: a daily digest with a "Show restock list" action:
+### One-tap buttons: the daily digest blueprint
+
+Import the **HomeHoard daily digest** blueprint and, on any day something is
+running low or maintenance is overdue, your phone gets one notification listing
+it, with buttons to deal with it right there. Quiet days send nothing.
+
+You need the **HomeHoard integration** (below) and the **Home Assistant Companion
+app** on the phone: the buttons only exist in the Companion app.
+
+1. Import it: [![Import the HomeHoard daily digest blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fraw.githubusercontent.com%2FAmantux%2Fhomehoard%2Fmain%2Fblueprints%2Fautomation%2Fhomehoard%2Fhomehoard_daily_digest.yaml)
+
+   Or go to **Settings → Automations & scenes → Blueprints → Import blueprint**
+   and paste:
+   `https://raw.githubusercontent.com/Amantux/homehoard/main/blueprints/automation/homehoard/homehoard_daily_digest.yaml`
+2. Open the blueprint and **create an automation** from it. Pick a **time** and
+   your **notifier**: the phone's notify action, such as `mobile_app_my_phone`
+   (under **Developer Tools → Actions**, search for `notify.mobile_app`). A notify
+   group of Companion apps works too.
+
+What the buttons do:
+
+- **Bought 11 AA batteries** adds 11, the amount the message suggested (*"AA
+  batteries (buy 11)"*), to that item's stock. As long as the item is still low,
+  it adds that amount even if the count has changed since the notification went
+  out, because that is what you were told to buy. An item kept in several places is
+  listed but gets no button:
+  HomeHoard can't tell which place the purchase went to, so update it in the app.
+- **Done: Furnace - Filter change** marks that overdue maintenance done today. A
+  recurring task schedules its next occurrence, as it does in the app.
+
+Android shows at most 3 buttons, so the digest offers the lowest-stock items
+first, keeping one button for overdue maintenance when there is both. The message
+counts everything and names up to 10 of each, and whatever is left comes up in the
+next digest. Two rows nothing tells apart (same name and amount, or the same job on
+same-named items) are listed without a button, so that a tap can't land on the
+wrong one.
+
+A tap that can't act changes nothing and says why in the Home Assistant log
+(**Settings → System → Logs**): for example, the item is no longer low, the
+maintenance was already marked done in the app or on another phone, or HomeHoard
+was unreachable. A tap that worked can't be undone from the phone: if it was a
+mistake, correct the count or the entry in the app.
+
+A new digest replaces the previous one on the phone, so old buttons don't pile up.
+On a day with nothing to report nothing replaces it, so on Android it goes away by
+itself after 24 hours.
+
+Vault-hidden items never appear in the digest, whether the vault is locked or not,
+and neither do items you have sold or archived. If HomeHoard can't be reached at
+the time you picked, no digest goes out that day.
+
+The digest finds its two sensors by how their entity ids end
+(`_restock_needed` and `_maintenance_overdue`), so renaming the device is fine. If
+you change those endings by hand it finds nothing to report. With more than one
+HomeHoard connected, it reports on the first one set up, and the buttons act on
+that same one. Reloading a HomeHoard can change which one that is.
+
+### Building your own notification
+
+Any notification from the Companion app can carry these action identifiers, with
+the integration installed:
+
+| Action | What a tap does |
+|---|---|
+| `hoard:restock:<item id>:<quantity>` | Adds that many to an item that is low |
+| `hoard:maintenance_done:<item id>:<entry id>` | Marks a maintenance entry done today |
+| `hoard:checkout:<name or item id>` | Checks an item out |
+| `hoard:checkin:<name or item id>` | Checks an item back in |
+
+Ids and suggested quantities come from the attributes of
+`sensor.homehoard_restock_needed` (`items`, with `oneTap` false on an item kept in
+several places, which refuses this action) and
+`sensor.homehoard_maintenance_overdue` (`entries`). The quantity is a plain number
+with up to 3 decimal places: put the one your message shows in the action, since
+the suggestion can have changed by the time of the tap. A name is resolved exactly
+as it is for voice: if it could mean more than one item, nothing happens and the
+log says so.
+
+A button can also open a page. Example: a daily digest with a "Show restock list"
+action:
 
 ```yaml
 automation:
@@ -130,24 +207,22 @@ automation:
                 uri: "/api/hassio_ingress/YOUR_TOKEN/#/restock"
 ```
 
-"Mark maintenance done" works the same way: an action that fires a
-`rest_command` at `PUT /api/v1/items/<item_id>/maintenance/<entry_id>` with
-`{"completedDate": "..."}`.
-
 ## Home Assistant integration
 
 Install the **HomeHoard** HACS integration for one **HomeHoard** device with:
 
 - **Sensors** — total items, total value, insured value, locations, bins,
-  labels, warranties-expiring (30d), maintenance-overdue, and **checked-out**.
+  labels, warranties-expiring (30d), maintenance-overdue, **checked-out**, and
+  **restock-needed** (with the low items as an attribute).
 - **Binary sensor** — Online.
 - **Calendar** — warranty expirations + scheduled maintenance.
 - **To-do list** — the restock (shopping) list as a native HA to-do list
   (*"AA batteries — buy 11"*), same suggestions as the app's Restock page.
   Checking an item off means "I bought it" and only hides it from the list —
-  it never silently changes inventory. Record the new quantity in HomeHoard
-  and the item leaves the restock feed for real; if you don't, it reappears
-  on a later refresh while the inventory still says it's low.
+  it never silently changes inventory. Record the purchase in HomeHoard (the
+  **Bought** button on the Restock page does it in one tap) and the item leaves
+  the restock feed for real; if you don't, it reappears on a later refresh while
+  the inventory still says it's low.
 - **Voice & chat** — ask *"where is my drill?"*, *"check out the drill"*. The
   easiest way is the **MCP server** below with an LLM Assist pipeline (no setup).
   A no-LLM option (plain Assist sentences) also ships in **English, German,
