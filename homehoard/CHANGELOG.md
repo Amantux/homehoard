@@ -33,6 +33,23 @@
 - **A data folder with something like `%20` in its name keeps working.** The
   SQLAlchemy update would otherwise have opened a different, empty database. The
   add-on's `/data` was never affected.
+- **Deal with low stock and overdue maintenance from your phone.** Import the
+  new *HomeHoard daily digest* blueprint (see the Documentation tab) and you get
+  one notification a day, only when there is something to report, listing what
+  is running low and what maintenance is overdue. Its buttons act right there:
+  **Bought 11 AA batteries** adds those 11, **Done** marks the maintenance done
+  and schedules the next occurrence. An old button can't do damage: it changes
+  nothing once the job is done or the item is no longer low. Needs the HomeHoard
+  integration and the Companion app.
+- **New sensor: Restock needed**, the number of items running low, with the list
+  as an attribute.
+- **Sold and archived items stop nagging.** They no longer appear on the restock
+  list, in overdue maintenance, on the Home Assistant calendar or in notifications.
+- **Tighter vault.** Hidden items now stay out of the lists Home Assistant keeps
+  (restock, recently added, checked out) even if the vault was unlocked with the
+  integration's own key. Because the Dashboard reads the same data, its restock
+  count and overdue lends leave them out too, even while you are unlocked. Looking
+  up a hidden item by its id no longer finds it while the vault is locked.
 
 ## 1.1.55
 

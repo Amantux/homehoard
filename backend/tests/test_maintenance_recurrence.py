@@ -2,6 +2,10 @@
 forward — one new scheduled entry at completed_date + N calendar months, the
 completed entry kept as history. One-shot entries (recur_months NULL) are
 untouched."""
+import pytest
+
+from app.extensions import db
+from app.models import Item
 
 
 def _make_item(auth_client, name="Furnace"):
@@ -142,3 +146,83 @@ def test_recur_months_rejects_garbage_as_one_shot(auth_client):
         json={"name": "Y", "recurMonths": 0},
     ).get_json()
     assert zero["recurMonths"] is None
+
+
+# --- onlyIfOpen: what a notification's "Done" sends ---------------------------
+
+def _overdue_recurring(auth_client, item):
+    return auth_client.post(
+        f"/api/v1/items/{item['id']}/maintenance",
+        json={"name": "Filter change", "recurMonths": 6, "scheduledDate": "2020-01-01"},
+    ).get_json()
+
+
+def _done(auth_client, item, entry, day="2026-11-06"):
+    return auth_client.put(
+        f"/api/v1/items/{item['id']}/maintenance/{entry['id']}",
+        json={"completedDate": day, "onlyIfOpen": True},
+    )
+
+
+def test_done_on_an_open_entry_completes_it_and_rolls_forward(auth_client):
+    item = _make_item(auth_client)
+    entry = _overdue_recurring(auth_client, item)
+
+    r = _done(auth_client, item, entry)
+
+    assert r.status_code == 200
+    assert r.get_json()["completedDate"].startswith("2026-11-06")
+    assert [e["scheduledDate"][:10] for e in _entries(auth_client, item["id"])
+            if not e["completedDate"]] == ["2027-05-06"]
+
+
+def test_a_stale_done_cannot_rewrite_when_the_job_was_done(auth_client):
+    """An old notification, or the other phone in a notify group. It used to answer
+    200 and move the completed date, with the next occurrence left where it was."""
+    item = _make_item(auth_client)
+    entry = _overdue_recurring(auth_client, item)
+    assert _done(auth_client, item, entry, "2026-01-01").status_code == 200
+    before = _entries(auth_client, item["id"])
+
+    r = _done(auth_client, item, entry)
+
+    assert r.status_code == 409
+    assert _entries(auth_client, item["id"]) == before
+
+
+@pytest.mark.parametrize("gone", [{"archived": True}, {"soldDate": "2026-01-01"}])
+def test_done_on_what_the_household_no_longer_keeps_is_refused(auth_client, gone):
+    """It would otherwise schedule the next occurrence on something that's gone."""
+    item = _make_item(auth_client)
+    entry = _overdue_recurring(auth_client, item)
+    assert auth_client.patch(f"/api/v1/items/{item['id']}", json=gone).status_code == 200
+
+    assert _done(auth_client, item, entry).status_code == 409
+    assert [e["completedDate"] for e in _entries(auth_client, item["id"])] == [None]
+
+
+def test_done_on_a_hidden_items_entry_is_404_while_locked(auth_client, app):
+    """Checked before the 409: "this exists but is no longer open" would be the leak."""
+    item = _make_item(auth_client)
+    entry = _overdue_recurring(auth_client, item)
+    assert _done(auth_client, item, entry, "2026-01-01").status_code == 200
+    with app.app_context():
+        db.session.get(Item, item["id"]).hidden = True
+        db.session.commit()
+
+    assert _done(auth_client, item, entry).status_code == 404
+
+
+def test_the_apps_own_edit_can_still_correct_a_completed_date(auth_client):
+    """No onlyIfOpen, no refusal: fixing a date in the app is a real edit."""
+    item = _make_item(auth_client)
+    entry = _overdue_recurring(auth_client, item)
+    assert _done(auth_client, item, entry, "2026-01-01").status_code == 200
+
+    r = auth_client.put(
+        f"/api/v1/items/{item['id']}/maintenance/{entry['id']}",
+        json={"completedDate": "2026-01-02"},
+    )
+
+    assert r.status_code == 200
+    assert r.get_json()["completedDate"].startswith("2026-01-02")

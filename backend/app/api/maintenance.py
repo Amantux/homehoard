@@ -155,6 +155,14 @@ def update_entry(item_id, entry_id):
             or entry.item.group_id != current_group().id):  # no group_id column; scope via item
         abort(404)
     data = json_body()
+    # A one-tap "Done" can be days old, or already tapped on another phone. It asks
+    # to be refused once there is nothing left to do, because writing again would
+    # rewrite when the job was done. The app's edit form doesn't ask: correcting a
+    # date is a real edit there.
+    if data.get("onlyIfOpen") and (entry.completed_date is not None
+                                   or entry.item.archived or entry.item.sold_date):
+        abort(409, description="This maintenance is not open any more: it was already "
+                               "completed, or its item was sold or archived.")
     if "name" in data:
         entry.name = data["name"]
     if "description" in data:

@@ -90,11 +90,11 @@ from chat or voice.
 
 - **Consumables / low-stock** thresholds → a to-do / shopping list entity
 - **Multi-language Assist sentences**
-- Actionable notifications ("Reorder" / "Mark maintenance done")
 - Optional **photo recognition** for label-less bins/shelves (AI vision)
 
 ## What's new
 
+- **Daily digest with one-tap buttons** — A blueprint tells your phone what is running low and what maintenance is overdue, with **Bought** and **Done** buttons that act right from the notification. See [Daily digest with one-tap buttons](#daily-digest-with-one-tap-buttons).
 - **Richer printable QR label sheets** — The Print QR labels page now offers three layout presets (Address labels 3-up, Small labels 4-up, Large labels 2-up), each with its own label and QR size, and remembers your choice. The large layout also prints each item's asset id under its name.
 
 
@@ -151,7 +151,8 @@ The companion integration (`custom_components/homehoard`) polls a consolidated
 
 - **Sensors** — total items, total value, insured value, locations, bins,
   labels, **warranties expiring (30d)** (with a 90-day + item list attribute),
-  and **maintenance overdue** (with upcoming + entries attribute).
+  **maintenance overdue** (with upcoming + entries attribute), and **restock
+  needed** (with the low items as an attribute).
 - **Binary sensor** — `Online` (connectivity to the HomeHoard instance).
 - **Calendar** — *Warranties & maintenance*: every warranty-expiry and scheduled
   maintenance date as calendar events, so you can automate reminders
@@ -159,6 +160,20 @@ The companion integration (`custom_components/homehoard`) polls a consolidated
 - **Branded icon** — the integration ships its own logo inline
   (`custom_components/homehoard/brand/`, HA 2026.3+ brands proxy), so the
   HomeHoard box shows in Devices & Services with no `home-assistant/brands` PR.
+
+#### Daily digest with one-tap buttons
+
+A blueprint sends your phone one notification a day, only when something is
+running low or maintenance is overdue. Its **Bought** buttons add the amount they
+name, and its **Done** buttons mark the maintenance done and schedule the next
+occurrence. It needs this integration and the Companion app.
+
+[![Import the HomeHoard daily digest blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fraw.githubusercontent.com%2FAmantux%2Fhomehoard%2Fmain%2Fblueprints%2Fautomation%2Fhomehoard%2Fhomehoard_daily_digest.yaml)
+
+Or **Settings → Automations & scenes → Blueprints → Import blueprint** and paste
+`https://raw.githubusercontent.com/Amantux/homehoard/main/blueprints/automation/homehoard/homehoard_daily_digest.yaml`. Then create an automation from it and pick a time and your phone's notify
+action. The add-on's **Documentation** tab covers what each button does, and the
+action strings for building your own notifications.
 
 #### Find, check out & query by voice & messaging
 

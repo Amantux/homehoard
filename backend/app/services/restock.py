@@ -10,8 +10,10 @@ with no min_quantity has no policy and is never suggested: most inventory is
 not a consumable, and nagging about a couch would teach people to ignore the
 list.
 """
+from sqlalchemy import func
+
 from ..extensions import db
-from ..models import Item
+from ..models import Item, ItemHolding
 from . import vault
 
 
@@ -35,7 +37,8 @@ def restock_state(item) -> dict | None:
         "threshold": num(threshold),
         "target": num(target),
         "suggestedQuantity": num(need),
-        "isLow": on_hand <= threshold,
+        # Sold or archived: the household no longer keeps it, so nothing is low.
+        "isLow": on_hand <= threshold and not item.archived and item.sold_date is None,
     }
 
 
@@ -64,3 +67,13 @@ def restock_suggestions(gid, *, include_hidden=None) -> list[dict]:
         out.append(st)
     out.sort(key=lambda s: (s["onHand"], s["name"].lower()))
     return out
+
+
+def in_several_places(item_ids) -> set:
+    """Which of these items have more than one placement. A one-tap restock has
+    no way to say which placement the purchase went into, so it refuses them."""
+    rows = (db.session.query(ItemHolding.item_id)
+            .filter(ItemHolding.item_id.in_(item_ids))
+            .group_by(ItemHolding.item_id)
+            .having(func.count() > 1))
+    return {item_id for (item_id,) in rows}
