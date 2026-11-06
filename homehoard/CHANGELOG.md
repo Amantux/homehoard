@@ -23,6 +23,8 @@
   SQLAlchemy update would otherwise have opened a different, empty database. The
   add-on's `/data` was never affected.
 
+- Runs on Python 3.15.
+
 ## 1.1.55
 
 - Maintenance release.
