@@ -657,6 +657,18 @@ def test_sqlalchemy_uri_defaults_to_sqlite_inside_the_data_dir(tmp_path):
     assert s.sqlalchemy_uri == f"sqlite:///{tmp_path / 'homehoard.db'}"
 
 
+def test_sqlite_uri_keeps_a_percent_sequence_in_the_data_dir(tmp_path):
+    """SQLAlchemy 2.1 percent-decodes the database part of a URL, so an unescaped
+    a%20b would silently open a different, empty database at "a b"."""
+    from sqlalchemy.engine import make_url
+
+    data_dir = tmp_path / "a%20b"
+
+    s = resolve(env={"HBOX_DATA_DIR": str(data_dir)})
+
+    assert make_url(s.sqlalchemy_uri).database == str(data_dir / "homehoard.db")
+
+
 def test_sqlalchemy_uri_normalizes_an_explicit_database_url():
     s = resolve(env={"HBOX_DATABASE_URL": "postgresql://u:p@h/db"})
 

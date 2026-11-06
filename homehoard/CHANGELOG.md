@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+- **Choose your label size when printing QR labels, and get that size.**
+  **Tools → QR label sheet** now offers three layouts: address labels 3 across
+  (63.5×38.1 mm), small labels 4 across (50.8×25.4 mm) and large labels 2
+  across (101.6×50.8 mm). The sheet prints with no page margin, so each label
+  comes out at its stated size when you print at 100% scale (not "Fit to
+  page"); the first label starts at the top-left corner of the page. The large
+  layout also prints each item's asset id under its name (an item without one
+  prints nothing extra; **Tools → Ensure asset IDs** assigns any that are
+  missing), and the layout you pick is remembered in that browser. If a QR
+  image can't be loaded, printing is held until you try again or deselect it,
+  so a label can't come out without its code. The chat button and any pop-up
+  messages no longer print over the labels, and the text prints black on white
+  even with a dark theme.
+- **One-tap restock.** Each row on the Restock page has a "Bought N" button: one
+  tap adds what you bought to the item's count. The row then stays put with an Undo
+  button, so nothing moves under your finger while you work down the list, and it
+  drops off when you next open the page. An item kept in more than one place can't
+  be recorded in one tap: the tap changes nothing and the row becomes a link to the
+  item, so you can say where the new stock went.
+- **Buying what the Restock list suggests now takes the item off it.** An item with
+  only a Min quantity (or a Target no higher than its Min) used to suggest just enough
+  to reach the Min, where it still counted as low and stayed listed. It now suggests
+  one more, so "buy 5" can read "buy 6" on the Restock page, in the Home Assistant
+  to-do list and in notifications. Set a Target to buy up to a specific number.
+
+- **Security updates.** Pillow 13 fixes dozens of image-decoder flaws, some of
+  them reachable just by uploading a photo, and the MCP library fixes 4 more.
+  Also updates SQLAlchemy to 2.1 and the other backend and frontend libraries.
+- **A data folder with something like `%20` in its name keeps working.** The
+  SQLAlchemy update would otherwise have opened a different, empty database. The
+  add-on's `/data` was never affected.
 - **Deal with low stock and overdue maintenance from your phone.** Import the
   new *HomeHoard daily digest* blueprint (see the Documentation tab) and you get
   one notification a day, only when there is something to report, listing what
