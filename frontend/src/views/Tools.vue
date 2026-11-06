@@ -572,7 +572,7 @@ const actions = [
   <div class="card">
     <h2>QR label sheet</h2>
     <p class="muted">Pick any of your generated QR codes — across items, bins, and locations — and print
-      them as a tidy grid sized for standard 63.5&times;38.1&nbsp;mm label sheets.</p>
+      them as a tidy grid in your choice of three label sizes (address 3-up, small 4-up, large 2-up).</p>
     <router-link to="/labels/print"><button class="secondary">🖨️ Print sheet…</button></router-link>
   </div>
 
