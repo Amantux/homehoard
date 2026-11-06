@@ -128,6 +128,11 @@ jobs:
         run: |
           npm ci
           npm run build
+      - name: Unit tests
+        # vitest never ran in CI, so a view's tests could rot unnoticed (the
+        # label sheet's did: 4 of its 6 failed while this job stayed green).
+        working-directory: frontend
+        run: npm test
 
   validate-addon:
     name: Validate add-on + integration

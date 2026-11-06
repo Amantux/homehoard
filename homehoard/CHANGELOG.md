@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **Choose your label size when printing QR labels, and get that size.**
+  **Tools → QR label sheet** now offers three layouts: address labels 3 across
+  (63.5×38.1 mm), small labels 4 across (50.8×25.4 mm) and large labels 2
+  across (101.6×50.8 mm). The sheet prints with no page margin, so each label
+  comes out at its stated size when you print at 100% scale (not "Fit to
+  page"); the first label starts at the top-left corner of the page. The large
+  layout also prints each item's asset id under its name (an item without one
+  prints nothing extra; **Tools → Ensure asset IDs** assigns any that are
+  missing), and the layout you pick is remembered in that browser. If a QR
+  image can't be loaded, printing is held until you try again or deselect it,
+  so a label can't come out without its code. The chat button and any pop-up
+  messages no longer print over the labels, and the text prints black on white
+  even with a dark theme.
 - **One-tap restock.** Each row on the Restock page has a "Bought N" button: one
   tap adds what you bought to the item's count. The row then stays put with an Undo
   button, so nothing moves under your finger while you work down the list, and it

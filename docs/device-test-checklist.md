@@ -30,8 +30,11 @@ Ordered so the highest-risk items are first; the whole pass is ~15 minutes.
    the code field should already have focus; a trigger pull should type + Enter
    + link in one motion. *Broken: focus elsewhere, scan goes nowhere.*
 8. **Label sheet print preview** — Tools → QR label sheet → select a few →
-   Print. In the preview: 3-across grid, ~63×38 mm cells, no clipped codes,
-   sane page breaks. *This is the least-verified layout in the app.*
+   Print, once per layout (3, 4 and 2 across), at 100% scale. In the preview:
+   cells at the size the page states, the first label at the page's top-left
+   corner, no clipped codes, sane page breaks, and no chat button or toast over
+   the labels. Measure one printed label with a ruler. *Real label stock on a
+   real printer is still unverified: only Chromium and Firefox PDFs were checked.*
 9. **`/` opens search; search "battery"** — should find "batteries" items.
 
 ## HA side

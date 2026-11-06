@@ -95,7 +95,7 @@ from chat or voice.
 
 ## What's new
 
-- **Richer printable QR label sheets** — The Print QR labels page now offers multiple layout presets (Address labels 3-up, Small labels 4-up, Large labels 2-up) with configurable cell sizes and QR dimensions. The large layout includes an extra text line showing the item's asset/short code for labels that remain scannable even with degraded QR print quality.
+- **Richer printable QR label sheets** — The Print QR labels page now offers three layout presets (Address labels 3-up, Small labels 4-up, Large labels 2-up), each with its own label and QR size, and remembers your choice. The large layout also prints each item's asset id under its name.
 
 
 ## Home Assistant
