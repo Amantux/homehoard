@@ -1,3 +1,38 @@
+from app.extensions import db
+from app.models import Item
+
+
+def test_resolve_by_id_does_not_reveal_a_hidden_item_while_locked(auth_client, app):
+    """Knowing an id is not authorisation, and "nothing matched" is the only answer
+    that doesn't confirm the item exists. HA's check-in action can carry any id."""
+    item = auth_client.post("/api/v1/items", json={"name": "Secret Telescope"}).get_json()
+    with app.app_context():
+        db.session.get(Item, item["id"]).hidden = True
+        db.session.commit()
+
+    locked = auth_client.get(f"/api/v1/resolve?q={item['id']}")
+
+    assert locked.get_json()["confidence"] == "none"
+    assert "Secret Telescope" not in locked.get_data(as_text=True)
+
+    auth_client.post("/api/v1/vault/passphrase", json={"phrase": "open sesame"})
+    assert auth_client.post(
+        "/api/v1/vault/unlock", json={"phrase": "open sesame"}).status_code == 200
+    unlocked = auth_client.get(f"/api/v1/resolve?q={item['id']}").get_json()
+    assert unlocked["confidence"] == "high" and unlocked["match"]["id"] == item["id"]
+
+
+def test_resolve_by_id_still_finds_bins_and_locations(auth_client):
+    """They have no vault state to check."""
+    loc = auth_client.post("/api/v1/locations", json={"name": "Garage"}).get_json()
+    box = auth_client.post(
+        "/api/v1/bins", json={"name": "Box", "locationId": loc["id"]}).get_json()
+
+    for kind, row in (("location", loc), ("bin", box)):
+        found = auth_client.get(f"/api/v1/resolve?q={row['id']}&type={kind}").get_json()
+        assert found["confidence"] == "high" and found["match"]["id"] == row["id"]
+
+
 def test_search_where_path(auth_client):
     garage = auth_client.post("/api/v1/locations", json={"name": "Garage"}).get_json()
     shelf = auth_client.post(

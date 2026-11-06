@@ -68,8 +68,12 @@ def summary():
     upcoming_30 = [m for m in maint if today <= m.scheduled_date.date() <= today + timedelta(days=30)]
 
     # Overview lists — power the Home Assistant "Overview" dashboard cards.
-    recent_items = items().order_by(Item.created_at.desc()).limit(6).all()
-    checked_out_items = items().filter(Item.checked_out.is_(True)).all()
+    # never_hidden, NOT items(): these names land in HA's sensor attributes and the
+    # recorder, which outlive any unlock of this credential (MCP shares the
+    # integration token).
+    named = vault.never_hidden(db.session.query(Item).filter(Item.group_id == gid))
+    recent_items = named.order_by(Item.created_at.desc()).limit(6).all()
+    checked_out_items = named.filter(Item.checked_out.is_(True)).all()
     locations = (
         db.session.query(Location)
         .filter_by(group_id=gid)
