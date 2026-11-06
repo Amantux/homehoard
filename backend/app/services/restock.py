@@ -32,7 +32,8 @@ def restock_state(item) -> dict | None:
         "threshold": num(threshold),
         "target": num(target),
         "suggestedQuantity": num(need),
-        "isLow": on_hand <= threshold,
+        # Sold or archived: the household no longer keeps it, so nothing is low.
+        "isLow": on_hand <= threshold and not item.archived and item.sold_date is None,
     }
 
 
