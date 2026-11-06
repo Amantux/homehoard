@@ -42,8 +42,9 @@ class Item(IDMixin, TimestampMixin, db.Model):
         Boolean, default=False, server_default=false(), nullable=False, index=True)
     # Consumables policy (both optional): an item with a min_quantity is a
     # tracked consumable — at/below it, the restock list suggests topping up to
-    # target_quantity (or back to the threshold when no target is set). Same
-    # exact Numeric as `quantity` (fractional/bulk amounts).
+    # target_quantity (or one past the threshold, when no target is set above it,
+    # so that buying the suggestion clears the item). Same exact Numeric as
+    # `quantity` (fractional/bulk amounts).
     min_quantity: Mapped[Decimal] = mapped_column(QUANTITY, nullable=True)
     target_quantity: Mapped[Decimal] = mapped_column(QUANTITY, nullable=True)
     # When set, moving this item's container moves its children with it.

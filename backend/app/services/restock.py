@@ -23,8 +23,11 @@ def restock_state(item) -> dict | None:
     on_hand = item.quantity or 0
     threshold = item.min_quantity
     target = item.target_quantity if item.target_quantity is not None else threshold
-    # Enough to reach the target, but never a nonsensical zero/negative ask.
-    need = round(max(target - on_hand, threshold - on_hand, 1), 4)
+    # Buying the suggestion must take the item off the list, and at the threshold
+    # still counts as low: so up to the target, or one past the threshold when the
+    # target doesn't reach beyond it. Never a nonsensical zero/negative ask.
+    goal = target if target > threshold else threshold + 1
+    need = round(max(goal - on_hand, 1), 4)
     return {
         "id": item.id,
         "name": item.name,

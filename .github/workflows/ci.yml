@@ -590,7 +590,7 @@ jobs:
         working-directory: backend
         run: |
           set -o pipefail
-          pytest -q tests/test_postgres_schema.py tests/test_migrations.py -k postgres -rs | tee pg.log
+          pytest -q tests/test_postgres_schema.py tests/test_migrations.py tests/test_restock.py -k postgres -rs | tee pg.log
           # A skip here means the env var vanished and nothing was tested: fail, don't go green.
           ! grep -q " skipped" pg.log
 
