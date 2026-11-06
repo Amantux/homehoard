@@ -172,6 +172,27 @@ def test_boot_migrate_raises_on_failure(app, tmp_path, monkeypatch):
             _maybe_boot_migrate(app)
 
 
+def test_boot_migrate_reads_a_data_dir_with_a_percent_sequence(app, tmp_path, monkeypatch):
+    # SQLAlchemy 2.1 percent-decodes the URL's database part. Unescaped, this would
+    # read a different (empty) file and strand the real data in SQLite.
+    from sqlalchemy.engine import make_url
+
+    import app.services.db_copy as dbc
+    data_dir = tmp_path / "a%20b"
+    data_dir.mkdir()
+    (data_dir / "homehoard.db").write_bytes(b"x")
+    seen = []
+    monkeypatch.setattr(dbc, "copy_database",
+                        lambda source, target: seen.append(source) or {"total": 0})
+    with app.app_context():
+        app.config["MIGRATE_FROM_SQLITE"] = True
+        app.config["SQLALCHEMY_DATABASE_URI"] = "postgresql+psycopg://u:p@127.0.0.1:5432/none"
+        app.config["DATA_DIR"] = str(data_dir)
+        _maybe_boot_migrate(app)
+
+    assert make_url(seen[0]).database == str(data_dir / "homehoard.db")
+
+
 def test_coerce_non_null_fills_added_columns(app):
     """A column added by a later migration is NULL on old source rows; the copy must
     fill it (not insert NULL) so a NOT NULL target column doesn't reject the row."""

@@ -512,7 +512,13 @@ class Settings:
                 # means "not provisioned yet", so fall through to the SQLite
                 # default rather than failing startup.
                 pass
-        return f"sqlite:///{os.path.join(self.data_dir, 'homehoard.db')}"
+        # URL.create, not an f-string: SQLAlchemy 2.1 percent-decodes the database
+        # part, so a data dir with a literal %XX in it would open a different, empty
+        # database.
+        from sqlalchemy.engine import URL
+        return URL.create(
+            "sqlite", database=os.path.join(self.data_dir, "homehoard.db")
+        ).render_as_string()
 
     @property
     def mcp_api(self) -> str:
