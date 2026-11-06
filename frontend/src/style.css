@@ -456,7 +456,9 @@ tbody tr.row-selected td { background: var(--accent-soft); }
 }
 
 @media print {
-  .sidebar, .topbar, .no-print { display: none !important; }
+  /* .asst (chat button + panel) and .toast-wrap are position:fixed, so they sit
+     over the page content on every printed page; they are controls, never output. */
+  .sidebar, .topbar, .asst, .toast-wrap, .no-print { display: none !important; }
   .app-shell { display: block !important; }
   .main { margin: 0 !important; }
   .card { break-inside: avoid; }

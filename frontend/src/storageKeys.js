@@ -3,6 +3,7 @@
 export const TOKEN = 'homehoard_token'
 export const ITEM_VIEW = 'homehoard_itemview'
 export const THEME = 'homehoard_theme'
+export const LABEL_LAYOUT = 'homehoard_labellayout'
 
 const LEGACY = {
   easyinv_token: TOKEN,
