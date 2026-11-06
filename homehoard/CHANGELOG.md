@@ -50,6 +50,12 @@
   integration's own key. Because the Dashboard reads the same data, its restock
   count and overdue lends leave them out too, even while you are unlocked. Looking
   up a hidden item by its id no longer finds it while the vault is locked.
+- **Photo previews are made only for JPEG, PNG, WebP and GIF** (phone
+  multi-picture JPEGs included), so a crafted upload can't reach the image
+  library's other decoders. A TIFF, BMP or AVIF photo still uploads and
+  downloads as before but gets no preview: its card loads the full-size file
+  (Chrome and Firefox can't display a TIFF, so that card stays blank);
+  previews already made are kept.
 
 ## 1.1.55
 
