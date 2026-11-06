@@ -41,6 +41,13 @@ Ordered so the highest-risk items are first; the whole pass is ~15 minutes.
 11. **Notification digest** — trigger `POST /notifiers/dispatch` (or wait for
     your automation): links present only if `public_url` is set, and no
     vault-hidden item ever named.
+12. **Digest blueprint** — import it by URL, create an automation, then **Run
+    actions** with something low: buttons appear on the phone, **Bought** raises
+    the quantity by the amount on the button and **Done** completes the
+    maintenance. With 3 buttons on Android, check you can still tell them apart:
+    nothing documents how much of a title the phone shows. Leave one on an Android
+    phone for a day: it should be gone. *The test suite stops at the bus event;
+    only a real phone proves the tap fires it, and how the phone draws it.*
 
 Anything that fails: note which numbered item and what you saw — each maps to
 one specific commit.

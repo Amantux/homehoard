@@ -9,6 +9,7 @@ from aiohttp import ClientError, ClientSession, ClientTimeout
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_HOST,
@@ -79,17 +80,67 @@ class HomeHoardDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             resp.raise_for_status()
             return await resp.json()
 
-    async def _post_json(self, path: str, json: dict | None = None) -> dict:
-        """POST JSON to a HomeHoard API endpoint."""
-        url = build_url(self.host, self.port, path)
+    async def _write(
+        self,
+        method: str,
+        path: str,
+        payload: dict,
+        done: str,
+        refused: dict[int, str],
+    ) -> dict:
+        """Send one write and name how it ended, like checkout()/checkin() do.
+
+        ``done`` names a 2xx, which also carries what the server answered. ``refused``
+        names the answers that are outcomes rather than failures. Anything else, no
+        answer included, is ``error``.
+        """
         try:
-            async with self._session.post(
-                url, json=json or {}, headers=self._headers, timeout=_TIMEOUT
+            async with self._session.request(
+                method,
+                build_url(self.host, self.port, path),
+                json=payload,
+                headers=self._headers,
+                timeout=_TIMEOUT,
             ) as resp:
-                resp.raise_for_status()
-                return await resp.json()
-        except (ClientError, asyncio.TimeoutError):
-            return {}
+                status = resp.status
+                answer = await resp.json() if 200 <= status < 300 else {}
+        except (ClientError, TimeoutError) as err:
+            _LOGGER.warning("HomeHoard %s %s got no answer: %r", method, path, err)
+            return {"status": "error"}
+        if 200 <= status < 300:
+            return {**answer, "status": done}
+        if status in refused:
+            return {"status": refused[status]}
+        _LOGGER.warning("HomeHoard %s %s answered HTTP %s", method, path, status)
+        return {"status": "error"}
+
+    async def restocked(self, item_id: str, quantity: str) -> dict:
+        """Record that this many of a low item were bought: HomeHoard adds them."""
+        return await self._write(
+            "POST",
+            f"/api/v1/restock/{item_id}/restocked",
+            {"quantity": float(quantity)},
+            "restocked",
+            {404: "not_found", 409: "several_placements", 422: "not_low"},
+        )
+
+    async def complete_maintenance(self, item_id: str, entry_id: str) -> dict:
+        """Mark a maintenance entry done today, rolling a recurring one forward.
+
+        The date is the household's calendar day in the form the app's own date
+        input sends. A UTC timestamp would land on the wrong day whenever UTC and
+        local dates differ, and the next occurrence is counted from this date.
+
+        ``onlyIfOpen``: this runs from a notification that can be days old, and an
+        entry already completed must keep the date it was completed on.
+        """
+        return await self._write(
+            "PUT",
+            f"/api/v1/items/{item_id}/maintenance/{entry_id}",
+            {"completedDate": dt_util.now().date().isoformat(), "onlyIfOpen": True},
+            "done",
+            {404: "not_found", 409: "no_longer_open"},
+        )
 
     async def contents(self, name: str) -> dict:
         """List what's inside a named bin or location (voice: 'what's in X')."""

@@ -18,7 +18,6 @@ check_out:
   description: >-
     Check an item out of HomeHoard (mark it as not here / lent out) by name.
     Handy from automations or voice — "check out the drill".
-    Also triggered by actionable notification actions (hoard:checkout:<item_name>).
   fields:
     name:
       name: Name
@@ -32,7 +31,6 @@ check_in:
   name: Check in
   description: >-
     Check an item back into HomeHoard (mark it as here) by name.
-    Also triggered by actionable notification actions (hoard:checkin:<item_name>).
   fields:
     name:
       name: Name

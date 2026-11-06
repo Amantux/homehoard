@@ -81,20 +81,29 @@ def summary():
         .all()
     )
 
-    from ..services.restock import restock_suggestions
-    restock = restock_suggestions(gid)
+    from ..services.restock import in_several_places, restock_suggestions
+    # include_hidden=False, NOT the default, for the same reason as the lists above;
+    # and the digest blueprint puts this feed on a phone.
+    restock = restock_suggestions(gid, include_hidden=False)
+    restock_shown = restock[:20]
+    several = in_several_places([r["id"] for r in restock_shown])
 
     return jsonify(
         {
             "health": True,
             # Low consumables — the to-do/shopping feed for HA (same policy as
-            # GET /restock and the notifier digest, so they can never disagree).
+            # GET /restock and the notifier digest). Only an unlocked session's
+            # /restock also lists hidden items, so the Dashboard's count, which comes
+            # from here, can be lower than that page's.
             "restock": {
                 "count": len(restock),
+                # oneTap: POST /restock/<id>/restocked will take it, so a
+                # "Bought it" button is worth offering.
                 "items": [{"id": r["id"], "name": r["name"],
                            "onHand": r["onHand"],
-                           "suggestedQuantity": r["suggestedQuantity"]}
-                          for r in restock[:20]],
+                           "suggestedQuantity": r["suggestedQuantity"],
+                           "oneTap": r["id"] not in several}
+                          for r in restock_shown],
             },
             "group": current_group().name,
             "recentItems": [

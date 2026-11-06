@@ -210,7 +210,7 @@ jobs:
             echo "skip-changelog label set; not checking."; exit 0
           fi
           # Shipped paths, minus dependency manifests (one bot PR per bump).
-          shipped=$(grep -E '^(backend/|frontend/|custom_components/|docker-entrypoint\.sh$|Dockerfile$)' "$CHANGED_LIST" \
+          shipped=$(grep -E '^(backend/|frontend/|custom_components/|blueprints/|docker-entrypoint\.sh$|Dockerfile$)' "$CHANGED_LIST" \
             | grep -vE '(^|/)(requirements[^/]*\.txt|package\.json|package-lock\.json)$' || true)
           if [ -z "$shipped" ]; then
             echo "No shipped paths changed; no changelog entry needed."; exit 0
