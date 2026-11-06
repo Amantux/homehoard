@@ -15,6 +15,17 @@
   so a label can't come out without its code. The chat button and any pop-up
   messages no longer print over the labels, and the text prints black on white
   even with a dark theme.
+- **One-tap restock.** Each row on the Restock page has a "Bought N" button: one
+  tap adds what you bought to the item's count. The row then stays put with an Undo
+  button, so nothing moves under your finger while you work down the list, and it
+  drops off when you next open the page. An item kept in more than one place can't
+  be recorded in one tap: the tap changes nothing and the row becomes a link to the
+  item, so you can say where the new stock went.
+- **Buying what the Restock list suggests now takes the item off it.** An item with
+  only a Min quantity (or a Target no higher than its Min) used to suggest just enough
+  to reach the Min, where it still counted as low and stayed listed. It now suggests
+  one more, so "buy 5" can read "buy 6" on the Restock page, in the Home Assistant
+  to-do list and in notifications. Set a Target to buy up to a specific number.
 
 - **Security updates.** Pillow 13 fixes dozens of image-decoder flaws, some of
   them reachable just by uploading a photo, and the MCP library fixes 4 more.

@@ -145,9 +145,10 @@ Install the **HomeHoard** HACS integration for one **HomeHoard** device with:
 - **To-do list** — the restock (shopping) list as a native HA to-do list
   (*"AA batteries — buy 11"*), same suggestions as the app's Restock page.
   Checking an item off means "I bought it" and only hides it from the list —
-  it never silently changes inventory. Record the new quantity in HomeHoard
-  and the item leaves the restock feed for real; if you don't, it reappears
-  on a later refresh while the inventory still says it's low.
+  it never silently changes inventory. Record the purchase in HomeHoard (the
+  **Bought** button on the Restock page does it in one tap) and the item leaves
+  the restock feed for real; if you don't, it reappears on a later refresh while
+  the inventory still says it's low.
 - **Voice & chat** — ask *"where is my drill?"*, *"check out the drill"*. The
   easiest way is the **MCP server** below with an LLM Assist pipeline (no setup).
   A no-LLM option (plain Assist sentences) also ships in **English, German,
