@@ -1,5 +1,5 @@
 <script setup>
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { api, apiUrl, getToken } from '../api'
 import { useUI } from '../stores/ui'
 import EmptyState from '../components/EmptyState.vue'
@@ -10,11 +10,55 @@ import { useLoader } from '../components/useLoader'
 // (across items, bins, and locations), previews the grid, and prints. Cells
 // are sized for common 63.5×38.1mm label sheets (3 per row) under @media
 // print; on screen the same grid is shown as a preview.
+
+// Layout presets: each defines print CSS column count, cell dimensions in mm,
+// QR size in mm, and whether to show extra text (asset/short code).
+const LAYOUTS = {
+  'address-3up': {
+    name: 'Address labels, 3-up',
+    description: '63.5×38.1mm (standard address labels)',
+    printCols: 3,
+    cellWidth: 63.5,
+    cellHeight: 38.1,
+    qrSize: 30,
+    showExtraText: false,
+  },
+  'small-4up': {
+    name: 'Small labels, 4-up',
+    description: '50.8×25.4mm (dense small-bin/jar size)',
+    printCols: 4,
+    cellWidth: 50.8,
+    cellHeight: 25.4,
+    qrSize: 20,
+    showExtraText: false,
+  },
+  'large-2up': {
+    name: 'Large labels, 2-up',
+    description: '101.6×50.8mm (bigger size for bins/totes)',
+    printCols: 2,
+    cellWidth: 101.6,
+    cellHeight: 50.8,
+    qrSize: 40,
+    showExtraText: true,
+  },
+}
+
 const ui = useUI()
 const tags = ref([])
 const selected = reactive({}) // tag id -> true
 const images = reactive({}) // tag id -> blob URL (loaded on demand)
 const pendingImages = ref(0)
+
+// Layout selection with localStorage persistence
+const layoutKey = 'homehoard-label-layout'
+const savedLayout = localStorage.getItem(layoutKey)
+const currentLayout = ref(savedLayout || 'address-3up')
+
+// Update localStorage when layout changes
+function setLayout(layoutId) {
+  currentLayout.value = layoutId
+  localStorage.setItem(layoutKey, layoutId)
+}
 
 const { loading, error, reload: load } = useLoader(async () => {
   const all = await api.get('/qr-tags')
@@ -33,10 +77,20 @@ const groups = computed(() =>
 const selectedTags = computed(() => tags.value.filter((t) => selected[t.id]))
 const selectedCount = computed(() => selectedTags.value.length)
 
+// Current layout object
+const layout = computed(() => LAYOUTS[currentLayout.value])
+
 function tagName(t) {
   const target = t.target?.name || ''
   if (t.description && target) return `${target} — ${t.description}`
   return target || t.description || t.kind
+}
+
+// Extra text: item asset/short code if present, empty for bins/locations
+function extraText(t) {
+  if (t.kind === 'item' && t.assetId) return t.assetId
+  if (t.kind === 'item' && t.shortCode) return t.shortCode
+  return ''
 }
 
 async function loadImage(t) {
@@ -103,8 +157,41 @@ function printSheet() {
   <template v-else-if="tags.length">
     <div class="card no-print">
       <p class="muted" style="margin-top:0;font-size:0.9rem">
-        Pick the HomeHoard QR codes to put on the sheet. The grid prints at
-        63.5&times;38.1&nbsp;mm per label (3 across) — standard address-label sheets.
+        Pick the HomeHoard QR codes to put on the sheet.
+      </p>
+
+      <!-- Layout selector -->
+      <div class="stack" style="margin-bottom:12px">
+        <label class="muted" style="font-size:0.85rem">Label sheet layout</label>
+        <div class="stack" style="gap:6px">
+          <label v-for="(layoutDef, id) in LAYOUTS" :key="id" class="row" style="gap:8px;cursor:pointer">
+            <input
+              type="radio"
+              :name="'layout'"
+              :value="id"
+              v-model="currentLayout"
+            />
+            <div>
+              <strong>{{ layoutDef.name }}</strong>
+              <span class="muted" style="font-size:0.85rem"> — {{ layoutDef.description }}</span>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <!-- Extra text toggle (only show for layouts that support it) -->
+      <div v-if="layout.showExtraText" class="stack" style="margin-bottom:12px">
+        <label class="row" style="gap:8px;cursor:pointer">
+          <input type="checkbox" :checked="true" disabled />
+          <span class="muted" style="font-size:0.85rem">
+            Extra text (asset/short code) is enabled for this layout
+          </span>
+        </label>
+      </div>
+
+      <p class="muted" style="font-size:0.9rem">
+        The grid prints at {{ layout.cellWidth }}&times;{{ layout.cellHeight }}&nbsp;mm per label
+        ({{ layout.printCols }} across) — {{ layout.description }}.
       </p>
       <div v-for="g in groups" :key="g.kind" class="stack" style="margin-bottom:12px">
         <div class="row" style="gap:8px">
@@ -126,12 +213,16 @@ function printSheet() {
     </div>
 
     <h2 v-if="selectedCount" class="no-print" style="font-size:1rem">Sheet preview</h2>
-    <div v-if="selectedCount" class="label-sheet">
-      <div v-for="t in selectedTags" :key="t.id" class="label-cell">
-        <img v-if="images[t.id]" :src="images[t.id]" alt="QR code" class="label-qr" />
-        <div v-else class="skeleton label-qr"></div>
+    <div v-if="selectedCount" class="label-sheet" :style="{ '--print-cols': layout.printCols }">
+      <div v-for="t in selectedTags" :key="t.id" class="label-cell" :style="{
+        width: layout.cellWidth + 'mm',
+        height: layout.cellHeight + 'mm',
+      }">
+        <img v-if="images[t.id]" :src="images[t.id]" alt="QR code" class="label-qr" :style="{ width: layout.qrSize + 'mm', height: layout.qrSize + 'mm' }" />
+        <div v-else class="skeleton label-qr" :style="{ width: layout.qrSize + 'mm', height: layout.qrSize + 'mm' }"></div>
         <div class="label-text">
           <div class="label-name">{{ tagName(t) }}</div>
+          <div v-if="extraText(t)" class="label-asset">{{ extraText(t) }}</div>
           <div class="label-token">{{ t.token }}</div>
         </div>
       </div>
@@ -149,7 +240,7 @@ function printSheet() {
    what you see is what comes out of the printer. */
 .label-sheet {
   display: grid;
-  grid-template-columns: repeat(3, 63.5mm);
+  grid-template-columns: repeat(v-bind(--print-cols), v-bind(cellWidth + 'mm'));
   gap: 2mm;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -158,8 +249,8 @@ function printSheet() {
   overflow-x: auto;
 }
 .label-cell {
-  width: 63.5mm;
-  height: 38.1mm;
+  width: v-bind(cellWidth + 'mm');
+  height: v-bind(cellHeight + 'mm');
   display: flex;
   align-items: center;
   gap: 2mm;
@@ -172,8 +263,8 @@ function printSheet() {
   overflow: hidden;
 }
 .label-qr {
-  width: 30mm;
-  height: 30mm;
+  width: v-bind(qrSize + 'mm');
+  height: v-bind(qrSize + 'mm');
   flex: none;
   /* The QR PNG carries its own white quiet zone; no background needed. */
 }
@@ -189,6 +280,11 @@ function printSheet() {
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
+}
+.label-asset {
+  font-size: 7pt;
+  color: var(--muted);
+  word-break: break-all;
 }
 .label-token {
   font-family: monospace;
