@@ -16,6 +16,13 @@ THUMB_SUFFIX = ".thumb.jpg"
 MAX_EDGE = 400
 QUALITY = 80
 
+# Decoders a household photo can need. Without `formats`, Image.open() tries every
+# decoder Pillow ships (TIFF, EPS, JPEG 2000, AVIF, ...) on bytes the upload routes
+# accept unchecked. Multi-picture phone JPEGs (Pillow's "MPO") open through the
+# JPEG entry; "MPO" is not a valid name here (Image.open raises KeyError). Keep it
+# a tuple: a set raises TypeError, which generate() swallows as "no thumbnail".
+ALLOWED_FORMATS = ("JPEG", "PNG", "WEBP", "GIF")
+
 
 def thumb_path(path: str) -> str:
     """Where ``path``'s thumbnail lives (whether or not it exists)."""
@@ -25,14 +32,14 @@ def thumb_path(path: str) -> str:
 def generate(path: str) -> bool:
     """Write a thumbnail beside ``path``. Returns True if one was written.
 
-    Never raises: a non-image (or unreadable) file simply gets no thumbnail and
-    the document route serves the original — an upload must never fail because
-    its thumbnail did.
+    Never raises: a non-image, unreadable or unlisted-format file simply gets no
+    thumbnail and the document route serves the original — an upload must never
+    fail because its thumbnail did.
     """
     try:
         from PIL import Image, ImageOps
 
-        with Image.open(path) as im:
+        with Image.open(path, formats=ALLOWED_FORMATS) as im:
             im = ImageOps.exif_transpose(im)  # bake in phone-camera rotation
             im.thumbnail((MAX_EDGE, MAX_EDGE))
             if im.mode not in ("RGB", "L"):

@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- **Photo previews are made only for JPEG, PNG, WebP and GIF** (phone
+  multi-picture JPEGs included), so a crafted upload can't reach the image
+  library's other decoders. A TIFF, BMP or AVIF photo still uploads and
+  downloads as before but gets no preview: its card loads the full-size file
+  (Chrome and Firefox can't display a TIFF, so that card stays blank);
+  previews already made are kept.
+
 ## 1.1.55
 
 - Maintenance release.
