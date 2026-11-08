@@ -31,4 +31,4 @@ httpx==0.28.1
 # Floors chosen for httpx>=0.28 compatibility: older openai/anthropic pass the
 # removed `proxies` kwarg to httpx and crash on client construction.
 anthropic==1.13.0
-openai==2.48.0
+openai==3.46.0
