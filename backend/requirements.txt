@@ -4,12 +4,12 @@ Flask-SQLAlchemy==3.1.1
 # >=5.0.0 for CVE-2024-6221 (ACL Private-Network) and related CORS fixes.
 Flask-Cors==6.0.5
 Flask-Limiter==4.1.1
-SQLAlchemy==2.1.6
+SQLAlchemy==2.1.8
 # Schema migrations (SQLite + Postgres). Replaces the old create_all/_migrate.
 alembic==1.20.1
 # Postgres driver (optional backend). psycopg 3 bundles libpq via [binary];
 # unused when HBOX_DATABASE_URL is blank (SQLite default).
-psycopg[binary]==3.3.6
+psycopg[binary]==3.3.8
 PyJWT==2.15.1
 passlib==1.7.4
 # passlib 1.7.4 reads bcrypt.__about__ which bcrypt>=4.1 removed; pin below that.
