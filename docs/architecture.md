@@ -16,6 +16,10 @@ datastores, brokers, queues, schedulers, or LLM providers exist.
    HA Supervisor ──▶ add-on discovery (docker-entrypoint → /discovery)      Volume: /data (durable)
 ```
 
+| Dependency | Purpose | Host | Notes |
+|---|---|---|---|
+| Open Food Facts | barcode → grocery name/brand | `world.openfoodfacts.org` | Optional, gated by `BARCODE_LOOKUP`. [Inventory](docs/open-food-facts.md) |
+
 ## Processes (the only "workers" — there is no queue system)
 
 | Process | Command | Role | Health |
