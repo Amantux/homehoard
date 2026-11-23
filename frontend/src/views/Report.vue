@@ -1,23 +1,32 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
-import { api, apiUrl, getToken } from '../api'
+import { useRoute } from 'vue-router'
+import { apiUrl } from '../api'
 import { useUI } from '../stores/ui'
 import { shortDate } from '../format'
+import { loadReport, downloadReportCsv, reportEnvelope } from '../utils/report'
 
 const ui = useUI()
+const route = useRoute()
 const report = ref(null)
 const loading = ref(true)
 const error = ref('')
 
+// The report is whatever the registry names for the id: /report is the household
+// inventory, /reports/<id> is a chosen registered report. The backend builds it
+// from the registry, so the frontend just asks for the id it was given.
+const reportId = computed(() => route.params.id || 'inventory')
+
 async function load() {
   loading.value = true; error.value = ''
-  try { report.value = await api.get('/reports/inventory') }
+  try { report.value = await loadReport(reportId.value) }
   catch (e) { error.value = e.message || 'Could not load the report.' }
   finally { loading.value = false }
 }
 onMounted(load)
 
-const cur = computed(() => (report.value?.currency || 'usd').toUpperCase())
+const env = computed(() => reportEnvelope(report.value))
+const cur = computed(() => (env.value.currency || 'usd').toUpperCase())
 function money(v) {
   try { return new Intl.NumberFormat(undefined, { style: 'currency', currency: cur.value }).format(v || 0) }
   catch (e) { return (v || 0).toFixed(2) }
@@ -26,21 +35,23 @@ const WLABEL = { lifetime: 'Lifetime', active: 'Active', expiring: 'Expiring soo
 function wlabel(s) { return WLABEL[s] || s }
 
 const generated = computed(() => {
-  const d = report.value?.generatedAt
+  const d = env.value.generatedAt
   return d ? new Date(d).toLocaleString() : ''
 })
 const photoItems = computed(() => (report.value?.items || []).filter((i) => i.imageId))
+// Only the inventory report carries the valuation payload shape (summary with the
+// value/insured/warranty numbers plus item rows). The attention / completeness /
+// stale reports are narrower views over the same data and render through their own
+// layouts, so a chosen report that is not the household inventory must not run the
+// valuation template over them. The check keys on the valuation numbers
+// (``summary.totalValue``) rather than merely having a ``summary`` + ``items``,
+// because the narrower reports also ship a ``summary`` with their own fields.
+const isInventory = computed(() => !!(report.value?.summary && typeof report.value.summary.totalValue === 'number' && Array.isArray(report.value.items)))
 
 function printPage() { window.print() }
 async function downloadCsv() {
-  try {
-    const res = await fetch(apiUrl('/reports/inventory.csv'), { headers: getToken() ? { Authorization: getToken() } : {} })
-    if (!res.ok) throw new Error('failed')
-    const url = URL.createObjectURL(await res.blob())
-    const a = document.createElement('a')
-    a.href = url; a.download = 'homehoard-inventory-report.csv'; a.click()
-    URL.revokeObjectURL(url)
-  } catch (e) { ui.error('Could not download the CSV.') }
+  try { await downloadReportCsv(reportId.value) }
+  catch (e) { ui.error('Could not download the CSV.') }
 }
 </script>
 
@@ -61,13 +72,13 @@ async function downloadCsv() {
     <button class="secondary sm no-print" style="margin-left:8px" @click="load">Retry</button>
   </div>
 
-  <div v-else-if="report && report.summary.totalItems === 0" class="card">
+  <div v-else-if="report && isInventory && report.summary.totalItems === 0" class="card">
     <h2>No items yet</h2>
     <p class="muted">Add items with a purchase price to build a valuation you can hand to your insurer.</p>
     <router-link to="/items" class="no-print"><button>Go to items</button></router-link>
   </div>
 
-  <div v-else-if="report" class="report">
+  <div v-else-if="report && isInventory" class="report">
     <p class="muted" style="margin-top:-4px">Documented value (purchase price × quantity) · generated {{ generated }}</p>
 
     <!-- Summary -->
@@ -145,6 +156,10 @@ async function downloadCsv() {
         </figure>
       </div>
     </div>
+  </div>
+
+  <div v-else class="card">
+    <p class="muted">This report has no printable layout yet.</p>
   </div>
 </template>
 

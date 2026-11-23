@@ -217,3 +217,37 @@ describe('stale-token 401 (token replaced while request in flight)', () => {
     expect(hook).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('reports api', () => {
+  beforeEach(() => {
+    vi.stubGlobal('window', { location: { pathname: '/' } })
+    vi.stubGlobal('location', { hash: '#/' })
+    vi.stubGlobal('localStorage', { getItem: () => null, setItem() {}, removeItem() {} })
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('getReports -> GET /api/v1/reports and returns the registry list', async () => {
+    const list = [{ id: 'inventory', title: 'Inventory valuation & insurance summary' }]
+    const f = vi.fn().mockResolvedValue(res(200, list, 'application/json'))
+    vi.stubGlobal('fetch', f)
+    await expect(api.getReports()).resolves.toEqual(list)
+    expect(f).toHaveBeenCalledWith('/api/v1/reports', expect.objectContaining({ method: 'GET' }))
+  })
+
+  it('getReport -> GET /api/v1/reports/<id> with the id encoded', async () => {
+    const f = vi.fn().mockResolvedValue(res(200, { generatedAt: '2026-01-01T00:00:00Z', currency: 'usd' }, 'application/json'))
+    vi.stubGlobal('fetch', f)
+    const payload = { generatedAt: '2026-01-01T00:00:00Z', currency: 'usd' }
+    await expect(api.getReport('attention')).resolves.toEqual(payload)
+    expect(f).toHaveBeenCalledWith('/api/v1/reports/attention', expect.objectContaining({ method: 'GET' }))
+  })
+
+  it('getReport for an unknown report -> ApiError 404', async () => {
+    const f = vi.fn().mockResolvedValue(res(404, { error: 'Unknown report: nope' }, 'application/json'))
+    vi.stubGlobal('fetch', f)
+    const e = await api.getReport('nope').catch((x) => x)
+    expect(e).toBeInstanceOf(ApiError)
+    expect(e.status).toBe(404)
+    expect(e.message).toBe('Unknown report: nope')
+  })
+})
