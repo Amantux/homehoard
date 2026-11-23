@@ -277,6 +277,7 @@ label.field > span.field-error, .field-error {
 }
 .badge.warn { color: var(--warning); border-color: var(--warning); background: transparent; }
 .badge.ok { color: var(--success); }
+.badge.bad { color: var(--danger); border-color: var(--danger); background: transparent; }
 .badge.danger { color: var(--danger); }
 
 /* ---------- Tables ---------- */

@@ -4,6 +4,7 @@ builds the current alert digest and sends it to the group's active notifiers
 Every URL is re-validated at send time (SSRF), and the digest logic is shared
 with the HA summary sensor.
 """
+import pytest
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 
@@ -37,6 +38,14 @@ def test_alert_digest_collects_the_three_alert_kinds(auth_client, app):
                                 "restock": 0}
     assert digest["isEmpty"] is False
     assert "Ladder" in digest["text"] and "Oil change" in digest["text"]
+    # Rows now come from the report registry; the legacy per-entry keys are the
+    # registry's re-mapped wire shape and must not drift.
+    oc = digest["overdueCheckouts"]
+    assert len(oc) == 1 and oc[0]["name"] == "Ladder" and oc[0]["to"] == "Bob"
+    wp = digest["warrantyExpiringSoon"]
+    assert len(wp) == 1 and wp[0]["name"] == "Laptop"
+    mo = digest["maintenanceOverdue"]
+    assert len(mo) == 1 and mo[0]["name"] == "Oil change" and mo[0]["itemId"] == drill.id
 
 
 def test_alert_digest_is_empty_with_nothing_due(auth_client, app):
@@ -46,6 +55,29 @@ def test_alert_digest_is_empty_with_nothing_due(auth_client, app):
         db.session.commit()
         digest = alert_digest(gid)
     assert digest["isEmpty"] is True and digest["counts"]["overdueCheckouts"] == 0
+
+
+def test_alert_digest_fails_loudly_on_unknown_item_ref(auth_client, app, monkeypatch):
+    """The registry validator is the single gate: a digest row whose item_ref
+    does not resolve must raise — never ship a stale row in the digest."""
+    from app.services import report_registry
+
+    now = datetime(2026, 8, 8, 12, 0, 0)
+    with app.app_context():
+        gid = db.session.query(Group).first().id
+        db.session.add(Item(name="Ladder", group_id=gid, checked_out=True,
+                            checked_out_to="Bob", checkout_due=now - timedelta(days=2)))
+        db.session.commit()
+        real_build = report_registry.build_checkout_overdue_row
+
+        def _stale(item, *, action_url=""):
+            row = real_build(item, action_url=action_url)
+            row.item_ref = "item:00000000-0000-0000-0000-000000000000"
+            return row
+
+        monkeypatch.setattr(report_registry, "build_checkout_overdue_row", _stale)
+        with pytest.raises(ValueError):
+            alert_digest(gid, now=now)
 
 
 # ---- SSRF guard at send time (mutation-checkable) --------------------------

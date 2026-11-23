@@ -9,6 +9,7 @@ from sqlalchemy.orm import joinedload
 from ..extensions import db
 from ..models import Item, MaintenanceEntry
 from . import vault
+from . import report_registry
 from ..timeutil import as_utc, to_local, utcnow
 
 # Warranties within this window are "expiring soon" for alerting purposes.
@@ -121,16 +122,31 @@ def alert_digest(group_id, now=None):
     }
     return {
         "counts": counts,
-        "overdueCheckouts": [{"id": i.id, "name": i.name,
-                              "to": i.checked_out_to} for i in overdue_checkouts],
+        # Rows are registry-produced and re-mapped onto this digest's per-entry
+        # keys by the registry's serializers — the digest never hand-builds one.
+        "overdueCheckouts": [
+            report_registry.serialize_checkout_overdue_row(
+                report_registry.validate_report_row(
+                    report_registry.build_checkout_overdue_row(i, action_url=f"/#/items/{i.id}"),
+                    group_id=group_id, db=db),
+                i,
+            )
+            for i in overdue_checkouts
+        ],
         "warrantyExpiringSoon": [
-            {"id": i.id, "name": i.name,
-             "expires": i.warranty_expires.date().isoformat()}
-            for i in sorted(warranty_soon, key=lambda x: x.warranty_expires)],
+            report_registry.serialize_warranty_soon_row(
+                report_registry.validate_report_row(
+                    report_registry.build_warranty_soon_row(i, action_url=f"/#/items/{i.id}"),
+                    group_id=group_id, db=db), i)
+            for i in sorted(warranty_soon, key=lambda x: x.warranty_expires)
+        ],
         "maintenanceOverdue": [
-            {"id": m.id, "name": m.name, "itemId": m.item_id,
-             "scheduled": m.scheduled_date.date().isoformat()}
-            for m in sorted(maintenance_overdue, key=lambda x: x.scheduled_date)],
+            report_registry.serialize_maintenance_overdue_row(
+                report_registry.validate_report_row(
+                    report_registry.build_maintenance_overdue_row(m, action_url="/#/maintenance"),
+                    group_id=group_id, db=db), m)
+            for m in sorted(maintenance_overdue, key=lambda x: x.scheduled_date)
+        ],
         "isEmpty": not any(counts.values()),
         "text": "\n".join(lines) if lines else "No HomeHoard alerts.",
     }

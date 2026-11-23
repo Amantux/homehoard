@@ -62,3 +62,25 @@ def test_report_is_group_scoped(app, auth_client, gid):
     names = [it["name"] for it in r["items"]]
     assert "Mine" in names and "Secret" not in names
     assert r["summary"]["totalValue"] == 10.0  # other group's 999 excluded
+
+
+def test_inventory_report_fails_loudly_on_unknown_item_ref(auth_client, app, gid, monkeypatch):
+    """The registry validator is the single gate: a row whose item_ref does not
+    resolve must fail loudly — the report 500s — never emit a stale row."""
+    from app.services import report_registry
+
+    real_build = report_registry.build_item_row
+
+    def _stale_ref(item, *, now=None, action_url=""):
+        row = real_build(item, now=now, action_url=action_url)
+        row.item_ref = "item:00000000-0000-0000-0000-000000000000"
+        return row
+
+    monkeypatch.setattr(report_registry, "build_item_row", _stale_ref)
+
+    with app.app_context():
+        db.session.add(Item(name="Drill", purchase_price=10, group_id=gid))
+        db.session.commit()
+
+    r = auth_client.get("/api/v1/reports/inventory")
+    assert r.status_code == 500

@@ -22,8 +22,6 @@ function money(v) {
   try { return new Intl.NumberFormat(undefined, { style: 'currency', currency: cur.value }).format(v || 0) }
   catch (e) { return (v || 0).toFixed(2) }
 }
-const WLABEL = { lifetime: 'Lifetime', active: 'Active', expiring: 'Expiring soon', expired: 'Expired', none: '—' }
-function wlabel(s) { return WLABEL[s] || s }
 
 const generated = computed(() => {
   const d = report.value?.generatedAt
@@ -120,7 +118,10 @@ async function downloadCsv() {
         </tr></thead>
         <tbody>
           <tr v-for="it in report.items" :key="it.id">
-            <td><strong>{{ it.name }}</strong></td>
+            <td>
+              <a v-if="it.action_url" :href="it.action_url"><strong>{{ it.title }}</strong></a>
+              <strong v-else>{{ it.title }}</strong>
+            </td>
             <td>{{ it.location || '—' }}</td>
             <td class="muted">{{ it.serialNumber || '—' }}</td>
             <td>{{ shortDate(it.purchaseDate) }}</td>
@@ -128,7 +129,10 @@ async function downloadCsv() {
             <td class="num">{{ money(it.purchasePrice) }}</td>
             <td class="num">{{ money(it.lineValue) }}</td>
             <td>{{ it.insured ? '✓' : '—' }}</td>
-            <td>{{ wlabel(it.warrantyStatus) }}</td>
+            <td>
+              <span class="badge" :class="['badge', it.status_tone]">{{ it.status_label }}</span>
+              <div class="muted" style="font-size:0.8rem;margin-top:3px">{{ it.reason }}</div>
+            </td>
           </tr>
         </tbody>
       </table>
@@ -141,7 +145,7 @@ async function downloadCsv() {
         <figure v-for="it in photoItems" :key="it.id">
           <img :src="apiUrl('/documents/' + it.imageId)" alt="" loading="lazy"
             @error="$event.target.style.display='none'" />
-          <figcaption>{{ it.name }} · {{ money(it.lineValue) }}</figcaption>
+          <figcaption>{{ it.title }} · {{ money(it.lineValue) }}</figcaption>
         </figure>
       </div>
     </div>
