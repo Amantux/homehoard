@@ -14,6 +14,62 @@
  */
 const VERSION = "1.0.0";
 
+// Plain-language severity labels for the Lovelace card — a small dependency-free
+// copy of the frontend util mapping (frontend/src/utils/severityLabels.js) so this
+// ES-module-free custom card ships the same token → label pairs without imports.
+// Unknown tokens fall back to a title-cased form of the token itself.
+const SEVERITY_LABELS = {
+  overdue: "Overdue",
+  maintenanceOverdue: "Overdue",
+  warrantyExpiringSoon: "Expiring soon",
+  low: "Low",
+  runningLow: "Running low",
+  needsAttention: "Needs attention",
+  lifetime: "Lifetime",
+  active: "Active",
+  expiring: "Expiring soon",
+  expired: "Expired",
+  none: "None",
+  expiringSoon: "Expiring soon",
+  out: "Out",
+  checkedOut: "Checked out",
+  scheduled: "Scheduled",
+  completed: "Completed",
+};
+
+const SEVERITY_LABEL_MAP = new Map(
+  Object.entries(SEVERITY_LABELS).map(([token, label]) => [
+    String(token)
+      .trim()
+      .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+      .replace(/[\s_-]+/g, " ")
+      .trim()
+      .toLowerCase(),
+    label,
+  ])
+);
+
+function severityLabel(token) {
+  const key = String(token ?? "")
+    .trim()
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[\s_-]+/g, " ")
+    .trim()
+    .toLowerCase();
+  const mapped = key ? SEVERITY_LABEL_MAP.get(key) : undefined;
+  if (mapped) return mapped;
+  const raw = String(token ?? "").trim();
+  const titled = raw
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[\s_-]+/g, " ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(" ");
+  return titled;
+}
+
 class HomeHoardCard extends HTMLElement {
   setConfig(config) {
     this._config = config || {};
@@ -66,6 +122,8 @@ class HomeHoardCard extends HTMLElement {
         .head h2 { margin:0; font-size:1.3rem; flex:1; }
         .dot { width:10px; height:10px; border-radius:50%; background:var(--error-color); }
         .dot.on { background:var(--success-color, #4caf50); }
+        .dot-label { font-size:0.72rem; color:var(--secondary-text-color); }
+        .visually-hidden { position:absolute !important; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
         .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(90px,1fr)); gap:8px; margin-bottom:16px; }
         .tile { background:var(--secondary-background-color); border-radius:12px; padding:10px; text-align:center; }
         .tile .v { font-size:1.35rem; font-weight:600; color:var(--primary-text-color); }
@@ -94,9 +152,14 @@ class HomeHoardCard extends HTMLElement {
       <ha-card>
         <div class="head">
           <span class="dot" id="dot"></span>
+          <span class="dot-label" id="dot_label">Online</span>
           <h2 id="title">HomeHoard</h2>
           <a class="link" id="open" href="#">Open app →</a>
         </div>
+
+        <!-- Polite live region: screen readers announce the card's status as
+             soon as it loads (and on every change). The dot is color-only. -->
+        <p class="visually-hidden" aria-live="polite" id="live_status"></p>
 
         <div class="tiles" id="tiles"></div>
 
@@ -169,7 +232,15 @@ class HomeHoardCard extends HTMLElement {
     const $ = this._$;
 
     const online = this._s("online") || this._hass.states["binary_sensor.homehoard_online"];
-    $("dot").className = "dot" + (online && online.state === "on" ? " on" : "");
+    const onlineOn = !!(online && online.state === "on");
+    $("dot").className = "dot" + (onlineOn ? " on" : "");
+    // Visible status label beside the colored dot — the dot alone is color-only.
+    $("dot_label").textContent = severityLabel(onlineOn ? "online" : "offline");
+    // Polite live region: the status also goes out as speech, as soon as the
+    // card loads (first hass update) and on every later change.
+    const live = $("live_status");
+    const statusLine = onlineOn ? "HomeHoard is online" : "HomeHoard is offline";
+    if (live && live.textContent !== statusLine) live.textContent = statusLine;
 
     const tiles = [
       ["Items", this._num("total_items")],
@@ -187,7 +258,7 @@ class HomeHoardCard extends HTMLElement {
     $("checked").innerHTML = checked.length
       ? checked.map((i) =>
           `<li><span>${this._esc(i.name)}</span>${i.to ? `<span class="muted">→ ${this._esc(i.to)}</span>` : ""}` +
-          `${i.overdue ? `<span class="badge warn">overdue</span>` : ""}</li>`).join("")
+          `${i.overdue ? `<span class="badge warn">${severityLabel("overdue")}</span>` : ""}</li>`).join("")
       : `<li class="muted">Nothing is checked out.</li>`;
 
     const recent = this._attr("total_items", "recent");
@@ -195,7 +266,7 @@ class HomeHoardCard extends HTMLElement {
       ? recent.map((i) =>
           `<li><span>${this._esc(i.name)}</span><span class="grow"></span>` +
           `<span class="muted">${this._esc(i.where || "")}</span>` +
-          `${i.checkedOut ? `<span class="badge">out</span>` : ""}</li>`).join("")
+          `${i.checkedOut ? `<span class="badge">${severityLabel("checkedOut")}</span>` : ""}</li>`).join("")
       : `<li class="muted">No items yet.</li>`;
 
     const locs = this._attr("locations", "locations");

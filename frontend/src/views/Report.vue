@@ -3,6 +3,7 @@ import { ref, onMounted, computed } from 'vue'
 import { api, apiUrl, getToken } from '../api'
 import { useUI } from '../stores/ui'
 import { shortDate } from '../format'
+import { severityLabel } from '../utils/severityLabels'
 
 const ui = useUI()
 const report = ref(null)
@@ -22,8 +23,17 @@ function money(v) {
   try { return new Intl.NumberFormat(undefined, { style: 'currency', currency: cur.value }).format(v || 0) }
   catch (e) { return (v || 0).toFixed(2) }
 }
-const WLABEL = { lifetime: 'Lifetime', active: 'Active', expiring: 'Expiring soon', expired: 'Expired', none: '—' }
-function wlabel(s) { return WLABEL[s] || s }
+// The report's overall completeness / severity, phrased for the polite
+// live region that announces it as soon as the report loads.
+const reportDigest = computed(() => {
+  const s = report.value?.summary
+  const w = s?.warranty || {}
+  const total = (w.lifetime || 0) + (w.active || 0) + (w.expiring || 0) + (w.expired || 0) + (w.none || 0)
+  const attention = (w.expiring || 0) + (w.expired || 0)
+  if (!s || total === 0) return 'Inventory report: nothing needs attention'
+  const plural = attention === 1 ? 'warranty needs' : 'warranties need'
+  return `Inventory report: ${attention} ${plural} attention`
+})
 
 const generated = computed(() => {
   const d = report.value?.generatedAt
@@ -70,6 +80,10 @@ async function downloadCsv() {
   <div v-else-if="report" class="report">
     <p class="muted" style="margin-top:-4px">Documented value (purchase price × quantity) · generated {{ generated }}</p>
 
+    <!-- Polite live region: screen readers announce the report's overall
+         completeness / severity as soon as it loads. -->
+    <p class="visually-hidden" aria-live="polite">{{ reportDigest }}</p>
+
     <!-- Summary -->
     <div class="sum-grid">
       <div class="sum"><div class="v">{{ money(report.summary.totalValue) }}</div><div class="l">Total value</div></div>
@@ -81,9 +95,9 @@ async function downloadCsv() {
     <div class="card">
       <strong>Warranty:</strong>
       <span class="chip">{{ report.summary.warranty.active + report.summary.warranty.lifetime }} covered</span>
-      <span class="chip">{{ report.summary.warranty.expiring }} expiring soon</span>
-      <span class="chip">{{ report.summary.warranty.expired }} expired</span>
-      <span class="chip">{{ report.summary.warranty.none }} none</span>
+      <span class="chip">{{ report.summary.warranty.expiring }} {{ severityLabel('expiringSoon') }}</span>
+      <span class="chip">{{ report.summary.warranty.expired }} {{ severityLabel('expired') }}</span>
+      <span class="chip">{{ report.summary.warranty.none }} {{ severityLabel('none') }}</span>
     </div>
 
     <!-- Breakdowns -->
@@ -128,7 +142,7 @@ async function downloadCsv() {
             <td class="num">{{ money(it.purchasePrice) }}</td>
             <td class="num">{{ money(it.lineValue) }}</td>
             <td>{{ it.insured ? '✓' : '—' }}</td>
-            <td>{{ wlabel(it.warrantyStatus) }}</td>
+            <td><span>{{ severityLabel(it.warrantyStatus) }}</span></td>
           </tr>
         </tbody>
       </table>
