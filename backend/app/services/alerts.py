@@ -88,6 +88,14 @@ def alert_digest(group_id, now=None):
     def _link(path):
         return f" {base}/#{path}" if base else ""
 
+    def _deep_link(path):
+        # Deep link to a single record (e.g. /items/<id>) — the per-entry form of
+        # _link, for the structured digest entries a consumer renders as a link.
+        # Same base handling (PUBLIC_URL rstripped), so an operator who configured
+        # a browser-facing URL gets the full tap-through URL; without one the bare
+        # in-app route is the link.
+        return f"{base}/#{path}" if base else path
+
     lines = []
     if overdue_checkouts:
         names = ", ".join(
@@ -121,16 +129,28 @@ def alert_digest(group_id, now=None):
     }
     return {
         "counts": counts,
-        "overdueCheckouts": [{"id": i.id, "name": i.name,
-                              "to": i.checked_out_to} for i in overdue_checkouts],
+        "overdueCheckouts": [
+            {"id": i.id, "name": i.name, "to": i.checked_out_to,
+             "link": _deep_link(f"/items/{i.id}")}
+            for i in overdue_checkouts
+        ],
         "warrantyExpiringSoon": [
             {"id": i.id, "name": i.name,
-             "expires": i.warranty_expires.date().isoformat()}
+             "expires": i.warranty_expires.date().isoformat(),
+             "link": _deep_link(f"/items/{i.id}")}
             for i in sorted(warranty_soon, key=lambda x: x.warranty_expires)],
         "maintenanceOverdue": [
             {"id": m.id, "name": m.name, "itemId": m.item_id,
-             "scheduled": m.scheduled_date.date().isoformat()}
+             "scheduled": m.scheduled_date.date().isoformat(),
+             "link": _deep_link(f"/maintenance/{m.id}")}
             for m in sorted(maintenance_overdue, key=lambda x: x.scheduled_date)],
+        # Additive: the low-stock rows the digest already counts, so a consumer
+        # can link straight to the item instead of just the restock section.
+        "lowRestock": [
+            {"id": r["id"], "name": r["name"], "suggestedQuantity": r["suggestedQuantity"],
+             "link": _deep_link(f"/items/{r['id']}")}
+            for r in low
+        ],
         "isEmpty": not any(counts.values()),
         "text": "\n".join(lines) if lines else "No HomeHoard alerts.",
     }

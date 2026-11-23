@@ -38,8 +38,25 @@ const { loading, error, reload: load } = useLoader(async () => {
     restock: ha.restock?.count || 0,
     any: overdueLends.length || (ha.warrantiesExpiring?.days30 || 0)
       || (ha.maintenance?.overdue || 0) || (ha.restock?.count || 0),
+    // Per-entry views of the same alerts — the strip's rows deep-link to the
+    // record that needs attention, mirroring the digest payload's per-entry
+    // 'link' (overdue lends / expiring warranties / overdue maintenance /
+    // running-low consumables).
+    expiring: ha.warrantiesExpiring?.items || [],
+    maintEntries: (ha.maintenance?.entries || []).filter((e) => e.overdue),
+    lowItems: ha.restock?.items || [],
   }
 })
+
+// Deep link for one "needs attention" row: prefer the entry's own 'link' (the
+// per-entry deep link the digest payload carries), else build the per-entry
+// path from the record's id, else fall back to the section-level route when
+// there is no record to point at. The row is the tap-through to where the
+// operator acts next.
+const lendDeepLink = (i) => (i && i.id) ? (i.link || `/items/${i.id}`) : '/checkouts'
+const warrantyDeepLink = (w) => (w && w.id) ? (w.link || `/items/${w.id}`) : '/report'
+const maintDeepLink = (m) => (m && m.itemId) ? (m.link || `/items/${m.itemId}`) : '/maintenance'
+const lowDeepLink = (r) => (r && r.id) ? (r.link || `/items/${r.id}`) : '/restock'
 
 const tiles = () => [
   { icon: '📦', label: 'Items', value: stats.value.totalItems, to: '/items' },
@@ -67,19 +84,19 @@ const tiles = () => [
     <div v-if="attention?.any" class="card" style="margin-bottom:16px;border-left:3px solid var(--danger)">
       <h2 style="margin:0 0 8px">Needs attention</h2>
       <div class="stack" style="gap:6px">
-        <router-link v-if="attention.overdueLends.length" to="/checkouts" class="row" style="gap:8px;align-items:center">
+        <router-link v-if="attention.overdueLends.length" :to="lendDeepLink(attention.overdueLends[0])" class="row" style="gap:8px;align-items:center">
           <span class="badge danger">{{ attention.overdueLends.length }} overdue</span>
           <span>{{ attention.overdueLends.map((i) => i.to ? `${i.name} (${i.to})` : i.name).slice(0, 3).join(', ') }}{{ attention.overdueLends.length > 3 ? '…' : '' }} still out</span>
         </router-link>
-        <router-link v-if="attention.maintOverdue" to="/maintenance" class="row" style="gap:8px;align-items:center">
+        <router-link v-if="attention.maintOverdue" :to="maintDeepLink(attention.maintEntries[0])" class="row" style="gap:8px;align-items:center">
           <span class="badge danger">{{ attention.maintOverdue }}</span>
           <span>maintenance job{{ attention.maintOverdue === 1 ? '' : 's' }} overdue</span>
         </router-link>
-        <router-link v-if="attention.restock" to="/restock" class="row" style="gap:8px;align-items:center">
+        <router-link v-if="attention.restock" :to="lowDeepLink(attention.lowItems[0])" class="row" style="gap:8px;align-items:center">
           <span class="badge warn">{{ attention.restock }}</span>
           <span>consumable{{ attention.restock === 1 ? '' : 's' }} running low</span>
         </router-link>
-        <router-link v-if="attention.warranty30" to="/report" class="row" style="gap:8px;align-items:center">
+        <router-link v-if="attention.warranty30" :to="warrantyDeepLink(attention.expiring[0])" class="row" style="gap:8px;align-items:center">
           <span class="badge warn">{{ attention.warranty30 }}</span>
           <span>warrant{{ attention.warranty30 === 1 ? 'y expires' : 'ies expire' }} within 30 days</span>
         </router-link>
