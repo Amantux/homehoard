@@ -62,3 +62,18 @@ def test_report_is_group_scoped(app, auth_client, gid):
     names = [it["name"] for it in r["items"]]
     assert "Mine" in names and "Secret" not in names
     assert r["summary"]["totalValue"] == 10.0  # other group's 999 excluded
+
+
+def test_inventory_report_warranty_expiring_status(app, auth_client, gid):
+
+    with app.app_context():
+        db.session.add(Item(name="Soon", purchase_price=10, quantity=1, group_id=gid,
+                            warranty_expires=utcnow() + timedelta(days=30)))  # < 60d window
+        db.session.add(Item(name="Far", purchase_price=10, quantity=1, group_id=gid,
+                            warranty_expires=utcnow() + timedelta(days=400)))
+        db.session.commit()
+
+    r = auth_client.get("/api/v1/reports/inventory").get_json()
+    statuses = {it["name"]: it["warrantyStatus"] for it in r["items"]}
+    assert statuses["Soon"] == "expiring"   # within the _EXPIRING_SOON_DAYS window
+    assert statuses["Far"] == "active"      # comfortably beyond it

@@ -9,7 +9,6 @@ quantity) — the data we actually hold; no depreciation/replacement is invented
 """
 import csv
 import io
-from datetime import timedelta
 
 from flask import Blueprint, Response, jsonify
 from sqlalchemy.orm import selectinload
@@ -23,6 +22,7 @@ from ..timeutil import as_utc, utcnow
 from ..services.csv_io import _csv_safe
 from ..services import money
 from ..services import vault
+from ..services.report_dates import is_expiring, today_local
 
 bp = Blueprint("reports", __name__)
 
@@ -33,7 +33,7 @@ def _value(i) -> float:
     return money.out(money.line_total(i.purchase_price, i.quantity))
 
 
-def _warranty_status(i, now) -> str:
+def _warranty_status(i, group, now) -> str:
     """One of: lifetime, active, expiring, expired, none."""
     if i.lifetime_warranty:
         return "lifetime"
@@ -41,7 +41,12 @@ def _warranty_status(i, now) -> str:
         return "none"
     if as_utc(i.warranty_expires) < now:
         return "expired"
-    if as_utc(i.warranty_expires) < now + timedelta(days=_EXPIRING_SOON_DAYS):
+    # Warranty dates are calendar days (stored as UTC midnight), so the
+    # "expiring soon" window compares the stored day against the household's
+    # local today — the day that rolls over at local midnight, never UTC's.
+    # Same rule the alert digest uses; the stored value is never shifted.
+    today = today_local(group, now=now)
+    if is_expiring(i.warranty_expires.date(), _EXPIRING_SOON_DAYS, today):
         return "expiring"
     return "active"
 
@@ -57,7 +62,7 @@ def _items(gid):
             .all())
 
 
-def _row(i, now):
+def _row(i, group, now):
     return {
         "id": i.id,
         "name": i.name,
@@ -70,7 +75,7 @@ def _row(i, now):
         "quantity": num(i.quantity) or 1,
         "lineValue": _value(i),
         "insured": bool(i.insured),
-        "warrantyStatus": _warranty_status(i, now),
+        "warrantyStatus": _warranty_status(i, group, now),
         "imageId": next((a.document_id for a in i.attachments if a.primary), None),
     }
 
@@ -81,7 +86,7 @@ def inventory_report():
     group = current_group()
     now = utcnow()
     items = _items(group.id)
-    rows = [_row(i, now) for i in items]
+    rows = [_row(i, group, now) for i in items]
 
     total_value = round(sum(r["lineValue"] for r in rows), 2)
     insured_value = round(sum(r["lineValue"] for r in rows if r["insured"]), 2)
@@ -122,8 +127,9 @@ def inventory_report():
 @bp.get("/reports/inventory.csv")
 @login_required
 def inventory_report_csv():
+    group = current_group()
     now = utcnow()
-    rows = [_row(i, now) for i in _items(current_group().id)]
+    rows = [_row(i, group, now) for i in _items(group.id)]
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(["Name", "Location", "Labels", "Serial", "Purchased from",
