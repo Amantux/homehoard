@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { api } from '../api'
 import { ITEM_VIEW } from '../storageKeys'
 import { money } from '../format'
+import { COMPLETENESS_LABELS } from '../completeness'
 import { useUI } from '../stores/ui'
 import { useConfirm } from '../composables/useConfirm'
 import ItemCard from '../components/ItemCard.vue'
@@ -23,6 +24,9 @@ const bins = ref([])
 const labels = ref([])
 
 const q = ref(route.query.q || '')
+// Data-completeness gap filter (?missing=<gap> from the Report's completeness
+// card): narrows the list to the items lacking that key fact.
+const missing = ref(route.query.missing || '')
 const locationFilter = ref('')
 const labelFilter = ref('')
 const orderBy = ref('name')
@@ -34,8 +38,11 @@ const pageSize = 24
 
 const pages = computed(() => Math.max(1, Math.ceil(total.value / pageSize)))
 const hasFilters = computed(
-  () => !!(q.value || locationFilter.value || labelFilter.value || includeArchived.value),
+  () => !!(q.value || locationFilter.value || labelFilter.value || includeArchived.value || missing.value),
 )
+// The active completeness gap (?missing= from a Report link), if any — shown
+// next to the list so the filter is never implicit.
+const missingLabel = computed(() => COMPLETENESS_LABELS[missing.value] || missing.value)
 
 // --- Bulk selection -------------------------------------------------------
 // Selection is scoped to the items currently loaded (this page). A filter
@@ -78,6 +85,7 @@ function setView(v) {
 
 function resetFilters() {
   q.value = ''
+  missing.value = ''
   locationFilter.value = ''
   labelFilter.value = ''
   includeArchived.value = false
@@ -86,6 +94,7 @@ function resetFilters() {
 async function fetchItems() {
   const params = new URLSearchParams()
   if (q.value) params.set('q', q.value)
+  if (missing.value) params.set('missing', missing.value)
   if (locationFilter.value) params.set('locations', locationFilter.value)
   if (labelFilter.value) params.set('labels', labelFilter.value)
   if (includeArchived.value) params.set('includeArchived', 'true')
@@ -255,7 +264,7 @@ async function deleteSelected() {
 }
 
 let timer
-watch([q, locationFilter, labelFilter, orderBy, includeArchived], () => {
+watch([q, missing, locationFilter, labelFilter, orderBy, includeArchived], () => {
   clearSelection()
   page.value = 1
   clearTimeout(timer)
@@ -264,6 +273,7 @@ watch([q, locationFilter, labelFilter, orderBy, includeArchived], () => {
 loadVault()
 watch(page, load)
 watch(() => route.query.q, (v) => { if (v !== q.value) { q.value = v || '' } })
+watch(() => route.query.missing, (v) => { if (v !== missing.value) { missing.value = v || '' } })
 
 </script>
 
@@ -313,6 +323,7 @@ watch(() => route.query.q, (v) => { if (v !== q.value) { q.value = v || '' } })
     </button>
     <button v-if="vault.configured" class="ghost sm" title="Change the vault passphrase"
             @click="setVaultPassphrase">Change phrase</button>
+    <span v-if="missing" class="chip" :title="`Showing items missing this key fact — clear to see all items`">{{ missingLabel }}</span>
     <button v-if="hasFilters" class="ghost sm" @click="resetFilters">Clear filters</button>
   </div>
 

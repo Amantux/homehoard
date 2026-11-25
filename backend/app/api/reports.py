@@ -23,6 +23,7 @@ from ..timeutil import as_utc, utcnow
 from ..services.csv_io import _csv_safe
 from ..services import money
 from ..services import vault
+from ..services.completeness import COMPLETENESS_FIELDS, completeness_flags
 
 bp = Blueprint("reports", __name__)
 
@@ -58,7 +59,7 @@ def _items(gid):
 
 
 def _row(i, now):
-    return {
+    r = {
         "id": i.id,
         "name": i.name,
         "location": i.location.name if i.location else "",
@@ -73,6 +74,11 @@ def _row(i, now):
         "warrantyStatus": _warranty_status(i, now),
         "imageId": next((a.document_id for a in i.attachments if a.primary), None),
     }
+    # Data-completeness: which key facts this item actually has. Derived from the
+    # item itself so the flags and the row can never disagree, and so _row stays
+    # the single owner of the per-item shape.
+    r["completeness"] = completeness_flags(i)
+    return r
 
 
 @bp.get("/reports/inventory")
@@ -102,6 +108,14 @@ def inventory_report():
                 b["value"] = round(b["value"] + _value(i), 2)
         return sorted(agg.values(), key=lambda b: b["value"], reverse=True)
 
+    # Per-field missing counts over the group-scoped rows, plus the items missing each.
+    missing = {f: {"count": 0, "items": []} for f in COMPLETENESS_FIELDS}
+    for r in rows:
+        for f in COMPLETENESS_FIELDS:
+            if not r["completeness"][f]:
+                missing[f]["count"] += 1
+                missing[f]["items"].append(r["id"])
+
     return jsonify({
         "generatedAt": iso(now),
         "currency": group.currency,
@@ -112,6 +126,7 @@ def inventory_report():
             "uninsuredValue": round(total_value - insured_value, 2),
             "insuredCount": sum(1 for r in rows if r["insured"]),
             "warranty": warranty,
+            "completeness": missing,
         },
         "byLocation": _by("location"),
         "byLabel": _by("labels"),

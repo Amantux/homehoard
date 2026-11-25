@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Data-completeness gaps now deep-link into the item list.** The inventory
+  report's data-completeness card lists each missing key fact (value, photo,
+  location, label, warranty date, purchase date) with its missing count, and each
+  gap is now a link into **Items** filtered to just the items lacking it
+  (`?missing=<gap>`). The item list reads that query param, shows the active gap
+  as a filter with a clear-control, and the report and list share one gap
+  vocabulary so they can't drift.
 - **Choose your label size when printing QR labels, and get that size.**
   **Tools → QR label sheet** now offers three layouts: address labels 3 across
   (63.5×38.1 mm), small labels 4 across (50.8×25.4 mm) and large labels 2
@@ -26,6 +33,12 @@
   to reach the Min, where it still counted as low and stayed listed. It now suggests
   one more, so "buy 5" can read "buy 6" on the Restock page, in the Home Assistant
   to-do list and in notifications. Set a Target to buy up to a specific number.
+
+- **Inventory report: see what’s missing before you hand it to the insurer.**
+  The **Report** page now carries a **Data completeness** card beside the warranty
+  summary. It lists the key facts your items are missing — value, photo, location,
+  label, warranty date and purchase date — with a missing count each, and offers a
+  filter link per gap that narrows the item list to the items lacking it.
 
 - **Security updates.** Pillow 13 fixes dozens of image-decoder flaws, some of
   them reachable just by uploading a photo, and the MCP library fixes 4 more.
