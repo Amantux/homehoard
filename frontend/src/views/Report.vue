@@ -29,7 +29,16 @@ const generated = computed(() => {
   const d = report.value?.generatedAt
   return d ? new Date(d).toLocaleString() : ''
 })
-const photoItems = computed(() => (report.value?.items || []).filter((i) => i.imageId))
+// The report's deserializer: hands each row's quirks bag (null when the report
+// carried none) to that row's renderer verbatim — the bag is a free-form,
+// non-contract object owned by the report's renderer, never shaped here.
+function deserializeRow(raw) {
+  const row = { ...raw }
+  row.quirks = raw.quirks ?? null
+  return row
+}
+const items = computed(() => (report.value?.items || []).map(deserializeRow))
+const photoItems = computed(() => items.value.filter((i) => i.imageId))
 
 function printPage() { window.print() }
 async function downloadCsv() {
@@ -112,14 +121,14 @@ async function downloadCsv() {
 
     <!-- Full item list -->
     <div class="card">
-      <h2>Items ({{ report.items.length }})</h2>
+      <h2>Items ({{ items.length }})</h2>
       <table class="items">
         <thead><tr>
           <th>Item</th><th>Location</th><th>Serial</th><th>Purchased</th>
           <th class="num">Qty</th><th class="num">Unit</th><th class="num">Value</th><th>Insured</th><th>Warranty</th>
         </tr></thead>
         <tbody>
-          <tr v-for="it in report.items" :key="it.id">
+          <tr v-for="it in items" :key="it.id">
             <td><strong>{{ it.name }}</strong></td>
             <td>{{ it.location || '—' }}</td>
             <td class="muted">{{ it.serialNumber || '—' }}</td>

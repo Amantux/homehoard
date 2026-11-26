@@ -9,7 +9,6 @@ quantity) — the data we actually hold; no depreciation/replacement is invented
 """
 import csv
 import io
-from datetime import timedelta
 
 from flask import Blueprint, Response, jsonify
 from sqlalchemy.orm import selectinload
@@ -18,32 +17,16 @@ from ..auth import current_group, login_required
 from ..extensions import db
 from ..models import Item
 from ..schemas.serializers import iso
-from ..schemas.serializers import num
-from ..timeutil import as_utc, utcnow
-from ..services.csv_io import _csv_safe
 from ..services import money
+from ..services import report_registry
 from ..services import vault
+from ..services.csv_io import _csv_safe
+from ..timeutil import utcnow
 
 bp = Blueprint("reports", __name__)
 
-_EXPIRING_SOON_DAYS = 60
-
-
 def _value(i) -> float:
     return money.out(money.line_total(i.purchase_price, i.quantity))
-
-
-def _warranty_status(i, now) -> str:
-    """One of: lifetime, active, expiring, expired, none."""
-    if i.lifetime_warranty:
-        return "lifetime"
-    if not i.warranty_expires:
-        return "none"
-    if as_utc(i.warranty_expires) < now:
-        return "expired"
-    if as_utc(i.warranty_expires) < now + timedelta(days=_EXPIRING_SOON_DAYS):
-        return "expiring"
-    return "active"
 
 
 def _items(gid):
@@ -57,22 +40,18 @@ def _items(gid):
             .all())
 
 
-def _row(i, now):
-    return {
-        "id": i.id,
-        "name": i.name,
-        "location": i.location.name if i.location else "",
-        "labels": [lbl.name for lbl in i.labels],
-        "serialNumber": i.serial_number or "",
-        "purchaseFrom": i.purchase_from or "",
-        "purchaseDate": iso(i.purchase_date),
-        "purchasePrice": money.out(i.purchase_price) or 0,
-        "quantity": num(i.quantity) or 1,
-        "lineValue": _value(i),
-        "insured": bool(i.insured),
-        "warrantyStatus": _warranty_status(i, now),
-        "imageId": next((a.document_id for a in i.attachments if a.primary), None),
-    }
+def _row(i, gid, now):
+    # The registry is the only row producer, and its validator is the only gate:
+    # build the item's ReportRow through the registry's inventory entry, validate
+    # that the row's item_ref resolves to a real item of the household, then
+    # serialize it back onto the inventory row keys it owns, handing the entry's
+    # quirks bag to the renderer seam verbatim. A row that fails validation raises
+    # here — a stale row is never serialized into a response.
+    entry = report_registry.REPORTS["inventory"]
+    row = entry.build(i, now=now, action_url=f"/#/items/{i.id}")
+    return report_registry.serialize_item_row(
+        report_registry.validate_report_row(row, group_id=gid, db=db), i, now=now,
+        quirks=entry.quirks)
 
 
 @bp.get("/reports/inventory")
@@ -81,7 +60,7 @@ def inventory_report():
     group = current_group()
     now = utcnow()
     items = _items(group.id)
-    rows = [_row(i, now) for i in items]
+    rows = [_row(i, group.id, now) for i in items]
 
     total_value = round(sum(r["lineValue"] for r in rows), 2)
     insured_value = round(sum(r["lineValue"] for r in rows if r["insured"]), 2)
@@ -123,7 +102,7 @@ def inventory_report():
 @login_required
 def inventory_report_csv():
     now = utcnow()
-    rows = [_row(i, now) for i in _items(current_group().id)]
+    rows = [_row(i, current_group().id, now) for i in _items(current_group().id)]
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(["Name", "Location", "Labels", "Serial", "Purchased from",
