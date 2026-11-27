@@ -352,7 +352,11 @@ The Vue 3 SPA is a full homebox-style interface:
   quick-add (item/bin/location/label), a **camera QR scanner** button, and a
   **light/dark theme** toggle (persisted).
 - **Dashboard** with stat tiles, *recently added* item cards, and a locations
-  overview.
+  overview, plus a **since-visit strip** that renders **above the stat tiles**
+  when the household changed something since your last visit (new items,
+  check-ins, warranties expiring within 7 days, maintenance completed) — each
+  segment links to the page where you act, and a calm day shows "No changes
+  since `<date>`.
 - **Items**: card **grid ⇄ table** toggle, search, filter by location/label,
   sort (name / newest / updated / price), archived toggle, pagination.
 - **Item detail** with tabs (Details · Attachments · Maintenance · QR),
@@ -365,6 +369,22 @@ The Vue 3 SPA is a full homebox-style interface:
   **Check out / Check in** mode to act on the scanned item, or view a
   bin/location's contents inline (with a manual-entry fallback).
 - Toasts, loading skeletons, and empty states throughout.
+
+#### Dashboard: since-visit strip & browser storage
+
+- **localStorage key:** `homehoard:lastVisit` — the last-visit watermark, an ISO-8601
+  timestamp string (e.g. `2026-11-27T09:12:34.000Z`).
+- **First visit:** no key stored → the strip is **hidden** and the key is seeded at the epoch
+  (`1970-01-01T00:00:00Z`), so the first real visit reports everything created since the
+  beginning as new.
+- **Returning visits:** the Dashboard reads the key, fetches
+  `GET /changes?since=<key>`, renders the strip, and — only after the strip has rendered
+  successfully — writes the new ISO timestamp back to the key. If the fetch fails the strip stays
+  unrendered and the key is left untouched (the next visit recomputes from the previous
+  watermark).
+- **Watermark lifecycle:** the stored value is the `since` the next delta starts from; after a
+  successful delta it rolls forward. Storage reads/writes are best-effort (private mode, blocked
+  site data) and never crash the dashboard.
 
 ### Bins & QR codes
 
@@ -613,6 +633,42 @@ Search, scan, check in/out & Home Assistant:
 | GET | `/bins/{id}/attachments` … | Bin photos/attachments (mirrors item attachments) |
 | GET | `/ha/summary` | Totals + attention counts (warranties expiring, maintenance overdue, checked out) |
 | GET | `/ha/calendar?start=&end=` | Warranty-expiry + scheduled-maintenance events |
+
+What changed since your last visit — `GET /changes`:
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/changes?since=<ISO8601>` | Per-visit **what-changed** delta for the Dashboard's since-visit strip |
+
+Without `?since`, `GET /changes` answers with the cheap live-sync **cursor** (the latest
+`updated_at` across items, bins, locations, labels, holds and maintenance) so the SPA can decide
+whether its open views need a refresh. With `?since=<ISO8601>` it answers with the delta instead.
+
+```json
+{
+  "since": "2026-11-27T09:12:34+00:00",
+  "newItems": 2,
+  "checkoutsReturned": 1,
+  "warrantiesExpiring7": 0,
+  "maintenanceCompleted": 0
+}
+```
+
+- `since` — the normalized UTC instant the delta starts from (echoed back).
+- `newItems` — items created in the caller's **current group** since `since`.
+- `checkoutsReturned` — check-ins (checkout entries with `action: "in"`) recorded since `since`.
+- `warrantiesExpiring7` — warranties **expiring within 7 days** of the household's local today
+  (`[today, today + 7]`).
+- `maintenanceCompleted` — maintenance entries completed since `since`.
+
+Behaviour and guarantees:
+
+- `since` is **required** for this shape; an unparseable or empty value returns
+  `400 {"error": "since must be an ISO-8601 timestamp"}`.
+- Counters are scoped to the caller's **current group** and to **vault-visible** items only — a
+  locked vault hides hidden items from every counter.
+- The endpoint is **read-only** and persists nothing: the caller stores the returned `since` as its
+  last-visit watermark after acting on the counts.
 
 An **MCP server** (SSE on `:7766`) exposes these as tools for Home Assistant —
 see [MCP server](#mcp-server-for-assist--llms) above.

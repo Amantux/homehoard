@@ -29,6 +29,26 @@ def active_warranty_items(group_id):
     )
 
 
+def expiring_items(group_id, days=WARRANTY_SOON_DAYS, today=None) -> list:
+    """Active warranty items expiring within `days` calendar days of `today`
+    (the household's local today by default) — the ONE window definition behind
+    /ha/summary's days-30/days-90 lists and the GET /changes?since=
+    `warrantiesExpiring7` counter, so the two can never disagree about what
+    counts as expiring."""
+    day = (to_local(today) if today is not None else to_local(utcnow())).date()
+    end = day + timedelta(days=days)
+    return [
+        i for i in active_warranty_items(group_id)
+        if day <= i.warranty_expires.date() <= end
+    ]
+
+
+def expiring_soon_count(group_id, days=WARRANTY_SOON_DAYS, today=None) -> int:
+    """How many of :func:`expiring_items` fall in the window — the cheap counter
+    the GET /changes?since= delta feed renders as ``warrantiesExpiring7``."""
+    return len(expiring_items(group_id, days=days, today=today))
+
+
 def open_maintenance(group_id):
     """Scheduled, not-yet-completed maintenance entries for the items the group
     still keeps: nobody services what they sold or archived."""
@@ -63,10 +83,7 @@ def alert_digest(group_id, now=None):
         i for i in items
         if i.checked_out and i.checkout_due and i.checkout_due.date() < today
     ]
-    warranty_soon = [
-        i for i in active_warranty_items(group_id)
-        if today <= i.warranty_expires.date() <= today + timedelta(days=WARRANTY_SOON_DAYS)
-    ]
+    warranty_soon = expiring_items(group_id, days=WARRANTY_SOON_DAYS, today=now)
     maintenance_overdue = [
         m for m in open_maintenance(group_id) if m.scheduled_date.date() < today
     ]

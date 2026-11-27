@@ -4,6 +4,7 @@ import os
 import socket
 import tempfile
 import time
+from datetime import datetime
 
 from flask import Blueprint, Response, current_app, g, jsonify, request, send_file
 from sqlalchemy import text
@@ -11,8 +12,10 @@ from sqlalchemy.exc import IntegrityError
 
 from ..auth import current_group, login_required, owner_required
 from ..extensions import db, limiter
-from ..models import Group, Item
+from ..models import CheckoutEntry, Group, Item, MaintenanceEntry
+from ..services import alerts, vault
 from ..services.csv_io import export_items, import_items
+from ..timeutil import as_utc, iso_utc, to_local, utcnow
 from ._validation import json_body
 
 bp = Blueprint("misc", __name__)
@@ -30,6 +33,60 @@ CURRENCIES = [
 ]
 
 
+def _parse_since(value):
+    """Naive-UTC datetime for an ISO-8601 ``since`` (aware -> UTC, naive -> as-is),
+    or None when the value is missing or unparseable — the same normalisation the
+    /ha/* endpoints use, since storage is naive UTC."""
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return as_utc(parsed).replace(tzinfo=None)
+
+
+def _changes_digest(since: datetime) -> dict:
+    """The ``GET /changes?since=`` delta: what happened in this group since ``since``.
+
+    Read-only — the caller stores the returned ``since`` (its last-visit
+    watermark) after acting on the counts; nothing is persisted here.
+
+    Every counter is scoped to the caller's current group and to item visibility
+    (vault), and reuses the /ha/summary policies: warranty dates compare by
+    calendar date against the household's local today, and hidden items are
+    invisible to a locked session.
+    """
+    gid = current_group().id
+    new_items = (
+        vault.visible(db.session.query(Item).filter(Item.group_id == gid))
+        .filter(Item.created_at >= since)
+        .count()
+    )
+    checkouts_returned = (
+        vault.visible(db.session.query(CheckoutEntry)
+                     .join(Item, Item.id == CheckoutEntry.item_id))
+        .filter(Item.group_id == gid)
+        .filter(CheckoutEntry.action == "in")
+        .filter(CheckoutEntry.created_at >= since)
+        .count()
+    )
+    maintenance_completed = (
+        vault.visible(db.session.query(MaintenanceEntry)
+                     .join(Item, Item.id == MaintenanceEntry.item_id))
+        .filter(Item.group_id == gid)
+        .filter(MaintenanceEntry.completed_date >= since)
+        .count()
+    )
+    return {
+        "since": iso_utc(since),
+        "newItems": int(new_items),
+        "checkoutsReturned": int(checkouts_returned),
+        "warrantiesExpiring7": int(alerts.expiring_soon_count(gid, days=7, today=utcnow())),
+        "maintenanceCompleted": int(maintenance_completed),
+    }
+
+
 @bp.get("/changes")
 @login_required
 def change_cursor():
@@ -44,7 +101,20 @@ def change_cursor():
     Deliberately reveals nothing but "something changed" — no names, no counts —
     so it is safe alongside the vault (a hidden item's edit moves the cursor,
     but a timestamp is not contents).
+
+    ``?since=<ISO8601>`` switches this same route to the per-visit delta the
+    Dashboard's "what changed since my last visit" strip consumes: the counters
+    returned by :func:`_changes_digest`, computed server-side since that instant,
+    scoped to the caller's group and item visibility, read-only. ``since`` is
+    required for that shape — the SPA sends the watermark it stored on its
+    previous visit, so a bare ``/changes`` never asks for a delta.
     """
+    raw_since = request.args.get("since")
+    if raw_since is not None:
+        since = _parse_since(raw_since)
+        if since is None:
+            return jsonify({"error": "since must be an ISO-8601 timestamp"}), 400
+        return jsonify(_changes_digest(since))
     from ..models import Bin, Item, ItemHolding, Label, Location, MaintenanceEntry
     gid = current_group().id
     parts = []
