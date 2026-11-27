@@ -13,6 +13,7 @@ from ..auth import login_required, current_group
 from ._scoping import get_owned_or_404
 from ._validation import json_body
 from ..schemas.serializers import item_out, item_summary, num
+from ..services.completeness import missing_clause, normalize_gap
 from ..services.holdings import ensure_holding, resync_item, primary_holding
 from .lookup import location_path_str
 from ..services import money
@@ -290,6 +291,15 @@ def list_items():
 
     if args.get("includeArchived", "false").lower() != "true":
         q = q.filter(Item.archived.is_(False))
+
+    # Data-completeness: ?missing=<gap> narrows the list to the items lacking
+    # that key fact — the read-side counterpart of the report's per-field missing
+    # counts. The report links each gap here; an unrecognized gap filters nothing.
+    missing = normalize_gap(args.get("missing") or "")
+    if missing:
+        clause = missing_clause(missing)
+        if clause is not None:
+            q = q.filter(clause)
 
     total = q.count()
 

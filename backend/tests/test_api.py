@@ -1,4 +1,9 @@
 import io
+from datetime import timedelta
+from decimal import Decimal
+
+from app.extensions import db
+from app.models import Attachment, Document, Item, Label, Location, utcnow
 
 
 def test_status_public(client):
@@ -87,6 +92,92 @@ def test_search_filter(auth_client):
     res = auth_client.get("/api/v1/items?q=hammer").get_json()
     assert res["total"] == 1
     assert res["items"][0]["name"] == "Hammer"
+
+
+def test_items_missing_filter(app, auth_client, gid):
+    """?missing=<gap> narrows the item list to the items lacking that key fact.
+
+    The read-side counterpart of the report's per-field missing counts: the
+    Report's completeness card links each gap here, so the list filter and the
+    report counts have to agree on what "missing" means.
+
+    The fixture mirrors the report's completeness fixture — each item is missing
+    exactly its own key fact and holds the others — so a ?missing= query isolates
+    a single item per gap instead of sweeping in every item that lacks an
+    optional fact (an item with no photo has no photo however many items exist).
+    """
+    with app.app_context():
+        loc = Location(name="Garage", group_id=gid)
+        db.session.add(loc)
+        db.session.flush()
+        lbl = Label(name="Tools", group_id=gid)
+        db.session.add(lbl)
+        db.session.flush()
+
+        def _photo(it):
+            # A real primary attachment, so the item's photo key fact counts as held.
+            doc = Document(title=f"{it.name}.png", path=f"attachments/{it.name}.png", group_id=gid)
+            db.session.add(doc)
+            db.session.flush()
+            db.session.add(Attachment(type="photo", primary=True, item_id=it.id, document_id=doc.id))
+
+        no_value = Item(name="NoValue", purchase_price=Decimal("0.00"), quantity=1,
+                        location_id=loc.id, group_id=gid,
+                        warranty_expires=utcnow() + timedelta(days=30),
+                        purchase_date=utcnow() - timedelta(days=5))
+        db.session.add(no_value)
+        no_value.labels.append(lbl)
+        _photo(no_value)
+
+        no_photo = Item(name="NoPhoto", purchase_price=Decimal("20.00"), quantity=1,
+                        location_id=loc.id, group_id=gid,
+                        warranty_expires=utcnow() + timedelta(days=30),
+                        purchase_date=utcnow() - timedelta(days=5))
+        db.session.add(no_photo)
+        no_photo.labels.append(lbl)
+
+        no_location = Item(name="NoLocation", purchase_price=Decimal("30.00"), quantity=1,
+                           group_id=gid, warranty_expires=utcnow() + timedelta(days=30),
+                           purchase_date=utcnow() - timedelta(days=5))
+        db.session.add(no_location)
+        no_location.labels.append(lbl)
+        _photo(no_location)
+
+        no_label = Item(name="NoLabel", purchase_price=Decimal("40.00"), quantity=1,
+                        location_id=loc.id, group_id=gid,
+                        warranty_expires=utcnow() + timedelta(days=30),
+                        purchase_date=utcnow() - timedelta(days=5))
+        db.session.add(no_label)
+        _photo(no_label)
+
+        no_warranty = Item(name="NoWarranty", purchase_price=Decimal("50.00"), quantity=1,
+                           location_id=loc.id, group_id=gid,
+                           purchase_date=utcnow() - timedelta(days=5))
+        db.session.add(no_warranty)
+        no_warranty.labels.append(lbl)
+        _photo(no_warranty)
+
+        no_purchase_date = Item(name="NoPurchaseDate", purchase_price=Decimal("60.00"), quantity=1,
+                                location_id=loc.id, group_id=gid,
+                                warranty_expires=utcnow() + timedelta(days=30))
+        db.session.add(no_purchase_date)
+        no_purchase_date.labels.append(lbl)
+        _photo(no_purchase_date)
+
+        db.session.commit()
+
+    cases = [
+        ("value", "NoValue"),
+        ("photo", "NoPhoto"),
+        ("location", "NoLocation"),
+        ("label", "NoLabel"),
+        ("warrantyDate", "NoWarranty"),
+        ("purchaseDate", "NoPurchaseDate"),
+    ]
+    for gap, name in cases:
+        res = auth_client.get(f"/api/v1/items?missing={gap}").get_json()
+        assert res["total"] == 1, gap
+        assert res["items"][0]["name"] == name, gap
 
 
 def test_csv_roundtrip(auth_client):

@@ -3,6 +3,7 @@ import { ref, onMounted, computed } from 'vue'
 import { api, apiUrl, getToken } from '../api'
 import { useUI } from '../stores/ui'
 import { shortDate } from '../format'
+import { COMPLETENESS_LABELS } from '../completeness'
 
 const ui = useUI()
 const report = ref(null)
@@ -30,6 +31,23 @@ const generated = computed(() => {
   return d ? new Date(d).toLocaleString() : ''
 })
 const photoItems = computed(() => (report.value?.items || []).filter((i) => i.imageId))
+
+// Data-completeness: the key facts the report treats as the shape of a complete
+// item, plus the missing-field counts the backend already computed. A field with
+// no missing entries simply isn't listed; the card's empty state covers the
+// nothing-missing case. The vocabulary itself lives in ../completeness so the
+// item-list filter and this card can never drift apart.
+const missingFields = computed(() => {
+  const comp = report.value?.summary?.completeness || {}
+  const out = []
+  for (const key of Object.keys(COMPLETENESS_LABELS)) {
+    const entry = comp[key] || {}
+    const count = entry.count || 0
+    if (!count) continue
+    out.push({ key, label: COMPLETENESS_LABELS[key], count })
+  }
+  return out
+})
 
 function printPage() { window.print() }
 async function downloadCsv() {
@@ -78,12 +96,24 @@ async function downloadCsv() {
       <div class="sum"><div class="v">{{ report.summary.totalItems }}</div><div class="l">Items</div></div>
     </div>
 
-    <div class="card">
-      <strong>Warranty:</strong>
-      <span class="chip">{{ report.summary.warranty.active + report.summary.warranty.lifetime }} covered</span>
-      <span class="chip">{{ report.summary.warranty.expiring }} expiring soon</span>
-      <span class="chip">{{ report.summary.warranty.expired }} expired</span>
-      <span class="chip">{{ report.summary.warranty.none }} none</span>
+    <div class="duo">
+      <div class="card">
+        <strong>Warranty:</strong>
+        <span class="chip">{{ report.summary.warranty.active + report.summary.warranty.lifetime }} covered</span>
+        <span class="chip">{{ report.summary.warranty.expiring }} expiring soon</span>
+        <span class="chip">{{ report.summary.warranty.expired }} expired</span>
+        <span class="chip">{{ report.summary.warranty.none }} none</span>
+      </div>
+
+      <div class="card">
+        <strong>Data completeness:</strong>
+        <span v-if="!missingFields.length" class="chip">✓ All key facts present</span>
+        <span v-for="f in missingFields" :key="f.key" class="chip">{{ f.label }}: {{ f.count }} missing</span>
+        <div v-if="missingFields.length" class="row no-print">
+          <router-link v-for="f in missingFields" :key="'fl-' + f.key" class="secondary sm"
+            :to="{ path: '/items', query: { missing: f.key } }">{{ f.label }} →</router-link>
+        </div>
+      </div>
     </div>
 
     <!-- Breakdowns -->
@@ -155,6 +185,8 @@ async function downloadCsv() {
 .sum .l { color:var(--muted,#777); font-size:0.82rem; margin-top:2px; }
 .cols { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
 @media (max-width:640px){ .cols{ grid-template-columns:1fr; } }
+.duo { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+@media (max-width:640px){ .duo{ grid-template-columns:1fr; } }
 table { width:100%; border-collapse:collapse; font-size:0.9rem; }
 th, td { text-align:left; padding:5px 8px; border-bottom:1px solid var(--border,#eee); }
 .num { text-align:right; font-variant-numeric:tabular-nums; }
