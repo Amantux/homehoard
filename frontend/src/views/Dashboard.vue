@@ -1,12 +1,14 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api'
 import { money, loadCurrency } from '../format'
 import ItemCard from '../components/ItemCard.vue'
 import EmptyState from '../components/EmptyState.vue'
 import ErrorState from '../components/ErrorState.vue'
+import SinceVisitStrip from '../components/SinceVisitStrip.vue'
 import { useLoader } from '../components/useLoader'
+import { getLastVisit, setLastVisit, FIRST_VISIT_WATERMARK } from '../lastVisit'
 
 const router = useRouter()
 const stats = ref(null)
@@ -16,6 +18,7 @@ const locations = ref([])
 // The dashboard is the landing page, so a silent failure here reads as "the app
 // is broken" rather than "one request failed".
 const attention = ref(null)
+const sinceDigest = ref(null)
 const { loading, error, reload: load } = useLoader(async () => {
   await loadCurrency()
   const [s, r, l, ha] = await Promise.all([
@@ -38,6 +41,30 @@ const { loading, error, reload: load } = useLoader(async () => {
     restock: ha.restock?.count || 0,
     any: overdueLends.length || (ha.warrantiesExpiring?.days30 || 0)
       || (ha.maintenance?.overdue || 0) || (ha.restock?.count || 0),
+  }
+
+  // What changed since the household's last visit: one delta fetch off the
+  // stored watermark, then roll the stored watermark forward to the new since.
+  const since = getLastVisit()
+  if (since) {
+    try {
+      const digest = await api.get(`/changes?since=${encodeURIComponent(since)}`)
+      sinceDigest.value = digest
+      // The watermark only advances once the strip has actually rendered — wait
+      // for the ref to flush before stamping the visit, so a failure above never
+      // burns this visit's delta.
+      await nextTick()
+      setLastVisit(new Date().toISOString())
+    } catch (e) {
+      // The strip is decorative — a failed delta just leaves it unrendered and
+      // the next visit recomputes from the previous watermark.
+      sinceDigest.value = null
+      console.error('Dashboard: failed to load the since-visit digest', e)
+    }
+  } else {
+    // First visit: no watermark yet, seed it at the epoch so the first real
+    // delta reports everything that happened since the beginning.
+    setLastVisit(FIRST_VISIT_WATERMARK)
   }
 })
 
@@ -85,6 +112,10 @@ const tiles = () => [
         </router-link>
       </div>
     </div>
+
+    <!-- What changed since the household's last visit. Rendered only while a
+         digest exists (first visit has none yet); a calm day says so in prose. -->
+    <SinceVisitStrip v-if="sinceDigest" :digest="sinceDigest" />
 
     <div class="stat-grid">
       <component :is="t.to ? 'router-link' : 'div'" v-for="t in tiles()" :key="t.label"
