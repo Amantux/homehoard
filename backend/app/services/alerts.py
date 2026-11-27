@@ -9,6 +9,7 @@ from sqlalchemy.orm import joinedload
 from ..extensions import db
 from ..models import Item, MaintenanceEntry
 from . import vault
+from . import report_registry
 from ..timeutil import as_utc, to_local, utcnow
 
 # Warranties within this window are "expiring soon" for alerting purposes.
@@ -93,8 +94,7 @@ def alert_digest(group_id, now=None):
         names = ", ".join(
             f"{i.name}" + (f" (to {i.checked_out_to})" if i.checked_out_to else "")
             for i in overdue_checkouts[:10])
-        lines.append(f"Overdue for return ({len(overdue_checkouts)}): {names}."
-                     + _link("/checkouts"))
+        lines.append(f"Overdue for return ({len(overdue_checkouts)}): {names}." + _link("/checkouts"))
     if low:
         names = ", ".join(f"{r['name']} (buy {r['suggestedQuantity']:g})"
                           for r in low[:10])
@@ -110,8 +110,7 @@ def alert_digest(group_id, now=None):
         names = ", ".join(
             f"{m.name}" + (f" [{m.item.name}]" if m.item else "")
             for m in sorted(maintenance_overdue, key=lambda x: x.scheduled_date)[:10])
-        lines.append(f"Maintenance overdue ({len(maintenance_overdue)}): {names}."
-                     + _link("/maintenance"))
+        lines.append(f"Maintenance overdue ({len(maintenance_overdue)}): {names}." + _link("/maintenance"))
 
     counts = {
         "restock": len(low),
@@ -119,18 +118,39 @@ def alert_digest(group_id, now=None):
         "warrantyExpiringSoon": len(warranty_soon),
         "maintenanceOverdue": len(maintenance_overdue),
     }
+    # Each digest kind resolves through its registry entry: the entry owns how the
+    # kind's row is built and declares that row's quirks bag (None when it has none).
+    checkout_overdue_entry = report_registry.REPORTS["checkout_overdue"]
+    warranty_soon_entry = report_registry.REPORTS["warranty_expiring_soon"]
+    maintenance_overdue_entry = report_registry.REPORTS["maintenance_overdue"]
+
     return {
         "counts": counts,
-        "overdueCheckouts": [{"id": i.id, "name": i.name,
-                              "to": i.checked_out_to} for i in overdue_checkouts],
+        # Rows are registry-produced and re-mapped onto this digest's per-entry
+        # keys by the registry's serializers — the digest never hand-builds one.
+        "overdueCheckouts": [
+            report_registry.serialize_checkout_overdue_row(
+                report_registry.validate_report_row(
+                    checkout_overdue_entry.build(i, action_url=f"/#/items/{i.id}"),
+                    group_id=group_id, db=db),
+                i, quirks=checkout_overdue_entry.quirks,
+            )
+            for i in overdue_checkouts
+        ],
         "warrantyExpiringSoon": [
-            {"id": i.id, "name": i.name,
-             "expires": i.warranty_expires.date().isoformat()}
-            for i in sorted(warranty_soon, key=lambda x: x.warranty_expires)],
+            report_registry.serialize_warranty_soon_row(
+                report_registry.validate_report_row(
+                    warranty_soon_entry.build(i, action_url=f"/#/items/{i.id}"),
+                    group_id=group_id, db=db), i, quirks=warranty_soon_entry.quirks)
+            for i in sorted(warranty_soon, key=lambda x: x.warranty_expires)
+        ],
         "maintenanceOverdue": [
-            {"id": m.id, "name": m.name, "itemId": m.item_id,
-             "scheduled": m.scheduled_date.date().isoformat()}
-            for m in sorted(maintenance_overdue, key=lambda x: x.scheduled_date)],
+            report_registry.serialize_maintenance_overdue_row(
+                report_registry.validate_report_row(
+                    maintenance_overdue_entry.build(m, action_url="/#/maintenance"),
+                    group_id=group_id, db=db), m, quirks=maintenance_overdue_entry.quirks)
+            for m in sorted(maintenance_overdue, key=lambda x: x.scheduled_date)
+        ],
         "isEmpty": not any(counts.values()),
         "text": "\n".join(lines) if lines else "No HomeHoard alerts.",
     }
