@@ -7,8 +7,10 @@ Two rules pinned here:
 * tap-through links appear only when PUBLIC_URL is configured (the server can't
   know its browser-facing URL under ingress otherwise), and use hash routes.
 """
+from datetime import datetime, timedelta
+
 from app.extensions import db
-from app.models import Group, Item
+from app.models import Group, Item, MaintenanceEntry
 from app.services.alerts import alert_digest
 
 
@@ -60,3 +62,76 @@ def test_links_appear_only_when_public_url_is_set(auth_client, app):
 
     assert "https://" not in plain["text"], "invented a link with no base URL"
     assert "https://ha.example/api/hassio_ingress/tok/#/restock" in linked["text"]
+
+
+def test_digest_entries_carry_per_entry_deep_links(auth_client, app):
+    """Every alert entry deep-links at the record that needs attention, and the
+    low-stock rows get their own additive list with a per-item link."""
+    now = datetime(2026, 8, 8, 12, 0, 0)
+    with app.app_context():
+        gid = _gid(app)
+        lent = Item(name="Ladder", group_id=gid, checked_out=True, checked_out_to="Bob",
+                    checkout_due=now - timedelta(days=2))
+        db.session.add(lent)
+        laptop = Item(name="Laptop", group_id=gid, warranty_expires=now + timedelta(days=10))
+        db.session.add(laptop)
+        db.session.flush()
+        drill = Item(name="Drill", group_id=gid)
+        db.session.add(drill)
+        db.session.flush()
+        oil = MaintenanceEntry(name="Oil change", item_id=drill.id,
+                                scheduled_date=now - timedelta(days=5))
+        db.session.add(oil)
+        batteries = Item(name="AA batteries", group_id=gid, quantity=1, min_quantity=4,
+                         target_quantity=12)
+        db.session.add(batteries)
+        db.session.commit()
+        digest = alert_digest(gid, now=now)
+
+    assert digest["counts"] == {"restock": 1, "overdueCheckouts": 1,
+                                "warrantyExpiringSoon": 1, "maintenanceOverdue": 1}
+    assert digest["isEmpty"] is False
+    assert digest["overdueCheckouts"] == [
+        {"id": lent.id, "name": "Ladder", "to": "Bob", "link": f"/items/{lent.id}"},
+    ]
+    assert digest["warrantyExpiringSoon"] == [
+        {"id": laptop.id, "name": "Laptop",
+         "expires": (now + timedelta(days=10)).date().isoformat(),
+         "link": f"/items/{laptop.id}"},
+    ]
+    assert digest["maintenanceOverdue"] == [
+        {"id": oil.id, "name": "Oil change", "itemId": drill.id,
+         "scheduled": (now - timedelta(days=5)).date().isoformat(),
+         "link": f"/maintenance/{oil.id}"},
+    ]
+    assert digest["lowRestock"] == [
+        {"id": batteries.id, "name": "AA batteries", "suggestedQuantity": 11,
+         "link": f"/items/{batteries.id}"},
+    ]
+    # The plain-text body is untouched by the deep links.
+    assert "Overdue for return (1): Ladder (to Bob)." in digest["text"]
+    assert "Running low (1): AA batteries (buy 11)." in digest["text"]
+    assert "Maintenance overdue (1): Oil change [Drill]." in digest["text"]
+
+
+def test_digest_entry_deep_links_use_the_public_url_base(auth_client, app):
+    now = datetime(2026, 8, 8, 12, 0, 0)
+    base = "https://ha.example/api/hassio_ingress/tok"
+    with app.app_context():
+        gid = _gid(app)
+        lent = Item(name="Ladder", group_id=gid, checked_out=True, checked_out_to="Bob",
+                    checkout_due=now - timedelta(days=2))
+        db.session.add(lent)
+        batteries = Item(name="AA batteries", group_id=gid, quantity=1, min_quantity=4,
+                         target_quantity=12)
+        db.session.add(batteries)
+        db.session.commit()
+        app.config["PUBLIC_URL"] = base
+        linked = alert_digest(gid, now=now)
+        app.config["PUBLIC_URL"] = ""
+
+    assert linked["overdueCheckouts"][0]["link"] == f"{base}/#/items/{lent.id}"
+    assert linked["lowRestock"] == [
+        {"id": batteries.id, "name": "AA batteries", "suggestedQuantity": 11,
+         "link": f"{base}/#/items/{batteries.id}"},
+    ]
