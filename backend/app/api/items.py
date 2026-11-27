@@ -11,10 +11,11 @@ from ..models import (Item, ItemField, ItemHolding, Label, Location, Bin,
                       Attachment, MaintenanceEntry, CheckoutEntry)
 from ..auth import login_required, current_group
 from ._scoping import get_owned_or_404
-from ._validation import json_body
+from ._validation import json_body, abort_fields
 from ..schemas.serializers import item_out, item_summary, num
 from ..services.holdings import ensure_holding, resync_item, primary_holding
 from .lookup import location_path_str
+from ..completeness import missing_fields
 from ..services import money
 from ..services import vault
 
@@ -238,6 +239,17 @@ def _apply(item: Item, data: dict):
                     time_value=_parse_dt(f.get("timeValue")),
                 )
             )
+
+    # Data completeness is owned by backend/app/completeness.py: the required /
+    # recommended field rules and the score/status all live there, and the write
+    # path validates against it instead of carrying an inline copy of the rules.
+    # Missing REQUIRED fields are refused with the standard field-error 422; a
+    # partial item (recommended fields missing) is scored partial by the module,
+    # not refused.
+    missing = missing_fields(item)
+    if missing:
+        abort_fields({f: f"{f} is required" for f in missing},
+                     f"missing required fields: {', '.join(missing)}")
 
 
 @bp.get("/items")
