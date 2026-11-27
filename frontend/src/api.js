@@ -109,6 +109,11 @@ export const api = {
   patch: (p, b) => request('PATCH', p, b),
   del: (p) => request('DELETE', p),
   upload: (p, form) => request('POST', p, form, true),
+  // Reports: the backend registry is the source of truth for what reports exist
+  // (GET /api/v1/reports lists them) and builds a single one from it
+  // (GET /api/v1/reports/<id>).
+  getReports: () => request('GET', '/reports'),
+  getReport: (id) => request('GET', '/reports/' + encodeURIComponent(id)),
 }
 
 // POST that consumes a newline-delimited-JSON (NDJSON) streaming response,

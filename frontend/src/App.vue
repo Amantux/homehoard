@@ -118,7 +118,7 @@ const nav = [
         <router-link to="/review" class="nav-link"><span class="ico">🗂️</span> Review</router-link>
         <router-link to="/duplicates" class="nav-link"><span class="ico">⧉</span> Duplicates</router-link>
         <router-link to="/database" class="nav-link"><span class="ico">🗄️</span> Database</router-link>
-        <router-link to="/report" class="nav-link"><span class="ico">📄</span> Report</router-link>
+        <router-link to="/reports" class="nav-link"><span class="ico">📄</span> Reports</router-link>
         <div class="spacer"></div>
         <div class="nav-link" style="cursor:default">
           <span class="ico">👤</span>

@@ -15,6 +15,7 @@ KNOWN_UNCOVERED = {
     "code": "barcode/identify value, not an object id",
     "kind": "job kind enum, not an object id",
     "path": "static path, not an object id",
+    "report_id": "report registry id, not a per-group object id",
     "value": "static path, not an object id",
 }
 

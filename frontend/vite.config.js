@@ -33,4 +33,9 @@ export default defineConfig({
     outDir: 'dist',
     emptyOutDir: true,
   },
+  // One storage global for every suite — happy-dom does not expose `localStorage`
+  // on its own, and views/stores read it as a plain global.
+  test: {
+    setupFiles: ['./src/test/setup.js'],
+  },
 })
