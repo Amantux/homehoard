@@ -4,6 +4,7 @@ find-or-create the right item.
 Chains a general product barcode DB → Open Food Facts (grocery) → an Ollama
 web-search fallback. Best-effort, bounded, never raises; off unless
 HBOX_BARCODE_LOOKUP is set. Returns ``{name, brand, barcode, source}`` or None.
+Full inventory of the Open Food Facts hop: docs/open-food-facts.md
 """
 import logging
 import re
