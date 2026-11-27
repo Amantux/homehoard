@@ -2,14 +2,13 @@
 maintenance. One definition, consumed by the HA summary sensor and the notifier
 dispatch so the two never disagree about what counts as an alert.
 """
-from datetime import timedelta
-
 from sqlalchemy.orm import joinedload
 
 from ..extensions import db
 from ..models import Item, MaintenanceEntry
 from . import vault
-from ..timeutil import as_utc, to_local, utcnow
+from .report_dates import is_expiring, today_local
+from ..timeutil import as_utc, utcnow
 
 # Warranties within this window are "expiring soon" for alerting purposes.
 WARRANTY_SOON_DAYS = 30
@@ -56,7 +55,7 @@ def alert_digest(group_id, now=None):
     # Warranty/maintenance/checkout-due dates are calendar dates (stored as UTC midnight), so
     # they compare by .date() against the household's local "today" — the day
     # rolls over at local midnight, not UTC's. Never shift the stored value.
-    today = to_local(now).date()
+    today = today_local(group_id, now=now)
     items = db.session.query(Item).filter_by(group_id=group_id).all()
 
     overdue_checkouts = [
@@ -65,7 +64,7 @@ def alert_digest(group_id, now=None):
     ]
     warranty_soon = [
         i for i in active_warranty_items(group_id)
-        if today <= i.warranty_expires.date() <= today + timedelta(days=WARRANTY_SOON_DAYS)
+        if is_expiring(i.warranty_expires.date(), WARRANTY_SOON_DAYS, today)
     ]
     maintenance_overdue = [
         m for m in open_maintenance(group_id) if m.scheduled_date.date() < today
