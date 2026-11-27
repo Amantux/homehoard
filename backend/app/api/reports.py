@@ -15,6 +15,7 @@ from flask import Blueprint, Response, jsonify
 from sqlalchemy.orm import selectinload
 
 from ..auth import current_group, login_required
+from ..completeness import COMPLETENESS_FIELDS, completeness_flags
 from ..extensions import db
 from ..models import Item
 from ..schemas.serializers import iso
@@ -58,7 +59,7 @@ def _items(gid):
 
 
 def _row(i, now):
-    return {
+    r = {
         "id": i.id,
         "name": i.name,
         "location": i.location.name if i.location else "",
@@ -73,6 +74,11 @@ def _row(i, now):
         "warrantyStatus": _warranty_status(i, now),
         "imageId": next((a.document_id for a in i.attachments if a.primary), None),
     }
+    # Data-completeness: which key facts this item actually has. Derived from the
+    # item itself so the flags and the row can never disagree, and so _row stays
+    # the single owner of the per-item shape.
+    r["completeness"] = completeness_flags(i)
+    return r
 
 
 @bp.get("/reports/inventory")
@@ -88,6 +94,14 @@ def inventory_report():
     warranty = {"lifetime": 0, "active": 0, "expiring": 0, "expired": 0, "none": 0}
     for r in rows:
         warranty[r["warrantyStatus"]] += 1
+
+    # Per-field missing counts over the group-scoped rows, plus the items missing each.
+    missing = {f: {"count": 0, "items": []} for f in COMPLETENESS_FIELDS}
+    for r in rows:
+        for f in COMPLETENESS_FIELDS:
+            if not r["completeness"][f]:
+                missing[f]["count"] += 1
+                missing[f]["items"].append(r["id"])
 
     def _by(attr_name):
         agg = {}
@@ -112,6 +126,7 @@ def inventory_report():
             "uninsuredValue": round(total_value - insured_value, 2),
             "insuredCount": sum(1 for r in rows if r["insured"]),
             "warranty": warranty,
+            "completeness": missing,
         },
         "byLocation": _by("location"),
         "byLabel": _by("labels"),
