@@ -31,6 +31,16 @@ const generated = computed(() => {
 })
 const photoItems = computed(() => (report.value?.items || []).filter((i) => i.imageId))
 
+// Attention: the ranked rows the backend puts in the report summary — one per
+// item whose warranty lapsed/approaches, that is still checked out past its due
+// date, or whose key facts are missing. The backend orders them expired, then
+// expiring, then stale/incomplete, due date within a level; we only render.
+const SEV_LABELS = { expired: 'Expired', expiring: 'Expiring soon', stale: 'Stale', incomplete: 'Incomplete' }
+const SEV_CLASS = { expired: 'sev-expired', expiring: 'sev-expiring', stale: 'sev-stale', incomplete: 'sev-incomplete' }
+const attention = computed(() => report.value?.summary?.attention || [])
+function sevLabel(s) { return WLABEL[s] || SEV_LABELS[s] || s }
+function sevClass(s) { return SEV_CLASS[s] || 'sev-incomplete' }
+
 function printPage() { window.print() }
 async function downloadCsv() {
   try {
@@ -84,6 +94,20 @@ async function downloadCsv() {
       <span class="chip">{{ report.summary.warranty.expiring }} expiring soon</span>
       <span class="chip">{{ report.summary.warranty.expired }} expired</span>
       <span class="chip">{{ report.summary.warranty.none }} none</span>
+    </div>
+
+    <!-- Attention: what needs the household's eye right now, most urgent first -->
+    <div class="card">
+      <strong>Attention:</strong>
+      <div v-if="!attention.length" class="muted">Nothing needs attention — your inventory looks healthy.</div>
+      <ul v-else class="attention-list">
+        <li v-for="r in attention" :key="r.id" class="row attention-row">
+          <span class="chip" :class="sevClass(r.severity)">{{ sevLabel(r.severity) }}</span>
+          <router-link class="fill" :to="'/items/' + r.id">{{ r.name }}</router-link>
+          <span class="muted">{{ r.gap }}</span>
+          <span class="txt-sm muted">{{ r.due ? shortDate(r.due) : '—' }}</span>
+        </li>
+      </ul>
     </div>
 
     <!-- Breakdowns -->
@@ -159,6 +183,12 @@ table { width:100%; border-collapse:collapse; font-size:0.9rem; }
 th, td { text-align:left; padding:5px 8px; border-bottom:1px solid var(--border,#eee); }
 .num { text-align:right; font-variant-numeric:tabular-nums; }
 .chip { display:inline-block; margin-right:6px; padding:2px 8px; border-radius:999px; background:var(--surface-2); font-size:0.8rem; }
+.chip.sev-expired { background: var(--danger); color: #fff; }
+.chip.sev-expiring { background: var(--warning); color: #fff; }
+.chip.sev-stale { background: var(--warning); color: #fff; }
+.chip.sev-incomplete { background: var(--surface-2); color: var(--muted); border:1px solid var(--border); }
+.attention-list { list-style:none; margin:10px 0 0; padding:0; }
+.attention-row { flex-wrap:wrap; }
 .photos { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px; }
 .photos figure { margin:0; }
 .photos img { width:100%; height:120px; object-fit:cover; border-radius:6px; border:1px solid var(--border); }

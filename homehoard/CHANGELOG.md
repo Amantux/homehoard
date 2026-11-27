@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **The Report page now lists what needs your attention.** The inventory
+  report's **Attention** section renders the ranked rows the backend already
+  computes — expired or expiring warranties, items still checked out past
+  their due date, and items missing key facts — each with its severity, the
+  specific gap, the due date and a one-tap link to the item. An inventory with
+  nothing to report shows its all-clear line instead.
+
 - **Choose your label size when printing QR labels, and get that size.**
   **Tools → QR label sheet** now offers three layouts: address labels 3 across
   (63.5×38.1 mm), small labels 4 across (50.8×25.4 mm) and large labels 2

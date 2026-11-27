@@ -9,7 +9,7 @@ quantity) — the data we actually hold; no depreciation/replacement is invented
 """
 import csv
 import io
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, Response, jsonify
 from sqlalchemy.orm import selectinload
@@ -27,6 +27,11 @@ from ..services import vault
 bp = Blueprint("reports", __name__)
 
 _EXPIRING_SOON_DAYS = 60
+# Sentinel sorting after any real (aware-UTC) due date.
+_FAR_FUTURE = datetime.max.replace(tzinfo=timezone.utc)
+
+# Attention tiers, most urgent first.
+_SEVERITY_ORDER = {"expired": 0, "expiring": 1, "stale": 2, "incomplete": 3}
 
 
 def _value(i) -> float:
@@ -75,6 +80,74 @@ def _row(i, now):
     }
 
 
+def _attention(i, now):
+    """Every reason this item warrants attention, deduplicated, worst first.
+
+    One item can carry more than one reason at once (a lapsed warranty *and* missing
+    purchase facts); they come back merged, so the caller emits a single row.
+    """
+    reasons = []
+    status = _warranty_status(i, now)
+    if status == "expired":
+        exp = as_utc(i.warranty_expires)
+        reasons.append({"reason": "warranty_expired", "severity": "expired",
+                        "due": exp, "gap": f"warranty expired on {exp.date().isoformat()}"})
+    elif status == "expiring":
+        exp = as_utc(i.warranty_expires)
+        reasons.append({"reason": "warranty_expiring", "severity": "expiring",
+                        "due": exp, "gap": f"warranty expires on {exp.date().isoformat()}"})
+
+    if i.checked_out and i.checkout_due and as_utc(i.checkout_due) < now:
+        due = as_utc(i.checkout_due)
+        reasons.append({"reason": "checkout_overdue", "severity": "stale", "due": due,
+                        "gap": f"still out (to {i.checked_out_to or 'unknown person'})"
+                               f" past due {due.date().isoformat()}"})
+
+    missing = []
+    if not i.purchase_price:
+        missing.append("no purchase price")
+    if not i.purchase_date:
+        missing.append("no purchase date")
+    if not i.lifetime_warranty and not i.warranty_expires:
+        missing.append("no warranty")
+    if missing:
+        reasons.append({"reason": "incomplete_key_facts", "severity": "incomplete",
+                        "due": None, "gap": "missing " + ", ".join(missing)})
+
+    seen, out = set(), []
+    for r in reasons:
+        if r["reason"] in seen:
+            continue
+        seen.add(r["reason"])
+        out.append(r)
+    return out
+
+
+def _attention_rows(items, now):
+    """One row per item needing attention, severity-ordered then due-date-ordered."""
+    rows = []
+    for i in items:
+        reasons = _attention(i, now)
+        if not reasons:
+            continue
+        top = reasons[0]
+        rows.append({
+            "id": i.id,
+            "name": i.name,
+            "severity": top["severity"],
+            "reasons": [r["reason"] for r in reasons],
+            "gap": top["gap"],
+            "due": top["due"],
+        })
+
+    def _key(r):
+        return (_SEVERITY_ORDER.get(r["severity"], len(_SEVERITY_ORDER)),
+                r["due"] is None, r["due"] or _FAR_FUTURE)
+
+    rows.sort(key=_key)
+    return rows
+
+
 @bp.get("/reports/inventory")
 @login_required
 def inventory_report():
@@ -88,6 +161,21 @@ def inventory_report():
     warranty = {"lifetime": 0, "active": 0, "expiring": 0, "expired": 0, "none": 0}
     for r in rows:
         warranty[r["warrantyStatus"]] += 1
+
+    # The attention list: one row per item that needs the household's eye, built
+    # from the same items the valuation above covers. Severity first, due date
+    # within a level, so the top of the list is the most urgent gap.
+    attention = [
+        {
+            "id": r["id"],
+            "name": r["name"],
+            "severity": r["severity"],
+            "reasons": r["reasons"],
+            "gap": r["gap"],
+            "due": iso(r["due"]),
+        }
+        for r in _attention_rows(items, now)
+    ]
 
     def _by(attr_name):
         agg = {}
@@ -112,6 +200,7 @@ def inventory_report():
             "uninsuredValue": round(total_value - insured_value, 2),
             "insuredCount": sum(1 for r in rows if r["insured"]),
             "warranty": warranty,
+            "attention": attention,
         },
         "byLocation": _by("location"),
         "byLabel": _by("labels"),
