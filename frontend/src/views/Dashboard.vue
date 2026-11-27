@@ -1,8 +1,9 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api'
 import { money, loadCurrency } from '../format'
+import { severityLabel } from '../utils/severityLabels'
 import ItemCard from '../components/ItemCard.vue'
 import EmptyState from '../components/EmptyState.vue'
 import ErrorState from '../components/ErrorState.vue'
@@ -41,6 +42,22 @@ const { loading, error, reload: load } = useLoader(async () => {
   }
 })
 
+// The attention digest's overall status, phrased for the polite live region that
+// announces it as soon as the digest loads.
+const attentionDigest = computed(() => {
+  const a = attention.value || {}
+  const overdue = (a.overdueLends || []).length
+  const expiring = a.warranty30 || 0
+  const maintenanceOverdue = a.maintOverdue || 0
+  const low = a.restock || 0
+  const total = overdue + expiring + maintenanceOverdue + low
+  if (!total) {
+    return 'Attention digest: nothing needs attention'
+  }
+  const noun = total === 1 ? 'item needs' : 'items need'
+  return `Attention digest: ${total} ${noun} attention`
+})
+
 const tiles = () => [
   { icon: '📦', label: 'Items', value: stats.value.totalItems, to: '/items' },
   { icon: '📍', label: 'Locations', value: stats.value.totalLocations, to: '/locations' },
@@ -62,25 +79,29 @@ const tiles = () => [
   <ErrorState v-else-if="error" :message="error" @retry="load" />
 
   <template v-else>
+    <!-- Polite live region: screen readers announce the attention digest's
+         overall status as soon as it loads. -->
+    <p class="visually-hidden" aria-live="polite">{{ attentionDigest }}</p>
+
     <!-- The briefing: only rendered when something needs attention, so a calm
          household gets a calm dashboard. Each line goes to where you act on it. -->
     <div v-if="attention?.any" class="card" style="margin-bottom:16px;border-left:3px solid var(--danger)">
       <h2 style="margin:0 0 8px">Needs attention</h2>
       <div class="stack" style="gap:6px">
         <router-link v-if="attention.overdueLends.length" to="/checkouts" class="row" style="gap:8px;align-items:center">
-          <span class="badge danger">{{ attention.overdueLends.length }} overdue</span>
+          <span class="badge danger">{{ attention.overdueLends.length }} {{ severityLabel('overdue') }}</span>
           <span>{{ attention.overdueLends.map((i) => i.to ? `${i.name} (${i.to})` : i.name).slice(0, 3).join(', ') }}{{ attention.overdueLends.length > 3 ? '…' : '' }} still out</span>
         </router-link>
         <router-link v-if="attention.maintOverdue" to="/maintenance" class="row" style="gap:8px;align-items:center">
-          <span class="badge danger">{{ attention.maintOverdue }}</span>
+          <span class="badge danger">{{ severityLabel('maintenanceOverdue') }}</span>
           <span>maintenance job{{ attention.maintOverdue === 1 ? '' : 's' }} overdue</span>
         </router-link>
         <router-link v-if="attention.restock" to="/restock" class="row" style="gap:8px;align-items:center">
-          <span class="badge warn">{{ attention.restock }}</span>
+          <span class="badge warn">{{ severityLabel('runningLow') }}</span>
           <span>consumable{{ attention.restock === 1 ? '' : 's' }} running low</span>
         </router-link>
         <router-link v-if="attention.warranty30" to="/report" class="row" style="gap:8px;align-items:center">
-          <span class="badge warn">{{ attention.warranty30 }}</span>
+          <span class="badge warn">{{ severityLabel('warrantyExpiringSoon') }}</span>
           <span>warrant{{ attention.warranty30 === 1 ? 'y expires' : 'ies expire' }} within 30 days</span>
         </router-link>
       </div>

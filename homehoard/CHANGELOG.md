@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Screen readers now hear the status, and every status has words.** Colored
+  chips, dots and badges on the dashboard, the inventory report and the Home
+  Assistant card always sit beside a visible plain-language label, and each of
+  those surfaces carries a polite live region that announces its summary as soon
+  as it loads — the Home Assistant card now speaks its online/offline status too.
+  Color stays the secondary signal.
 - **Choose your label size when printing QR labels, and get that size.**
   **Tools → QR label sheet** now offers three layouts: address labels 3 across
   (63.5×38.1 mm), small labels 4 across (50.8×25.4 mm) and large labels 2
