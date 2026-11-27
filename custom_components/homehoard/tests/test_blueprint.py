@@ -395,13 +395,41 @@ async def test_rows_nothing_tells_apart_are_listed_without_a_button(hass, digest
 
 # --- when it stays quiet or holds back --------------------------------------
 
-async def test_nothing_to_report_sends_nothing(hass, digest):
-    assert await digest() == []
+async def test_nothing_to_report_sends_the_empty_state(hass, digest):
+    """Zero rows is a state, not a blank card: the phone still gets an answer."""
+    calls = await digest()
+
+    assert len(calls) == 1
+    assert calls[0].domain == "notify"
+    assert calls[0].service == "mobile_app_phone"
+    assert calls[0].data["title"] == "HomeHoard"
+    assert calls[0].data["message"] == "Nothing needs attention."
+    assert _buttons(calls[0]) == []
 
 
-async def test_upcoming_maintenance_alone_sends_nothing(hass, digest):
-    """The sensor's entries include what is merely scheduled; that is not news."""
-    assert await digest(entries=[_entry("e1", overdue=False)]) == []
+async def test_upcoming_maintenance_alone_sends_the_empty_state(hass, digest):
+    """The sensor's entries include what is merely scheduled; that is not news, so
+    nothing needs attention and the phone gets the empty state, not silence."""
+    calls = await digest(entries=[_entry("e1", overdue=False)])
+
+    assert len(calls) == 1
+    assert calls[0].data["message"] == "Nothing needs attention."
+    assert _buttons(calls[0]) == []
+
+
+async def test_an_orphaned_row_says_so_in_the_digest(hass, digest):
+    """A row whose item no longer exists outlived it: the notice names the missing
+    rows and counts them, instead of the digest going quiet about them."""
+    calls = await digest(
+        entries=[
+            _entry("e1", item_id="ghost-1", item_name=None, name="Ghost swap"),
+            _entry("e2", item_id="ghost-2", item_name=None, name="Ghost filter"),
+        ]
+    )
+
+    assert len(calls) == 1
+    assert "2 rows point at missing items." in calls[0].data["message"]
+    assert "Ghost swap" in calls[0].data["message"]
 
 
 async def test_upcoming_maintenance_never_gets_a_button(hass, digest):

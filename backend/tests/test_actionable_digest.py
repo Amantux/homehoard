@@ -60,3 +60,43 @@ def test_links_appear_only_when_public_url_is_set(auth_client, app):
 
     assert "https://" not in plain["text"], "invented a link with no base URL"
     assert "https://ha.example/api/hassio_ingress/tok/#/restock" in linked["text"]
+
+
+def test_digest_flags_orphaned_rows_and_notifies(auth_client, app):
+    from datetime import datetime, timedelta
+
+    from sqlalchemy import text as sql_text
+
+    from app.extensions import db
+    from app.models import MaintenanceEntry
+
+    with app.app_context():
+        gid = _gid(app)
+        it = Item(name="Dryer", group_id=gid)
+        db.session.add(it)
+        db.session.flush()
+        db.session.add(MaintenanceEntry(name="Belt swap", item_id=it.id,
+                                       scheduled_date=datetime.utcnow() - timedelta(days=5)))
+        db.session.commit()
+
+        clean = alert_digest(gid)
+        assert clean["orphans"] == 0
+        assert clean["isEmpty"] is False
+        assert clean["maintenanceOverdue"][0]["orphan"] is False
+        assert "rows point at missing items" not in clean["text"]
+
+        # A maintenance row whose item no longer resolves is an orphan: flag it
+        # per-entry, count it, and put the notice into the plain-text digest.
+        db.session.execute(sql_text("PRAGMA foreign_keys = OFF"))
+        db.session.add(MaintenanceEntry(
+            name="Ghost swap",
+            item_id="00000000-0000-0000-0000-000000000001",
+            scheduled_date=datetime.utcnow() - timedelta(days=3),
+        ))
+        db.session.commit()
+        orphan = alert_digest(gid)
+        assert orphan["orphans"] == 1
+        ghost = [e for e in orphan["maintenanceOverdue"]
+                 if e["itemId"] == "00000000-0000-0000-0000-000000000001"]
+        assert len(ghost) == 1 and ghost[0]["orphan"] is True
+        assert "1 rows point at missing items." in orphan["text"]

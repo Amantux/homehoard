@@ -196,14 +196,24 @@ def readable(item) -> bool:
     return item is not None and (not item.hidden or is_unlocked())
 
 
-def never_hidden(query):
+def never_hidden(query, *, onclause=None):
     """Unconditional exclusion — even while unlocked.
 
     For surfaces that OUTLIVE the session and leave the machine: push
     notifications, emails, webhooks. An unlock is a temporary state of one
     browser tab; a notification sitting on a phone or in a Slack channel is
     permanent and visible to whoever picks it up. So the digest never names a
-    hidden item, whatever the sender's lock state."""
+    hidden item, whatever the sender's lock state.
+
+    Pass `onclause` to ride the predicate inside a LEFT JOIN rather than filtering:
+    the alert digest wants maintenance rows whose item has since been deleted to
+    come back with the item unset so they can be flagged as orphans, and a WHERE
+    filter is not what a left join needs to keep those rows. `onclause` is the join
+    key itself; the item-side visibility predicates (hidden / archived / sold /
+    group) stay the caller's to apply, NULL-safe so a missing item still comes back.
+    """
+    if onclause is not None:
+        return query.join(Item, onclause, isouter=True)
     return query.filter(Item.hidden.is_(False))
 
 

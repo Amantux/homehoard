@@ -4,9 +4,9 @@ blueprint:
     Once a day, tells a phone what is running low and which maintenance is
     overdue, with buttons to act on it from the notification. A "Bought" button
     adds the amount it names to HomeHoard. A "Done" button marks the maintenance
-    done and schedules the next occurrence. Nothing is sent on a day with nothing
-    to report. Needs the HomeHoard integration, and the Home Assistant Companion
-    app for the buttons.
+    done and schedules the next occurrence. The phone always gets an answer: the
+    rows when there are some, the empty state when there are none. Needs the
+    HomeHoard integration, and the Home Assistant Companion app for the buttons.
   domain: automation
   author: Amantux
   source_url: https://raw.githubusercontent.com/Amantux/homehoard/main/blueprints/automation/homehoard/homehoard_daily_digest.yaml
@@ -44,6 +44,11 @@ variables:
   overdue: >-
     {{ (state_attr(overdue_sensor, 'entries') or [])
        | selectattr('overdue') | list }}
+  # Digest rows whose item no longer exists: the alert outlived its item, so the
+  # card says so instead of offering a button at a ghost. Read-only — nothing here
+  # creates or repairs the dangling reference.
+  orphans: >-
+    {{ overdue | selectattr('itemName', 'none') | list | length }}
   # A button must never be dead or read the same as another:
   # - Only items the server marks oneTap get one: it would refuse the rest (kept in
   #   several places).
@@ -83,10 +88,6 @@ triggers:
   - trigger: time
     at: !input time
 
-conditions:
-  - condition: template
-    value_template: "{{ (low | count) + (overdue | count) > 0 }}"
-
 actions:
   - action: "notify.{{ notifier | replace('notify.', '') }}"
     data:
@@ -107,10 +108,16 @@ actions:
         {{- ', ' if not loop.last else '' }}
         {%- endfor %}.
         {%- endif -%}
+        {%- if orphans -%}
+        {{ '\n' ~ orphans ~ ' rows point at missing items.' }}
+        {%- endif -%}
+        {%- if not low and not overdue -%}
+        Nothing needs attention.
+        {%- endif -%}
       data:
-        # A new digest replaces yesterday's, so old buttons don't pile up. On a quiet
-        # day nothing replaces it: Android drops it after a day, and an old button
-        # still tapped is refused once its job is done or its item is no longer low.
+        # A new digest replaces yesterday's, so old buttons don't pile up. The card
+        # always answers: the rows when there are some, the empty state when there
+        # are none — never a blank notification.
         tag: homehoard-digest
         timeout: 86400
         actions: "{{ buttons }}"
